@@ -3,9 +3,13 @@ name: Build and release
 on:
   push:
     branches:
-      - master
+      - main
       - release/*
   workflow_dispatch:
+
+# Needed to create the GitHub release
+permissions:
+  contents: write
 
 env:
   # Path to the solution file relative to the root of the project.
@@ -32,15 +36,9 @@ jobs:
     - name: Setup dotnet
       uses: actions/setup-dotnet@v4
 
-    - name: Setup GitVersion
-      uses: gittools/actions/gitversion/setup@v3.2.0
-      with:
-        versionSpec: '5.12.x'
-
     - name: Determine Version
-      uses: gittools/actions/gitversion/execute@v3.2.0
-      with:
-        updateProjectFiles: true
+      shell: bash
+      run: echo "GitVersion_SemVer=0.1.${{ github.run_number }}" >> "$GITHUB_ENV"
 
     - name: Install dependencies
       run: dotnet restore ${{env.SOLUTION_FILE_PATH}}
@@ -66,6 +64,6 @@ jobs:
         target_commitish: ${{ github.sha }}
         body: |
           Automated Release by GitHub Action CI
-        draft: ${{ github.ref_name == 'master' }}
+        draft: false
         prerelease: ${{ contains(github.ref_name, 'release/') }}
         files: AgOpenGPS_${{ env.GitVersion_SemVer }}.zip
