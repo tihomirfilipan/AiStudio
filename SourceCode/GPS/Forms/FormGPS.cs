@@ -266,6 +266,11 @@ namespace AgOpenGPS
 
 
         /// <summary>
+        /// Automatic satellite background map for the field boundary
+        /// </summary>
+        public CAutoSatelliteMap autoSatMap;
+
+        /// <summary>
         /// Smart WAS Calibration for intelligent WAS zero point determination
         /// </summary>
         public CSmartWAS smartWAS;
@@ -400,6 +405,9 @@ namespace AgOpenGPS
 
             //Smart WAS Calibration system
             smartWAS = new CSmartWAS(this);
+
+            //Automatic satellite background map
+            autoSatMap = new CAutoSatelliteMap(this);
         }
 
         private void FormGPS_Load(object sender, EventArgs e)

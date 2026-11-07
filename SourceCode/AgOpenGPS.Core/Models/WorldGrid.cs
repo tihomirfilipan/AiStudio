@@ -41,7 +41,7 @@ namespace AgOpenGPS.Core
         public double GridStep { private get; set; }
         public BingMap BingMap
         {
-            private get
+            get
             {
                 return _bingMap;
             }

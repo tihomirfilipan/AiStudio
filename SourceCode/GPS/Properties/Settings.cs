@@ -31,6 +31,7 @@ namespace AgOpenGPS.Properties
         public Size setWindow_MapBndSize = new Size(1022, 742);
         public Size setWindow_BingMapSize = new Size(965, 700);
         public int setWindow_BingZoom = 15;
+        public bool setMap_isAutoSatellite = true;
         public Point setWindow_QuickABLocation = new Point(100, 100);
         public Size setWindow_gridSize = new Size(400, 400);
         public Point setWindow_gridLocation = new Point(20, 20);

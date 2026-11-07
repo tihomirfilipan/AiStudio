@@ -174,6 +174,9 @@ namespace AgOpenGPS
             BingMapStreamer bingMapStreamer = new BingMapStreamer();
             worldGrid.BingMap = bingMapStreamer.TryRead(fieldDirectoryInfo);
 
+            // Download satellite image of field + margin if missing or too small
+            autoSatMap.UpdateIfNeeded();
+
             // optional
             TryLoad("Elevation.txt", LoadCriticality.Optional, () => ElevationFiles.Load(dir), out var elevation);
 
@@ -305,6 +308,10 @@ namespace AgOpenGPS
         public void FileSaveBoundary()
         {
             BoundaryFiles.Save(GetFieldDir(true), bnd.bndList);
+
+            // Boundary changed: refresh satellite background if it no longer covers it.
+            // Skipped when saving from a background thread (e.g. while closing the field).
+            if (!InvokeRequired) autoSatMap.UpdateIfNeeded();
         }
 
         // Save tram data.
