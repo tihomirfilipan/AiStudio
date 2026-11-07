@@ -404,34 +404,6 @@ public bool workSwitchHigh, steerSwitchHigh;
 
 ---
 
-## CISOBUS
-
-**File:** `Classes/CISOBUS.cs`
-
-**Purpose:** ISOBUS section control communication
-
-**Key Properties:**
-```csharp
-// Section control
-private bool sectionControlEnabled;
-private bool[] actualSectionStates;
-
-// Process data
-private int lastGuidanceLineDeviation;
-private int lastActualSpeed;
-private int lastTotalDistance;
-```
-
-**Key Methods:**
-- `RequestSectionControlEnabled(bool)` - Request section control
-- `SetGuidanceLineDeviation(int)` - Send guidance deviation
-- `SetActualSpeed(int)` - Send vehicle speed
-- `SetTotalDistance(int)` - Send total distance
-- `DeserializeHeartbeat(byte[])` - Parse ISOBUS heartbeat
-- `IsAlive()` - Check if ISOBUS connected (1s timeout)
-
----
-
 ## CBoundary / CBoundaryList
 
 **File:** `Classes/CBoundary.cs`, `Classes/CBoundaryList.cs`

@@ -102,15 +102,6 @@ namespace AgIO
             {
                 LoadUDPNetwork();
                 Log.EventWriter("UDP Network Is On");
-
-                // Start ISOBUS if needed
-                if (Settings.Default.isobus_isOn)
-                {
-                    // Little hack to load ISOBUS form without showing it
-                    isobusForm.Show();
-                    isobusForm.Hide();
-                    isobusForm.StartAogTaskController();
-                }
             }
             else
             {
@@ -286,8 +277,6 @@ namespace AgIO
             {
                 Log.EventWriter($"AgIO profile save skipped: profile load state is {RegistrySettings.profileLoadResult}");
             }
-
-            isobusForm.StopAogTaskControllerProcess();
 
             if (loopBackSocket != null)
             {

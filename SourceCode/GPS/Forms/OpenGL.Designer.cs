@@ -1300,20 +1300,6 @@ namespace AgOpenGPS
             if (ahrs.isAutoSteerAuto || mc.isRemoteWorkSystemOn)
                 mc.CheckWorkAndSteerSwitch();
 
-            // Check ISOBUS for actual section states
-            // Only override if TC has active clients with section control capability (numberOfSections > 0)
-            // For 0-section implements, let AOG control sections normally
-            if (isobus.IsAlive() && isobus.HasActiveClients)
-            {
-                for (int j = 0; j < tool.numOfSections; j++)
-                {
-                    if (isobus.IsSectionOn(j))
-                        section[j].isMappingOn = true;
-                    else
-                        section[j].isMappingOn = false;
-                }
-            }
-
             // check if any sections have changed status
             number = 0;
 

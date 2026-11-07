@@ -266,11 +266,6 @@ namespace AgOpenGPS
 
 
         /// <summary>
-        /// The ISOBUS communication class
-        /// </summary>
-        public CISOBUS isobus;
-
-        /// <summary>
         /// Smart WAS Calibration for intelligent WAS zero point determination
         /// </summary>
         public CSmartWAS smartWAS;
@@ -402,8 +397,6 @@ namespace AgOpenGPS
 
             //brightness object class
             displayBrightness = new CWindowsSettingsBrightnessController(Properties.Settings.Default.setDisplay_isBrightnessOn);
-
-            isobus = new CISOBUS(this);
 
             //Smart WAS Calibration system
             smartWAS = new CSmartWAS(this);
@@ -1072,11 +1065,6 @@ namespace AgOpenGPS
                 f.Top = this.Height / 3 + this.Top;
                 f.Left = this.Width - 400 + this.Left;
             }
-        }
-
-        private void btnIsobusSC_Click(object sender, EventArgs e)
-        {
-            isobus.RequestSectionControlEnabled(!isobus.SectionControlEnabled);
         }
 
         private void fileToolStripMenuItem_Click(object sender, EventArgs e)

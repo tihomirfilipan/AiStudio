@@ -633,8 +633,6 @@ namespace AgOpenGPS
                         Settings.Default.setF_CurrentDir = currentFieldDirectory;
                         Settings.Default.Save();
                     }
-
-                    isobus.SendFieldName(currentFieldDirectory);
                 }
             }
 
@@ -804,8 +802,6 @@ namespace AgOpenGPS
 
             Log.EventWriter("** Field closed **   " + currentFieldDirectory + "   " +
                 DateTime.Now.ToString("f", CultureInfo.InvariantCulture));
-
-            isobus.SendFieldName(string.Empty);
 
             this.Invoke((MethodInvoker)(() =>
             {
