@@ -30,8 +30,10 @@ namespace AgOpenGPS
             btnTrackPanelEdit.Click += (s, e) =>
             {
                 flp1.Visible = false;
-                using (var form = new Forms.FormTrackPanelButtons(TrackPanelButtonInfo()))
-                    form.ShowDialog(this);
+                using (var form = new Forms.FormTrackPanelButtons(TrackPanelButtonInfo(), BottomPanelButtonInfo()))
+                {
+                    if (form.ShowDialog(this) == DialogResult.OK) PanelUpdateRightAndBottom();
+                }
             };
             flp1.Controls.Add(btnTrackPanelEdit);
         }
@@ -58,6 +60,38 @@ namespace AgOpenGPS
             };
         }
 
+        /// <summary>Buttons of the bottom bar that may be hidden (the track menu button always stays).</summary>
+        private List<Tuple<Control, string>> BottomPanelButtonInfo()
+        {
+            return new List<Tuple<Control, string>>
+            {
+                Tuple.Create<Control, string>(btnSnapToPivot, T("Snap to pivot - move the line to the vehicle", "Privuci liniju na traktor")),
+                Tuple.Create<Control, string>(btnAdjLeft, T("Move the line left", "Pomakni liniju lijevo")),
+                Tuple.Create<Control, string>(btnAdjRight, T("Move the line right", "Pomakni liniju desno")),
+                Tuple.Create<Control, string>(btnFlag, T("Flag - mark a point", "Zastavica - označi točku")),
+                Tuple.Create<Control, string>(btnHeadlandOnOff, T("Headland on/off", "Uvratine uključi/isključi")),
+                Tuple.Create<Control, string>(cboxIsSectionControlled, T("Sections switched by the headland", "Sekcije se gase na uvratini")),
+                Tuple.Create<Control, string>(btnHydLift, T("Hydraulic lift", "Hidraulično dizanje")),
+                Tuple.Create<Control, string>(btnTramDisplayMode, T("Tram lines display", "Prikaz tragova u polju (tramline)")),
+                Tuple.Create<Control, string>(btnResetToolHeading, T("Reset tool heading - straighten the tool behind the vehicle", "Poravnaj priključak iza traktora")),
+                Tuple.Create<Control, string>(btnChangeMappingColor, T("Coverage colour", "Boja obrađene površine")),
+                Tuple.Create<Control, string>(btnYouSkipEnable, T("Skip rows in U-turns on/off", "Preskakanje redova kod okretanja")),
+                Tuple.Create<Control, string>(cboxpRowWidth, T("Number of rows to skip", "Broj redova za preskakanje")),
+            };
+        }
+
+        private static HashSet<string> HiddenSet(string csv) =>
+            new HashSet<string>((csv ?? "").Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries).Select(x => x.Trim()));
+
+        public bool IsBottomPanelHidden(Control c) => HiddenSet(Properties.Settings.Default.setBottomPanel_hidden).Contains(c.Name);
+
+        private void ApplyBottomPanelHidden()
+        {
+            var hidden = HiddenSet(Properties.Settings.Default.setBottomPanel_hidden);
+            foreach (Control c in panelBottom.Controls)
+                if (hidden.Contains(c.Name)) c.Visible = false;
+        }
+
         private void ApplyTrackPanelHidden()
         {
             var hidden = new HashSet<string>((Properties.Settings.Default.setTrackPanel_hidden ?? "")
@@ -74,8 +108,9 @@ namespace AgOpenGPS.Forms
     public class FormTrackPanelButtons : Form
     {
         private readonly List<Tuple<Control, CheckBox>> rows = new List<Tuple<Control, CheckBox>>();
+        private readonly List<Tuple<Control, CheckBox>> bottomRows = new List<Tuple<Control, CheckBox>>();
 
-        public FormTrackPanelButtons(List<Tuple<Control, string>> buttons)
+        public FormTrackPanelButtons(List<Tuple<Control, string>> buttons, List<Tuple<Control, string>> bottomButtons = null)
         {
             Text = FormGPS.T("Track panel buttons", "Gumbi panela tragova");
             Font = new Font("Tahoma", 13F);
@@ -92,7 +127,12 @@ namespace AgOpenGPS.Forms
                 .Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries).Select(x => x.Trim()));
 
             var table = new TableLayoutPanel { ColumnCount = 3, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, Dock = DockStyle.Fill };
-            Controls.Add(table);
+            var scroll = new Panel { AutoScroll = true, Dock = DockStyle.Fill };
+            scroll.Controls.Add(table);
+            table.Dock = DockStyle.Top;
+            Controls.Add(scroll);
+            AutoSize = false;
+            Size = new Size(760, Math.Min(900, Screen.FromPoint(Cursor.Position).WorkingArea.Height - 40));
 
             var head = new Label
             {
@@ -100,26 +140,18 @@ namespace AgOpenGPS.Forms
                 MaximumSize = new Size(640, 0),
                 ForeColor = Color.DimGray,
                 Margin = new Padding(3, 3, 3, 10),
-                Text = FormGPS.T("Tick the buttons to show in the track panel. 'Edit' always stays.",
-                    "Označite gumbe koji se prikazuju u panelu tragova. Gumb 'Uredi' uvijek ostaje.")
+                Text = FormGPS.T("Tick the buttons to show. 'Edit' in the track panel and the track menu button always stay.",
+                    "Označite gumbe koji se prikazuju. Gumb 'Uredi' u panelu tragova i gumb izbornika tragova uvijek ostaju.")
             };
             table.Controls.Add(head, 0, 0);
             table.SetColumnSpan(head, 3);
 
             int row = 1;
-            foreach (var b in buttons)
-            {
-                Image img = (b.Item1 as ButtonBase)?.Image ?? (b.Item1 as ButtonBase)?.BackgroundImage;
-                var pic = new PictureBox { Image = img, SizeMode = PictureBoxSizeMode.Zoom, Size = new Size(54, 54), Margin = new Padding(3, 4, 10, 4) };
-                var cb = new CheckBox { Checked = !hidden.Contains(b.Item1.Name), AutoSize = true, Anchor = AnchorStyles.Left, Text = FormGPS.T("Show", "Prikaži"), Margin = new Padding(3, 4, 12, 4) };
-                var lbl = new Label { Text = b.Item2, AutoSize = true, MaximumSize = new Size(470, 0), Anchor = AnchorStyles.Left };
-                table.Controls.Add(pic, 0, row);
-                table.Controls.Add(cb, 1, row);
-                table.Controls.Add(lbl, 2, row);
-                rows.Add(Tuple.Create(b.Item1, cb));
-                row++;
-            }
-
+            row = AddSection(table, row, FormGPS.T("Track panel", "Panel tragova"), buttons, hidden, rows);
+            if (bottomButtons != null)
+                row = AddSection(table, row, FormGPS.T("Bottom bar", "Donja traka"), bottomButtons,
+                    new HashSet<string>((Properties.Settings.Default.setBottomPanel_hidden ?? "")
+                        .Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries).Select(x => x.Trim())), bottomRows);
             var buttonsPanel = new FlowLayoutPanel { FlowDirection = FlowDirection.RightToLeft, AutoSize = true, Dock = DockStyle.Fill, Margin = new Padding(3, 14, 3, 3) };
             var ok = new Button { Text = FormGPS.T("Save", "Spremi"), Size = new Size(150, 56), BackColor = Color.FromArgb(31, 122, 58), ForeColor = Color.White, FlatStyle = FlatStyle.Flat };
             var cancel = new Button { Text = FormGPS.T("Cancel", "Odustani"), Size = new Size(140, 56), FlatStyle = FlatStyle.Flat, DialogResult = DialogResult.Cancel };
@@ -127,6 +159,8 @@ namespace AgOpenGPS.Forms
             {
                 Properties.Settings.Default.setTrackPanel_hidden =
                     string.Join(",", rows.Where(r => !r.Item2.Checked).Select(r => r.Item1.Name));
+                Properties.Settings.Default.setBottomPanel_hidden =
+                    string.Join(",", bottomRows.Where(r => !r.Item2.Checked).Select(r => r.Item1.Name));
                 Properties.Settings.Default.Save();
                 DialogResult = DialogResult.OK;
                 Close();
@@ -136,6 +170,28 @@ namespace AgOpenGPS.Forms
             table.Controls.Add(buttonsPanel, 0, row);
             table.SetColumnSpan(buttonsPanel, 3);
             CancelButton = cancel;
+        }
+
+        private static int AddSection(TableLayoutPanel table, int row, string title, List<Tuple<Control, string>> buttons,
+            HashSet<string> hidden, List<Tuple<Control, CheckBox>> target)
+        {
+            var head = new Label { Text = title, AutoSize = true, Font = new Font("Tahoma", 14F, FontStyle.Bold), Margin = new Padding(3, 12, 3, 4) };
+            table.Controls.Add(head, 0, row);
+            table.SetColumnSpan(head, 3);
+            row++;
+            foreach (var b in buttons)
+            {
+                Image img = (b.Item1 as ButtonBase)?.Image ?? (b.Item1 as ButtonBase)?.BackgroundImage;
+                var pic = new PictureBox { Image = img, SizeMode = PictureBoxSizeMode.Zoom, Size = new Size(54, 54), Margin = new Padding(3, 4, 10, 4) };
+                var cb = new CheckBox { Checked = !hidden.Contains(b.Item1.Name), AutoSize = true, Anchor = AnchorStyles.Left, Text = FormGPS.T("Show", "Prikaži"), Margin = new Padding(3, 4, 12, 4) };
+                var lbl = new Label { Text = b.Item2, AutoSize = true, MaximumSize = new Size(470, 0), Anchor = AnchorStyles.Left };
+                table.Controls.Add(pic, 0, row);
+                table.Controls.Add(cb, 1, row);
+                table.Controls.Add(lbl, 2, row);
+                target.Add(Tuple.Create(b.Item1, cb));
+                row++;
+            }
+            return row;
         }
     }
 }

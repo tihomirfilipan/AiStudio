@@ -951,6 +951,9 @@ namespace AgOpenGPS
 
             if (panelBottom.Visible)
             {
+                //buttons the user switched off
+                ApplyBottomPanelHidden();
+
                 viz = 0;
                 for (int i = 0; i < panelBottom.Controls.Count; i++)
                 {
@@ -961,7 +964,7 @@ namespace AgOpenGPS
                 }
 
                 if (viz == 0) return;
-                if (viz > 9 && Width < 1190)
+                if ((viz > 9 && Width < 1190) || IsBottomPanelHidden(btnResetToolHeading))
                 {
                     btnResetToolHeading.Visible = false;
                 }

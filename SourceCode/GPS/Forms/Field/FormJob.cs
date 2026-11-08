@@ -103,6 +103,8 @@ namespace AgOpenGPS
                 btnEasyDrive.Enabled = false;
                 lblResumeField.Text = "Easy Drive Active";
             }
+
+            ApplyModernLook();
         }
 
         private void btnJobNew_Click(object sender, EventArgs e)
