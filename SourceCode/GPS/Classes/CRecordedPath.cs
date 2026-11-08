@@ -192,16 +192,36 @@ namespace AgOpenGPS
                 pathCount = cnt - B;
                 if (pathCount < 8)
                 {
-                    double distSqr = glm.DistanceSquared(pivotAxlePosRP.northing, pivotAxlePosRP.easting, recList[starPathIndx].northing, recList[starPathIndx].easting);
-                    if (distSqr < 2)
+                    CRecPathPt startPt = recList[starPathIndx];
+                    double distSqr = glm.DistanceSquared(pivotAxlePosRP.northing, pivotAxlePosRP.easting, startPt.northing, startPt.easting);
+
+                    // already past the start point (in its direction of travel)?
+                    double ahead = (pivotAxlePosRP.easting - startPt.easting) * Math.Sin(startPt.heading)
+                                 + (pivotAxlePosRP.northing - startPt.northing) * Math.Cos(startPt.heading);
+
+                    // Switch to the path when close, when the start was passed, or at the end of the
+                    // approach. Only 1.4 m used to be accepted, so a small miss kept the vehicle in
+                    // the approach for ever.
+                    if (distSqr < 16 || (ahead > 0 && distSqr < 100) || pathCount <= 2)
                     {
                         isFollowingRecPath = true;
                         isFollowingDubinsToPath = false;
                         shuttleDubinsList.Clear();
                         shortestDubinsList.Clear();
-                        C = starPathIndx;
-                        A = C + 3;
-                        B = A + 1;
+
+                        // continue from the nearest path point just after the start
+                        int best = starPathIndx;
+                        double bestD = double.MaxValue;
+                        int top = Math.Min(recList.Count - 2, starPathIndx + 80);
+                        for (int i = starPathIndx; i <= top; i++)
+                        {
+                            double d = glm.DistanceSquared(pivotAxlePosRP.northing, pivotAxlePosRP.easting, recList[i].northing, recList[i].easting);
+                            if (d < bestD) { bestD = d; best = i; }
+                        }
+                        currentPositonIndex = best;
+                        C = best;
+                        A = C + 1 < recList.Count ? C + 1 : C;
+                        B = A + 1 < recList.Count ? A + 1 : A;
                     }
                 }
             }
