@@ -128,14 +128,14 @@ namespace AgOpenGPS
                 msg += "\r\n" + T("Tool offset is not taken into account.", "Bočni pomak priključka se ne uzima u obzir.");
 
             if (addTrack && plan.TrackLine.Count > 2)
-                msg += "\r\n" + T("A new curve track of the first pass will be added.", "Bit će dodan novi trag (krivulja prvog prohoda).");
+                msg += "\r\n" + T("A new curve track of the first pass will be added (dashed line).", "Bit će dodan novi trag - krivulja prvog prohoda (isprekidana linija).");
 
             msg += "\r\n\r\n" + T("Save: the plan becomes the recorded path. Start it with Play in the recorded path panel, with autosteer on.",
                 "Spremi: plan postaje snimljena putanja. Pokrenite je gumbom Play u panelu snimljene putanje, uz uključen autopilot.");
 
             // Preview with the plan drawn, save or cancel
             using (var preview = new Forms.Field.FormAutoPlanPreview(plan, fence, msg,
-                new V2(pivotAxlePos.easting, pivotAxlePos.northing), pivotAxlePos.heading))
+                new V2(pivotAxlePos.easting, pivotAxlePos.northing), pivotAxlePos.heading, addTrack))
             {
                 if (preview.ShowDialog(this) != DialogResult.OK) return;
             }

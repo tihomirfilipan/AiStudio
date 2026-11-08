@@ -18,6 +18,7 @@ namespace AgOpenGPS.Forms.Field
         private readonly V2 vehiclePos;
         private readonly double vehicleHeading;
         private readonly PictureBox picture;
+        private readonly bool showTrack;
 
         private static readonly Color[] TurnColors =
         {
@@ -27,8 +28,9 @@ namespace AgOpenGPS.Forms.Field
 
         private static string T(string en, string hr) => FormGPS.T(en, hr);
 
-        public FormAutoPlanPreview(FieldPlanResult plan, List<V2> fence, string summary, V2 vehiclePos, double vehicleHeading)
+        public FormAutoPlanPreview(FieldPlanResult plan, List<V2> fence, string summary, V2 vehiclePos, double vehicleHeading, bool showTrack = false)
         {
+            this.showTrack = showTrack;
             this.plan = plan;
             this.fence = fence;
             this.vehiclePos = vehiclePos;
@@ -123,6 +125,15 @@ namespace AgOpenGPS.Forms.Field
                             g.DrawLines(pen, line);
                     }
                     i0 = i1;
+                }
+
+                // the new curve track (first pass line), dashed
+                if (showTrack && plan.TrackLine.Count > 1)
+                {
+                    var tl = new PointF[plan.TrackLine.Count];
+                    for (int k = 0; k < tl.Length; k++) tl[k] = P(plan.TrackLine[k].E, plan.TrackLine[k].N);
+                    using (var pen = new Pen(Color.FromArgb(0, 229, 255), 2f) { DashStyle = DashStyle.Dash })
+                        g.DrawLines(pen, tl);
                 }
 
                 // pass numbers in the middle of each run, skipped where they would overlap
