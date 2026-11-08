@@ -170,6 +170,24 @@ namespace AgOpenGPS.Tests.AutoPlan
         }
 
         [Test]
+        public void TrackLine_IsFirstPassAcrossTheField()
+        {
+            var res = FieldPlanner.Build(Rectangle(300, 200), new FieldPlanSettings { WorkWidth = 6, TurnRadius = 6 }, new V2(-10, -10), 0);
+            Assert.That(res.Ok, Is.True, res.Error);
+            Assert.That(res.TrackLine.Count, Is.GreaterThan(100));
+            double minE = double.MaxValue, maxE = double.MinValue;
+            foreach (V2 p in res.TrackLine)
+            {
+                Assert.That(p.N, Is.EqualTo(3.0).Within(0.5)); // half a width from the south side
+                minE = Math.Min(minE, p.E);
+                maxE = Math.Max(maxE, p.E);
+            }
+            // whole field length, not cut at the headland
+            Assert.That(minE, Is.LessThan(5.0));
+            Assert.That(maxE, Is.GreaterThan(295.0));
+        }
+
+        [Test]
         public void TooSmallField_ReturnsError()
         {
             var res = FieldPlanner.Build(Rectangle(10, 10), new FieldPlanSettings { WorkWidth = 6, TurnRadius = 6 }, new V2(0, 0), 0);

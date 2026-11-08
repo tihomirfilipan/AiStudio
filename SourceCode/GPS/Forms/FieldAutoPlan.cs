@@ -75,10 +75,12 @@ namespace AgOpenGPS
 
             // Options dialog, prefilled with the tool width and turning radius from the app
             FieldPlanSettings settings;
+            bool addTrack;
             using (var form = new Forms.Field.FormAutoPlanOptions(tool.width, tool.overlap, yt.youTurnRadius, refEdge != null))
             {
                 if (form.ShowDialog(this) != DialogResult.OK) return;
                 settings = form.Settings;
+                addTrack = form.AddTrack;
             }
             settings.ReferenceEdge = refEdge;
 
@@ -125,10 +127,20 @@ namespace AgOpenGPS
             if (Math.Abs(tool.offset) > 0.01)
                 msg += "\r\n" + T("Tool offset is not taken into account.", "Bočni pomak priključka se ne uzima u obzir.");
 
-            msg += "\r\n\r\n" + T("Save as recorded path? Start it with Play in the recorded path panel, with autosteer on.",
-                "Spremiti kao snimljenu putanju? Pokrenite je gumbom Play u panelu snimljene putanje, uz uključen autopilot.");
+            if (addTrack && plan.TrackLine.Count > 2)
+                msg += "\r\n" + T("A new curve track of the first pass will be added.", "Bit će dodan novi trag (krivulja prvog prohoda).");
 
-            if (FormDialog.ShowQuestion(title, msg) != DialogResult.OK) return;
+            msg += "\r\n\r\n" + T("Save: the plan becomes the recorded path. Start it with Play in the recorded path panel, with autosteer on.",
+                "Spremi: plan postaje snimljena putanja. Pokrenite je gumbom Play u panelu snimljene putanje, uz uključen autopilot.");
+
+            // Preview with the plan drawn, save or cancel
+            using (var preview = new Forms.Field.FormAutoPlanPreview(plan, fence, msg,
+                new V2(pivotAxlePos.easting, pivotAxlePos.northing), pivotAxlePos.heading))
+            {
+                if (preview.ShowDialog(this) != DialogResult.OK) return;
+            }
+
+            if (addTrack && plan.TrackLine.Count > 2) AddAutoPlanTrack(plan.TrackLine);
 
             recPath.StopDrivingRecordedPath();
             recPath.recList.Clear();
@@ -345,6 +357,40 @@ namespace AgOpenGPS
         private static string RunName(RunLabel l)
         {
             return l.IsHeadland ? T("Headland ", "Uvratine ") + l.Text : T("Pass ", "Prohod ") + l.Text;
+        }
+
+        /// <summary>Adds the first pass line as a new curve track (not activated).</summary>
+        private void AddAutoPlanTrack(List<V2> line)
+        {
+            var des = new List<vec3>(line.Count);
+            foreach (V2 p in line) des.Add(new vec3(p.E, p.N, 0));
+            CABCurve.MakePointMinimumSpacing(ref des, 1.6);
+            CABCurve.CalculateHeadings(ref des);
+            if (des.Count < 4) return;
+
+            double x = 0, y = 0;
+            foreach (vec3 pt in des) { x += Math.Cos(pt.heading); y += Math.Sin(pt.heading); }
+            double heading = Math.Atan2(y, x);
+            if (heading < 0) heading += glm.twoPI;
+
+            var track = new CTrk
+            {
+                mode = TrackMode.Curve,
+                heading = heading,
+                ptA = new vec2(des[0].easting, des[0].northing),
+                ptB = new vec2(des[des.Count - 1].easting, des[des.Count - 1].northing),
+                isVisible = true,
+                name = "Auto plan " + Math.Round(glm.toDegrees(heading), 1).ToString(CultureInfo.InvariantCulture) + "\u00B0"
+            };
+
+            // tail extensions like every curve track
+            curve.AddFirstLastPoints(ref des);
+            CABCurve.CalculateHeadings(ref des);
+            track.curvePts.AddRange(des);
+
+            trk.gArr.Add(track);
+            FileSaveTracks();
+            Log.EventWriter("Auto field plan: track added " + track.name);
         }
 
         private static string OrderText(string order)

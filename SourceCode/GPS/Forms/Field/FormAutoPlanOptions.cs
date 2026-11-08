@@ -14,7 +14,10 @@ namespace AgOpenGPS.Forms.Field
     public class FormAutoPlanOptions : Form
     {
         private readonly NudlessNumericUpDown nudWidth, nudRadius, nudLaps;
-        private readonly CheckBox cboxWorkHeadland, cboxAllAround, cboxExtraPass;
+        private readonly CheckBox cboxWorkHeadland, cboxAllAround, cboxExtraPass, cboxAddTrack;
+
+        /// <summary>Also add the first pass line as a new curve track.</summary>
+        public bool AddTrack => cboxAddTrack.Checked;
         private readonly Label lblAutoLaps;
 
         public FieldPlanSettings Settings { get; private set; }
@@ -95,13 +98,16 @@ namespace AgOpenGPS.Forms.Field
             cboxExtraPass = AddCheck(table, 8, T("Extra pass for the strip left along the last edge", "Dodatni prohod za traku uz zadnji rub"),
                 Properties.Settings.Default.setAutoPlan_extraPass);
 
+            cboxAddTrack = AddCheck(table, 9, T("Add a new track (curve of the first pass)", "Dodaj novi trag (krivulja prvog prohoda)"),
+                Properties.Settings.Default.setAutoPlan_addTrack);
+
             var buttons = new FlowLayoutPanel { FlowDirection = FlowDirection.RightToLeft, AutoSize = true, Dock = DockStyle.Fill, Margin = new Padding(3, 18, 3, 3) };
             var btnOk = new Button { Text = T("Make plan", "Napravi plan"), AutoSize = true, MinimumSize = new Size(170, 60), BackColor = Color.FromArgb(31, 122, 58), ForeColor = Color.White, FlatStyle = FlatStyle.Flat };
             var btnCancel = new Button { Text = T("Cancel", "Odustani"), AutoSize = true, MinimumSize = new Size(150, 60), FlatStyle = FlatStyle.Flat, DialogResult = DialogResult.Cancel };
             btnOk.Click += BtnOk_Click;
             buttons.Controls.Add(btnOk);
             buttons.Controls.Add(btnCancel);
-            table.Controls.Add(buttons, 0, 9);
+            table.Controls.Add(buttons, 0, 10);
             table.SetColumnSpan(buttons, 2);
             CancelButton = btnCancel;
 
@@ -168,6 +174,7 @@ namespace AgOpenGPS.Forms.Field
             set.setAutoPlan_headlandAllAround = cboxAllAround.Checked;
             set.setAutoPlan_workHeadland = cboxWorkHeadland.Checked;
             set.setAutoPlan_extraPass = cboxExtraPass.Checked;
+            set.setAutoPlan_addTrack = cboxAddTrack.Checked;
             set.Save();
 
             DialogResult = DialogResult.OK;

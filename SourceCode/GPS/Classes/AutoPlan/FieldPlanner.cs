@@ -91,6 +91,9 @@ namespace AgOpenGPS.AutoPlan
         // For debugging / visualisation
         public List<V2> WorkArea = new List<V2>();
         public List<V2> ReferenceEdge = new List<V2>();
+
+        /// <summary>Centre line of the first pass across the whole field, for a guidance track.</summary>
+        public List<V2> TrackLine = new List<V2>();
     }
 
     /// <summary>
@@ -214,6 +217,16 @@ namespace AgOpenGPS.AutoPlan
             }
 
             if (passes.Count == 0) { res.Error = "No passes fit inside the field"; return; }
+
+            // Guidance track: first pass line over the whole field (not cut at the headland)
+            {
+                double d0 = (endsOnly ? 0.0 : headWidth) + W * 0.5;
+                List<V2> line = OffsetOpen(refExt, d0 * side, refGrid, s);
+                List<V2> bestRun = null;
+                foreach (var run in InsideRuns(line, fence))
+                    if (bestRun == null || run.Count > bestRun.Count) bestRun = run;
+                if (bestRun != null && bestRun.Count > 2) res.TrackLine = bestRun;
+            }
 
             // Headland only at the ends: if a strip is left along the far long side, add one more
             // pass (overlapping the previous one) with the tool edge on the boundary
