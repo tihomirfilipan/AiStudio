@@ -74,7 +74,7 @@ namespace AgOpenGPS.AutoPlan
         public int TurnsLeavingField;
         public int HeadlandLaps;
         public int SkippedPieces;
-        public bool ExtraSidePass;     // an extra overlapping pass was added along the far long side
+        public bool ExtraSidePass;     // an extra overlapping pass was added to cover the strip left after the last pass
         public double TotalLength;
         public double WorkLength;
         public string OrderDescription;
@@ -211,7 +211,9 @@ namespace AgOpenGPS.AutoPlan
                 Pass last = passes[passes.Count - 1];
                 double dLast = W * (last.Lane + 0.5);
                 double lastLen = OpenLength(last.Pts);
-                var fenceSeg = new SegmentGrid(fence, true, Math.Max(5.0, W));
+                // distance to the work area edge: equal to the boundary along a long side, the inner
+                // edge of the headland at the ends (the extra pass must not run into the headland)
+                var fenceSeg = new SegmentGrid(work, true, Math.Max(5.0, W));
                 for (double f = 1.0; f >= 0.25; f -= 0.05)
                 {
                     List<V2> off = OffsetOpen(refExt, (dLast + W * f) * side, refGrid, s);
@@ -397,9 +399,9 @@ namespace AgOpenGPS.AutoPlan
                 else if (anyPass && ++emptyInRow > 3) break;
             }
 
-            // Drop short pieces (corners, small bends) so the sides and ends are continuous
-            int minRun = Math.Max(3, (int)(15.0 / s));
-            for (int iter = 0; iter < 3; iter++) FlipShortRuns(isEnd, minRun);
+            // Only real long sides stay without headland: side pieces shorter than 40 m or 30 % of
+            // the longest side piece (gaps between pass ends on slanted edges, corners) become ends
+            KeepLongSidesOnly(isEnd, s);
 
             var id = new int[n];
             for (int i = 0; i < n; i++) id[i] = -1;
@@ -418,23 +420,30 @@ namespace AgOpenGPS.AutoPlan
             return id;
         }
 
-        private static void FlipShortRuns(bool[] flags, int minRun)
+        private static void KeepLongSidesOnly(bool[] isEnd, double s)
         {
-            int n = flags.Length;
-            int start = 0;
-            while (start < n && flags[start] == flags[(start - 1 + n) % n]) start++;
-            if (start >= n) return; // all the same
-            int c = 0;
-            while (c < n)
+            int n = isEnd.Length;
+            int start = Array.IndexOf(isEnd, true);
+            if (start < 0) return; // no ends at all
+
+            // side runs as (first index, length), walking once around from an end point
+            var runs = new List<int[]>();
+            int c = 1;
+            while (c <= n)
             {
                 int i = (start + c) % n;
-                bool v = flags[i];
+                if (isEnd[i]) { c++; continue; }
                 int len = 0;
-                while (len < n - c && flags[(i + len) % n] == v) len++;
-                if (len < minRun)
-                    for (int q = 0; q < len; q++) flags[(i + q) % n] = !v;
+                while (c + len <= n && !isEnd[(start + c + len) % n]) len++;
+                runs.Add(new[] { i, len });
                 c += len;
             }
+            int longest = 0;
+            foreach (var r in runs) longest = Math.Max(longest, r[1]);
+            int minLen = (int)Math.Max(40.0 / s, 0.3 * longest);
+            foreach (var r in runs)
+                if (r[1] < minLen)
+                    for (int q = 0; q < r[1]; q++) isEnd[(r[0] + q) % n] = true;
         }
 
         /// <summary>

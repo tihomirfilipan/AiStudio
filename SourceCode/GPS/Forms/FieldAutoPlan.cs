@@ -114,8 +114,8 @@ namespace AgOpenGPS
             if (plan.SkippedPieces > 0)
                 msg += "\r\n" + plan.SkippedPieces + T(" field part(s) are not covered (irregular shape).", " dijelova parcele nije pokriveno (nepravilan oblik).");
             if (plan.ExtraSidePass)
-                msg += "\r\n" + T("An extra overlapping pass covers the strip along the far long side.",
-                    "Dodan je prohod uz drugi dugi rub (s preklapanjem) da se pokrije preostala traka.");
+                msg += "\r\n" + T("An extra overlapping pass covers the strip left after the last pass.",
+                    "Dodan je prohod s preklapanjem da se pokrije traka koja ostaje iza zadnjeg prohoda.");
             if (Math.Abs(tool.offset) > 0.01)
                 msg += "\r\n" + T("Tool offset is not taken into account.", "Bočni pomak priključka se ne uzima u obzir.");
 
