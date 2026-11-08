@@ -142,6 +142,34 @@ namespace AgOpenGPS.Tests.AutoPlan
         }
 
         [Test]
+        public void Options_NoHeadlandWorkAndNoExtraPass()
+        {
+            var set = new FieldPlanSettings { WorkWidth = 6, TurnRadius = 6, WorkHeadland = false, AddExtraPass = false };
+            var res = FieldPlanner.Build(Rectangle(300, 200), set, new V2(-10, -10), 0);
+            Assert.That(res.Ok, Is.True, res.Error);
+            Assert.That(res.HeadlandLaps, Is.EqualTo(0));
+            Assert.That(res.ExtraSidePass, Is.False);
+            foreach (PlanPoint p in res.Points) Assert.That(p.IsHeadland, Is.False);
+            // the path ends with the last pass
+            Assert.That(res.Points[res.Points.Count - 1].IsWork, Is.True);
+        }
+
+        [Test]
+        public void PickedEdge_PassesFollowIt()
+        {
+            // pick the short west side: passes then run north-south
+            var edge = new List<V2> { new V2(0, 0), new V2(0, 200) };
+            var set = new FieldPlanSettings { WorkWidth = 6, TurnRadius = 6, ReferenceEdge = edge };
+            var res = FieldPlanner.Build(Rectangle(300, 200), set, new V2(-10, -10), 0);
+            Assert.That(res.Ok, Is.True, res.Error);
+            Assert.That(res.Passes, Is.InRange(48, 52)); // 300 m / 6 m
+
+            // the middle point of pass 1 lies near the west side
+            var labels = FieldPlanner.GetRunLabels(res.Points);
+            Assert.That(labels[0].E, Is.LessThan(10.0));
+        }
+
+        [Test]
         public void TooSmallField_ReturnsError()
         {
             var res = FieldPlanner.Build(Rectangle(10, 10), new FieldPlanSettings { WorkWidth = 6, TurnRadius = 6 }, new V2(0, 0), 0);

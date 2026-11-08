@@ -25,7 +25,7 @@ namespace AgOpenGPS
         public const double AutoPlanHeadlandSpeed = 8.0;
 
         private static bool IsCroatian => CultureInfo.CurrentUICulture.TwoLetterISOLanguageName == "hr";
-        private static string T(string en, string hr) => IsCroatian ? hr : en;
+        internal static string T(string en, string hr) => IsCroatian ? hr : en;
 
         private void AddAutoPlanMenu()
         {
@@ -37,13 +37,17 @@ namespace AgOpenGPS
                 Size = recordedPathStripMenu.Size,
                 Text = T("Auto Field Plan", "Automatski plan parcele")
             };
-            autoPlanStripMenu.Click += (s, e) => AutoPlanField();
+            autoPlanStripMenu.Click += (s, e) => AutoPlanField(null);
 
             int idx = toolStripBtnFieldTools.DropDownItems.IndexOf(recordedPathStripMenu);
             toolStripBtnFieldTools.DropDownItems.Insert(idx + 1, autoPlanStripMenu);
         }
 
-        private void AutoPlanField()
+        /// <summary>
+        /// Builds the whole-field plan. refEdge: part of the boundary the passes follow
+        /// (picked in the AB draw window), or null for the longest edge.
+        /// </summary>
+        public void AutoPlanField(List<V2> refEdge = null)
         {
             string title = T("Auto Field Plan", "Automatski plan parcele");
 
@@ -69,12 +73,14 @@ namespace AgOpenGPS
                 return;
             }
 
-            var settings = new FieldPlanSettings
+            // Options dialog, prefilled with the tool width and turning radius from the app
+            FieldPlanSettings settings;
+            using (var form = new Forms.Field.FormAutoPlanOptions(tool.width, tool.overlap, yt.youTurnRadius, refEdge != null))
             {
-                WorkWidth = tool.width - tool.overlap,
-                TurnRadius = yt.youTurnRadius,
-                WorkHeadland = true
-            };
+                if (form.ShowDialog(this) != DialogResult.OK) return;
+                settings = form.Settings;
+            }
+            settings.ReferenceEdge = refEdge;
 
             var fence = new List<V2>(bnd.bndList[0].fenceLine.Count);
             foreach (vec3 pt in bnd.bndList[0].fenceLine) fence.Add(new V2(pt.easting, pt.northing));

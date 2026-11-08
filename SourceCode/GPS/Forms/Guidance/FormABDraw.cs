@@ -48,6 +48,55 @@ namespace AgOpenGPS
             InitializeComponent();
 
             mf.CalculateMinMax();
+
+            // Auto field plan: uses the 2 picked boundary points as the edge the passes follow
+            var btnAutoPlan = new System.Windows.Forms.Button
+            {
+                Text = FormGPS.T("Auto plan", "Auto plan"),
+                Image = Properties.Resources.RecPath,
+                TextImageRelation = TextImageRelation.ImageAboveText,
+                Font = new System.Drawing.Font("Tahoma", 11F, System.Drawing.FontStyle.Bold),
+                Size = new System.Drawing.Size(110, 96),
+                Location = new System.Drawing.Point(oglSelf.Left + 8, oglSelf.Top + 8),
+                Anchor = AnchorStyles.Top | AnchorStyles.Left,
+                BackColor = System.Drawing.Color.WhiteSmoke,
+                FlatStyle = FlatStyle.Flat
+            };
+            btnAutoPlan.Click += BtnAutoPlan_Click;
+            Controls.Add(btnAutoPlan);
+            btnAutoPlan.BringToFront();
+        }
+
+        private void BtnAutoPlan_Click(object sender, EventArgs e)
+        {
+            List<AutoPlan.V2> edge = null;
+            if (start != 99999 && end != 99999 && start != end)
+            {
+                if (bndSelect != 0)
+                {
+                    AgOpenGPS.Forms.FormDialog.Show(FormGPS.T("Auto plan", "Auto plan"),
+                        FormGPS.T("Pick the 2 points on the outer boundary.", "Odaberite 2 točke na vanjskoj međi."), AgOpenGPS.Forms.DialogSeverity.Warning);
+                    return;
+                }
+
+                // boundary between the 2 points, the shorter way round
+                var fence = mf.bnd.bndList[0].fenceLine;
+                int n = fence.Count;
+                int a = start, b = end;
+                int fwd = ((b - a) % n + n) % n;
+                if (fwd > n / 2) { (a, b) = (b, a); fwd = n - fwd; }
+                edge = new List<AutoPlan.V2>(fwd + 1);
+                for (int k = 0; k <= fwd; k++)
+                {
+                    vec3 p = fence[(a + k) % n];
+                    edge.Add(new AutoPlan.V2(p.easting, p.northing));
+                }
+            }
+
+            // leave this window without changing any tracks, then plan
+            isCancel = true;
+            Close();
+            mf.BeginInvoke((Action)(() => mf.AutoPlanField(edge)));
         }
 
         private void FormABDraw_Load(object sender, EventArgs e)

@@ -60,6 +60,15 @@ namespace AgOpenGPS.AutoPlan
         /// </summary>
         public bool HeadlandOnLongSides = false;
 
+        /// <summary>Add an overlapping pass when a strip is left after the last pass.</summary>
+        public bool AddExtraPass = true;
+
+        /// <summary>
+        /// Part of the boundary the passes follow (e.g. picked with 2 points on the map).
+        /// null = the longest straight or gently curved edge is chosen automatically.
+        /// </summary>
+        public List<V2> ReferenceEdge;
+
         /// <summary>Distance between generated path points, meters.</summary>
         public double PointSpacing = 1.0;
     }
@@ -135,7 +144,9 @@ namespace AgOpenGPS.AutoPlan
             double headWidth = laps * W;
 
             // --- Reference edge: longest smooth part of the boundary ---
-            List<V2> refEdge = FindReferenceEdge(fence, s);
+            List<V2> refEdge = set.ReferenceEdge != null && set.ReferenceEdge.Count >= 2
+                ? ResampleOpen(new List<V2>(set.ReferenceEdge), s)
+                : FindReferenceEdge(fence, s);
             if (refEdge.Count < 5) { res.Error = "No usable edge found"; return; }
             refEdge = SmoothOpen(refEdge, 7, 2);
             res.ReferenceEdge = refEdge;
@@ -206,7 +217,7 @@ namespace AgOpenGPS.AutoPlan
 
             // Headland only at the ends: if a strip is left along the far long side, add one more
             // pass (overlapping the previous one) with the tool edge on the boundary
-            if (endsOnly)
+            if (endsOnly && set.AddExtraPass)
             {
                 Pass last = passes[passes.Count - 1];
                 double dLast = W * (last.Lane + 0.5);

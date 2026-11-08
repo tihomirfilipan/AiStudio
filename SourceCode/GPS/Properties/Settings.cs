@@ -32,6 +32,12 @@ namespace AgOpenGPS.Properties
         public Size setWindow_BingMapSize = new Size(965, 700);
         public int setWindow_BingZoom = 15;
         public bool setMap_isAutoSatellite = true;
+
+        // Auto field plan options (last used)
+        public bool setAutoPlan_workHeadland = false;
+        public bool setAutoPlan_headlandAllAround = false;
+        public int setAutoPlan_headlandLaps = 0;
+        public bool setAutoPlan_extraPass = true;
         public Point setWindow_QuickABLocation = new Point(100, 100);
         public Size setWindow_gridSize = new Size(400, 400);
         public Point setWindow_gridLocation = new Point(20, 20);
