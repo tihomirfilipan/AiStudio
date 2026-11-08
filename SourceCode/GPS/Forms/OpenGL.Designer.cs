@@ -395,6 +395,7 @@ namespace AgOpenGPS
                     if (ABLine.isMakingABLine) ABLine.DrawABLineNew();
 
                     recPath.DrawRecordedLine();
+                    DrawRecPathPassNumbers();
                     recPath.DrawDubins();
 
                     #endregion

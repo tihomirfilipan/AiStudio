@@ -627,9 +627,14 @@ namespace AgOpenGPS
             int ptCount = recList.Count;
             if (ptCount < 1) return;
             GL.LineWidth(1);
-            GL.Color3(0.98f, 0.92f, 0.460f);
             GL.Begin(PrimitiveType.LineStrip);
-            for (int h = 0; h < ptCount; h++) GL.Vertex3(recList[h].easting, recList[h].northing, 0);
+            for (int h = 0; h < ptCount; h++)
+            {
+                // yellow while working (sections on), orange in turns (sections off)
+                if (recList[h].autoBtnState) GL.Color3(0.98f, 0.92f, 0.460f);
+                else GL.Color3(1.0f, 0.44f, 0.26f);
+                GL.Vertex3(recList[h].easting, recList[h].northing, 0);
+            }
             GL.End();
 
             if (!isRecordOn)

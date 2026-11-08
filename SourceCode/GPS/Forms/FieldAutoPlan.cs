@@ -2,6 +2,7 @@ using AgLibrary.Logging;
 using AgOpenGPS.AutoPlan;
 using AgOpenGPS.Core.Translations;
 using AgOpenGPS.Forms;
+using OpenTK.Graphics.OpenGL;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -134,6 +135,49 @@ namespace AgOpenGPS
             recPath.currentPositonIndex = 0;
             btnResumePath.Image = Properties.Resources.pathResumeStart;
             panelDrag.Visible = true;
+        }
+
+        // Pass number labels of the recorded path, rebuilt when the path changes
+        private List<RunLabel> recPathLabels;
+        private int recPathLabelKey;
+
+        /// <summary>
+        /// Draws pass numbers (1, 2, 3... in driving order) in the middle of every working run
+        /// of the recorded path, and U1, U2... on headland laps.
+        /// </summary>
+        private void DrawRecPathPassNumbers()
+        {
+            var list = recPath.recList;
+            int n = list.Count;
+            if (n < 5 || recPath.isRecordOn) return;
+
+            int key = n ^ list[0].easting.GetHashCode() ^ (list[n - 1].northing.GetHashCode() * 31);
+            if (recPathLabels == null || key != recPathLabelKey)
+            {
+                var pts = new List<PlanPoint>(n);
+                foreach (CRecPathPt p in list)
+                    pts.Add(new PlanPoint { E = p.easting, N = p.northing, Heading = p.heading, IsWork = p.autoBtnState });
+                recPathLabels = FieldPlanner.GetRunLabels(pts);
+                recPathLabelKey = key;
+            }
+
+            // Nothing to number on a single plain recording
+            if (recPathLabels.Count < 2) return;
+
+            foreach (RunLabel label in recPathLabels)
+            {
+                GL.PointSize(10.0f);
+                GL.Begin(PrimitiveType.Points);
+                if (label.IsHeadland) GL.Color3(0.40f, 0.73f, 0.42f);
+                else GL.Color3(0.05f, 0.28f, 0.63f);
+                GL.Vertex3(label.E, label.N, 0);
+                GL.End();
+
+                if (label.IsHeadland) GL.Color3(0.65f, 0.95f, 0.65f);
+                else GL.Color3(1.0f, 0.84f, 0.31f);
+                font.DrawText3D(label.E, label.N, label.Text, camHeading);
+            }
+            GL.PointSize(1.0f);
         }
 
         private static string OrderText(string order)

@@ -27,6 +27,14 @@ namespace AgOpenGPS.AutoPlan
         public bool IsWork;
     }
 
+    /// <summary>Label for one working run of a path (pass number or headland lap).</summary>
+    public struct RunLabel
+    {
+        public double E, N, Heading;
+        public string Text;
+        public bool IsHeadland;
+    }
+
     public class FieldPlanSettings
     {
         /// <summary>Effective working width (tool width minus overlap), meters.</summary>
@@ -246,6 +254,50 @@ namespace AgOpenGPS.AutoPlan
                 if (res.Points[i].IsWork && res.Points[i - 1].IsWork) res.WorkLength += seg;
             }
             res.Ok = true;
+        }
+
+        /// <summary>
+        /// Labels for the working runs of a path, in driving order: passes get 1, 2, 3...,
+        /// closed loops (headland laps) get U1, U2... Each label sits at the middle of its run.
+        /// </summary>
+        public static List<RunLabel> GetRunLabels(IList<PlanPoint> pts)
+        {
+            var labels = new List<RunLabel>();
+            int pass = 0, lap = 0;
+            int i = 0;
+            while (i < pts.Count)
+            {
+                if (!pts[i].IsWork) { i++; continue; }
+                int start = i;
+                while (i < pts.Count && pts[i].IsWork) i++;
+                int end = i - 1;
+                if (end - start < 2) continue;
+
+                // Arc length of the run, then the point at half of it
+                double len = 0;
+                for (int k = start + 1; k <= end; k++) len += Math.Sqrt(Sq(pts[k].E - pts[k - 1].E) + Sq(pts[k].N - pts[k - 1].N));
+                if (len < 1.0) continue;
+
+                double half = len * 0.5, acc = 0;
+                int m = start;
+                for (int k = start + 1; k <= end; k++)
+                {
+                    acc += Math.Sqrt(Sq(pts[k].E - pts[k - 1].E) + Sq(pts[k].N - pts[k - 1].N));
+                    if (acc >= half) { m = k; break; }
+                }
+
+                double gap = Math.Sqrt(Sq(pts[end].E - pts[start].E) + Sq(pts[end].N - pts[start].N));
+                bool isLoop = len > 50.0 && gap < len * 0.05;
+                labels.Add(new RunLabel
+                {
+                    E = pts[m].E,
+                    N = pts[m].N,
+                    Heading = pts[m].Heading,
+                    IsHeadland = isLoop,
+                    Text = isLoop ? "U" + (++lap) : (++pass).ToString(System.Globalization.CultureInfo.InvariantCulture)
+                });
+            }
+            return labels;
         }
 
         // =====================================================================

@@ -93,6 +93,25 @@ namespace AgOpenGPS.Tests.AutoPlan
         }
 
         [Test]
+        public void RunLabels_NumberPassesInDrivingOrderAndHeadlandLaps()
+        {
+            var res = FieldPlanner.Build(Rectangle(300, 200), new FieldPlanSettings { WorkWidth = 6, TurnRadius = 6 }, new V2(-10, -10), 0);
+            Assert.That(res.Ok, Is.True, res.Error);
+
+            var labels = FieldPlanner.GetRunLabels(res.Points);
+            int passLabels = 0, lapLabels = 0;
+            foreach (RunLabel l in labels)
+            {
+                if (l.IsHeadland) { lapLabels++; Assert.That(l.Text, Is.EqualTo("U" + lapLabels)); }
+                else { passLabels++; Assert.That(l.Text, Is.EqualTo(passLabels.ToString())); }
+                // label in the middle of the field length (passes run east-west)
+                if (!l.IsHeadland) Assert.That(l.E, Is.InRange(120.0, 180.0));
+            }
+            Assert.That(passLabels, Is.EqualTo(res.Passes));
+            Assert.That(lapLabels, Is.EqualTo(res.HeadlandLaps));
+        }
+
+        [Test]
         public void TooSmallField_ReturnsError()
         {
             var res = FieldPlanner.Build(Rectangle(10, 10), new FieldPlanSettings { WorkWidth = 6, TurnRadius = 6 }, new V2(0, 0), 0);
