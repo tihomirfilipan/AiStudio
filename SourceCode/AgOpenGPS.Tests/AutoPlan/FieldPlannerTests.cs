@@ -95,12 +95,16 @@ namespace AgOpenGPS.Tests.AutoPlan
         [Test]
         public void CurvedAndLShapedFields_PlanSucceeds()
         {
-            foreach (var fence in new[] { CurvedField(), LShape() })
+            // TurnsLeavingField counts turns that bring the tool (half a width) over the boundary.
+            // The concave L shape always has a few transfers passing close to its inner corner.
+            var cases = new[] { Tuple.Create(CurvedField(), 1), Tuple.Create(LShape(), 5) };
+            foreach (var c in cases)
             {
+                var fence = c.Item1;
                 var res = FieldPlanner.Build(fence, new FieldPlanSettings { WorkWidth = 6, TurnRadius = 6 }, fence[0], 0);
                 Assert.That(res.Ok, Is.True, res.Error);
                 Assert.That(res.Passes, Is.GreaterThan(20));
-                Assert.That(res.TurnsLeavingField, Is.LessThanOrEqualTo(3));
+                Assert.That(res.TurnsLeavingField, Is.LessThanOrEqualTo(c.Item2));
             }
         }
 
@@ -215,6 +219,23 @@ namespace AgOpenGPS.Tests.AutoPlan
                 if (d < 1) continue;
                 double k = Math.Abs(FieldPlanner.AngleDiff(p[i + 3].Heading, p[i - 3].Heading)) / d;
                 Assert.That(k, Is.LessThan(1.0 / 8.0), $"kink at point {i}");
+            }
+        }
+
+        [Test]
+        public void Turns_KeepTheToolInsideTheField()
+        {
+            // rectangle, headland only at the ends: every turn and transfer point at least half a
+            // tool width (3 m, small tolerance) from the boundary
+            var fence = Rectangle(300, 200);
+            var res = FieldPlanner.Build(fence, new FieldPlanSettings { WorkWidth = 6, TurnRadius = 6, WorkHeadland = true }, new V2(-10, -10), 0);
+            Assert.That(res.Ok, Is.True, res.Error);
+            Assert.That(res.TurnsLeavingField, Is.EqualTo(0));
+            foreach (PlanPoint p in res.Points)
+            {
+                if (p.IsWork) continue;
+                double d = Math.Min(Math.Min(p.E, 300 - p.E), Math.Min(p.N, 200 - p.N));
+                Assert.That(d, Is.GreaterThan(2.6), $"turn point ({p.E:F1},{p.N:F1})");
             }
         }
 

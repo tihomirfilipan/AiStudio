@@ -141,6 +141,10 @@ namespace AgOpenGPS
             if (nowHz > 70) nowHz = 70;
             if (nowHz < 3) nowHz = 3;
 
+            // Simulator: every sim step is one fix of the sim timer interval, also in fast
+            // simulation (x10/x50), so delays and look-ahead in seconds stay right per distance
+            if (timerSim.Enabled && timerSim.Interval > 0) nowHz = 1000.0 / timerSim.Interval;
+
             //simple comp filter
             gpsHz = 0.98 * gpsHz + 0.02 * nowHz;
 

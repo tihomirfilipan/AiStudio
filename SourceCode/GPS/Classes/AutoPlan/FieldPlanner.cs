@@ -143,7 +143,8 @@ namespace AgOpenGPS.AutoPlan
 
             // --- Headland width ---
             int laps = set.HeadlandLaps;
-            if (laps <= 0) laps = Math.Max(1, (int)Math.Ceiling((R + set.TurnMargin) / W));
+            // the turn reaches R past the pass end and the tool sticks out half a width more
+            if (laps <= 0) laps = Math.Max(1, (int)Math.Ceiling((R + Math.Max(set.TurnMargin, W * 0.5 + 1.0)) / W));
             double headWidth = laps * W;
 
             // --- Reference edge: longest smooth part of the boundary ---
@@ -265,6 +266,8 @@ namespace AgOpenGPS.AutoPlan
 
             // --- Order passes and build turns ---
             var fenceGrid = new PolygonTester(fence);
+            // turns and transfers must keep the tool inside: half a width from the boundary
+            fenceGrid.SetClearance(fence, Math.Max(0.0, W * 0.5 - 0.3));
             List<Step> order = ChooseOrder(passes, R, W, fenceGrid, startPos, startHeading, s, out string orderName);
             res.OrderDescription = orderName;
 
@@ -278,7 +281,7 @@ namespace AgOpenGPS.AutoPlan
                 if (i > 0)
                 {
                     LastPose(path, s, out V2 lastP, out double lastH);
-                    var turn = DubinsPath(lastP, lastH, pts[0], HeadingOf(pts[0], pts[Math.Min(3, pts.Count - 1)]), R, s);
+                    var turn = ClearDubins(lastP, lastH, pts[0], HeadingOf(pts[0], pts[Math.Min(3, pts.Count - 1)]), R, s, fenceGrid);
                     if (turn == null) { res.Error = "Turn could not be built"; return; }
                     if (CountOutside(turn, fenceGrid) > 0) res.TurnsLeavingField++;
                     AppendPoints(path, turn, false, true);
@@ -321,7 +324,7 @@ namespace AgOpenGPS.AutoPlan
                     var loop = new List<V2>(lap.Count + 1);
                     for (int k = 0; k <= lap.Count; k++) loop.Add(lap[(idx + k) % lap.Count]);
 
-                    var conn = DubinsPath(cur, curH, loop[0], HeadingOf(loop[0], loop[Math.Min(3, loop.Count - 1)]), R, s);
+                    var conn = ClearDubins(cur, curH, loop[0], HeadingOf(loop[0], loop[Math.Min(3, loop.Count - 1)]), R, s, fenceGrid);
                     if (conn != null)
                     {
                         if (CountOutside(conn, fenceGrid) > 0) res.TurnsLeavingField++;
@@ -573,7 +576,7 @@ namespace AgOpenGPS.AutoPlan
                     {
                         var pts = new List<V2>(strip);
                         if (r == 1) pts.Reverse();
-                        var conn = DubinsPath(cp, ch, pts[0], HeadingOf(pts[0], pts[Math.Min(3, pts.Count - 1)]), R, s);
+                        var conn = ClearDubins(cp, ch, pts[0], HeadingOf(pts[0], pts[Math.Min(3, pts.Count - 1)]), R, s, fenceGrid);
                         if (conn == null) continue;
                         double cost = OpenLength(conn) + 1000.0 * CountOutside(conn, fenceGrid);
                         if (cost < bestCost) { bestCost = cost; best = pts; bestConn = conn; }
@@ -592,7 +595,7 @@ namespace AgOpenGPS.AutoPlan
             if (pts.Count < 3) return;
 
             // Stop short of the long sides so the turn to the next strip fits inside the field
-            int trim = (int)Math.Ceiling((R + 3.0) / s);
+            int trim = (int)Math.Ceiling((R + W * 0.5 + 3.0) / s);
             if (pts.Count - 2 * trim < 3 || (pts.Count - 2 * trim) * s < 2.0 * W) return;
             pts = pts.GetRange(trim, pts.Count - 2 * trim);
 
@@ -733,7 +736,7 @@ namespace AgOpenGPS.AutoPlan
                     {
                         Step cand = cands[c].Value;
                         EntryPose(cand.Pass, cand.Reverse, out V2 p, out double h);
-                        var turn = DubinsPath(ep, eh, p, h, R, Math.Max(2.0, s));
+                        var turn = ClearDubins(ep, eh, p, h, R, Math.Max(2.0, s), fence);
                         int outside = turn == null ? 1000 : CountOutside(turn, fence);
                         double cost = cands[c].Key + 1000.0 * outside;
                         if (cost < pickCost) { pickCost = cost; pick = cand; }
@@ -749,7 +752,7 @@ namespace AgOpenGPS.AutoPlan
                 {
                     ExitPose(plan[i - 1], out V2 ep, out double eh);
                     EntryPose(plan[i].Pass, plan[i].Reverse, out V2 p, out double h);
-                    var turn = DubinsPath(ep, eh, p, h, R, Math.Max(2.0, s));
+                    var turn = ClearDubins(ep, eh, p, h, R, Math.Max(2.0, s), fence);
                     if (turn == null) { score += 1e6; continue; }
                     score += OpenLength(turn) + 1000.0 * CountOutside(turn, fence);
                 }
@@ -789,6 +792,68 @@ namespace AgOpenGPS.AutoPlan
             new[] { -1, 1, -1 }, // RLR
             new[] { 1, -1, 1 },  // LRL
         };
+
+        /// <summary>All valid Dubins solutions, shortest first.</summary>
+        private static List<DubinsSolution> AllDubins(V2 p0, double h0, V2 p1, double h1, double R)
+        {
+            var list = new List<DubinsSolution>();
+            double th0 = ToTheta(h0), th1 = ToTheta(h1);
+            double dx = p1.E - p0.E, dy = p1.N - p0.N;
+            double d = Math.Sqrt(dx * dx + dy * dy) / R;
+            double theta = d > 1e-9 ? Mod2Pi(Math.Atan2(dy, dx)) : 0;
+            double a = Mod2Pi(th0 - theta), b = Mod2Pi(th1 - theta);
+            double sa = Math.Sin(a), sb = Math.Sin(b), ca = Math.Cos(a), cb = Math.Cos(b), cab = Math.Cos(a - b);
+            for (int type = 0; type < 6; type++)
+            {
+                if (!DubinsWord(type, d, a, b, sa, sb, ca, cb, cab, out double t, out double p, out double q)) continue;
+                Simulate(p0, th0, R, type, t, p, q, out V2 endP, out double endTh);
+                if ((endP - p1).Length > 0.05 * Math.Max(1.0, R) || Math.Abs(AngleDiff(endTh, th1)) > 0.02) continue;
+                list.Add(new DubinsSolution { T = t, P = p, Q = q, Type = type });
+            }
+            list.Sort((x, y) => x.Length.CompareTo(y.Length));
+            return list;
+        }
+
+        /// <summary>
+        /// Shortest Dubins path that keeps the tool inside the field; if none does, the one with the
+        /// fewest points too close to the boundary.
+        /// </summary>
+        private static List<V2> ClearDubins(V2 p0, double h0, V2 p1, double h1, double R, double spacing, PolygonTester fence)
+        {
+            List<V2> best = null;
+            int bestOut = int.MaxValue;
+            foreach (DubinsSolution sol in AllDubins(p0, h0, p1, h1, R))
+            {
+                List<V2> pts = PathFromSolution(p0, h0, p1, sol, R, spacing);
+                int o = CountOutside(pts, fence);
+                if (o == 0) return pts;
+                if (o < bestOut) { bestOut = o; best = pts; }
+            }
+            return best;
+        }
+
+        private static List<V2> PathFromSolution(V2 p0, double h0, V2 p1, DubinsSolution sol, double R, double spacing)
+        {
+            var pts = new List<V2>();
+            double[] seg = { sol.T, sol.P, sol.Q };
+            V2 pos = p0;
+            double th = ToTheta(h0);
+            double stepNorm = spacing / R;
+            for (int k = 0; k < 3; k++)
+            {
+                double remaining = seg[k];
+                int dir = Types[sol.Type][k];
+                while (remaining > 1e-9)
+                {
+                    double step = Math.Min(stepNorm, remaining);
+                    Advance(ref pos, ref th, dir, step, R);
+                    remaining -= step;
+                    pts.Add(pos);
+                }
+            }
+            if (pts.Count == 0 || (pts[pts.Count - 1] - p1).Length > 1e-6) pts.Add(p1);
+            return pts;
+        }
 
         private static bool SolveDubins(V2 p0, double h0, V2 p1, double h1, double R, out DubinsSolution best)
         {
@@ -910,26 +975,7 @@ namespace AgOpenGPS.AutoPlan
         public static List<V2> DubinsPath(V2 p0, double h0, V2 p1, double h1, double R, double spacing)
         {
             if (!SolveDubins(p0, h0, p1, h1, R, out DubinsSolution sol)) return null;
-
-            var pts = new List<V2>();
-            double[] seg = { sol.T, sol.P, sol.Q };
-            V2 pos = p0;
-            double th = ToTheta(h0);
-            double stepNorm = spacing / R;
-            for (int k = 0; k < 3; k++)
-            {
-                double remaining = seg[k];
-                int dir = Types[sol.Type][k];
-                while (remaining > 1e-9)
-                {
-                    double step = Math.Min(stepNorm, remaining);
-                    Advance(ref pos, ref th, dir, step, R);
-                    remaining -= step;
-                    pts.Add(pos);
-                }
-            }
-            if (pts.Count == 0 || (pts[pts.Count - 1] - p1).Length > 1e-6) pts.Add(p1);
-            return pts;
+            return PathFromSolution(p0, h0, p1, sol, R, spacing);
         }
 
         // =====================================================================
@@ -1012,7 +1058,7 @@ namespace AgOpenGPS.AutoPlan
         private static int CountOutside(List<V2> pts, PolygonTester fence)
         {
             int n = 0;
-            foreach (V2 p in pts) if (!fence.Inside(p)) n++;
+            foreach (V2 p in pts) if (!fence.Clear(p)) n++;
             return n;
         }
 
@@ -1419,6 +1465,23 @@ namespace AgOpenGPS.AutoPlan
             {
                 int r = (int)((n - min.N) / rowH);
                 return r < 0 ? 0 : (r >= rows.Length ? rows.Length - 1 : r);
+            }
+
+            private SegmentGrid clearGrid;
+            private double clearance;
+
+            /// <summary>Points must also be this far from the polygon edge to count as clear.</summary>
+            public void SetClearance(List<V2> polygon, double distance)
+            {
+                clearance = distance;
+                clearGrid = distance > 0 ? new SegmentGrid(polygon, true, Math.Max(5.0, distance * 2)) : null;
+            }
+
+            /// <summary>Inside and at least the clearance distance from the edge.</summary>
+            public bool Clear(V2 p)
+            {
+                if (!Inside(p)) return false;
+                return clearGrid == null || clearGrid.MinDistance(p, clearance) >= clearance;
             }
 
             public bool Inside(V2 p)
