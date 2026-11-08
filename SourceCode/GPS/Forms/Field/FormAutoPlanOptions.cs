@@ -17,7 +17,15 @@ namespace AgOpenGPS.Forms.Field
         private readonly CheckBox cboxWorkHeadland, cboxAllAround, cboxExtraPass, cboxAddTrack;
 
         /// <summary>Also add the first pass line as a new curve track.</summary>
-        public bool AddTrack => cboxAddTrack.Checked;
+        public bool AddTrack => cboxAddTrack.Checked || GuidanceMode;
+
+        /// <summary>
+        /// true: make the first pass curve the active guidance line and use the app's automatic
+        /// U-turn; false: save the whole plan as a recorded path.
+        /// </summary>
+        public bool GuidanceMode => rbGuidance.Checked;
+
+        private readonly RadioButton rbPath, rbGuidance;
         private readonly Label lblAutoLaps;
 
         public FieldPlanSettings Settings { get; private set; }
@@ -67,6 +75,18 @@ namespace AgOpenGPS.Forms.Field
             table.Controls.Add(info, 0, 0);
             table.SetColumnSpan(info, 2);
 
+            // How the plan is driven
+            var modePanel = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, AutoSize = true, Margin = new Padding(3, 0, 3, 12) };
+            modePanel.Controls.Add(new Label { Text = T("Drive with:", "Način vožnje:"), AutoSize = true, Font = new Font("Tahoma", 14F, FontStyle.Bold) });
+            rbPath = new RadioButton { Text = T("Recorded path (whole plan with turns)", "Snimljena putanja (cijeli plan s okretima)"), AutoSize = true, Padding = new Padding(4) };
+            rbGuidance = new RadioButton { Text = T("Curve guidance line + automatic U-turn", "Krivulja za navođenje + automatsko okretanje"), AutoSize = true, Padding = new Padding(4) };
+            rbGuidance.Checked = Properties.Settings.Default.setAutoPlan_guidanceMode;
+            rbPath.Checked = !rbGuidance.Checked;
+            modePanel.Controls.Add(rbPath);
+            modePanel.Controls.Add(rbGuidance);
+            table.Controls.Add(modePanel, 0, 11);
+            table.SetColumnSpan(modePanel, 2);
+
             nudWidth = AddNumber(table, 1, T("Work width (m)", "Radna širina (m)"),
                 0.5m, 60m, 2, (decimal)Math.Max(0.5, toolWidth - toolOverlap));
             nudRadius = AddNumber(table, 2, T("Turning radius (m)", "Radijus okretanja (m)"),
@@ -107,7 +127,7 @@ namespace AgOpenGPS.Forms.Field
             btnOk.Click += BtnOk_Click;
             buttons.Controls.Add(btnOk);
             buttons.Controls.Add(btnCancel);
-            table.Controls.Add(buttons, 0, 10);
+            table.Controls.Add(buttons, 0, 12);
             table.SetColumnSpan(buttons, 2);
             CancelButton = btnCancel;
 
@@ -175,6 +195,7 @@ namespace AgOpenGPS.Forms.Field
             set.setAutoPlan_workHeadland = cboxWorkHeadland.Checked;
             set.setAutoPlan_extraPass = cboxExtraPass.Checked;
             set.setAutoPlan_addTrack = cboxAddTrack.Checked;
+            set.setAutoPlan_guidanceMode = rbGuidance.Checked;
             set.Save();
 
             DialogResult = DialogResult.OK;

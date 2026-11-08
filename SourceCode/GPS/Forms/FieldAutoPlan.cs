@@ -75,12 +75,13 @@ namespace AgOpenGPS
 
             // Options dialog, prefilled with the tool width and turning radius from the app
             FieldPlanSettings settings;
-            bool addTrack;
+            bool addTrack, guidanceMode;
             using (var form = new Forms.Field.FormAutoPlanOptions(tool.width, tool.overlap, yt.youTurnRadius, refEdge != null))
             {
                 if (form.ShowDialog(this) != DialogResult.OK) return;
                 settings = form.Settings;
                 addTrack = form.AddTrack;
+                guidanceMode = form.GuidanceMode;
             }
             settings.ReferenceEdge = refEdge;
 
@@ -127,17 +128,37 @@ namespace AgOpenGPS
             if (Math.Abs(tool.offset) > 0.01)
                 msg += "\r\n" + T("Tool offset is not taken into account.", "Bočni pomak priključka se ne uzima u obzir.");
 
-            if (addTrack && plan.TrackLine.Count > 2)
-                msg += "\r\n" + T("A new curve track of the first pass will be added (dashed line).", "Bit će dodan novi trag - krivulja prvog prohoda (isprekidana linija).");
+            if (guidanceMode)
+            {
+                msg += "\r\n\r\n" + T("Save: the curve of the first pass (dashed line) becomes the active guidance line and the automatic U-turn is switched on. Switch on autosteer as usual. The app's own U-turn settings (skip, headland distance) are used; the recorded path is not changed.",
+                    "Spremi: krivulja prvog prohoda (isprekidana linija) postaje aktivna linija za navođenje i uključuje se automatsko okretanje. Autopilot uključite normalno. Koriste se postavke okretanja iz aplikacije (preskakanje, udaljenost od međe); snimljena putanja se ne mijenja.");
+            }
+            else
+            {
+                if (addTrack && plan.TrackLine.Count > 2)
+                    msg += "\r\n" + T("A new curve track of the first pass will be added (dashed line).", "Bit će dodan novi trag - krivulja prvog prohoda (isprekidana linija).");
 
-            msg += "\r\n\r\n" + T("Save: the plan becomes the recorded path. Start it with Play in the recorded path panel or with the autosteer button - steering switches on by itself.",
-                "Spremi: plan postaje snimljena putanja. Pokrenite je gumbom Play u panelu snimljene putanje ili gumbom autopilota - upravljanje se uključuje samo.");
+                msg += "\r\n\r\n" + T("Save: the plan becomes the recorded path. Start it with Play in the recorded path panel or with the autosteer button - steering switches on by itself.",
+                    "Spremi: plan postaje snimljena putanja. Pokrenite je gumbom Play u panelu snimljene putanje ili gumbom autopilota - upravljanje se uključuje samo.");
+            }
 
             // Preview with the plan drawn, save or cancel
             using (var preview = new Forms.Field.FormAutoPlanPreview(plan, fence, msg,
                 new V2(pivotAxlePos.easting, pivotAxlePos.northing), pivotAxlePos.heading, addTrack))
             {
                 if (preview.ShowDialog(this) != DialogResult.OK) return;
+            }
+
+            if (guidanceMode)
+            {
+                int idx = plan.TrackLine.Count > 2 ? AddAutoPlanTrack(plan.TrackLine) : -1;
+                if (idx < 0)
+                {
+                    FormDialog.Show(title, T("No guidance line could be made.", "Linija za navođenje nije napravljena."), DialogSeverity.Error);
+                    return;
+                }
+                ActivateTrackWithUTurn(idx);
+                return;
             }
 
             if (addTrack && plan.TrackLine.Count > 2) AddAutoPlanTrack(plan.TrackLine);
@@ -360,13 +381,13 @@ namespace AgOpenGPS
         }
 
         /// <summary>Adds the first pass line as a new curve track (not activated).</summary>
-        private void AddAutoPlanTrack(List<V2> line)
+        private int AddAutoPlanTrack(List<V2> line)
         {
             var des = new List<vec3>(line.Count);
             foreach (V2 p in line) des.Add(new vec3(p.E, p.N, 0));
             CABCurve.MakePointMinimumSpacing(ref des, 1.6);
             CABCurve.CalculateHeadings(ref des);
-            if (des.Count < 4) return;
+            if (des.Count < 4) return -1;
 
             double x = 0, y = 0;
             foreach (vec3 pt in des) { x += Math.Cos(pt.heading); y += Math.Sin(pt.heading); }
@@ -391,6 +412,27 @@ namespace AgOpenGPS
             trk.gArr.Add(track);
             FileSaveTracks();
             Log.EventWriter("Auto field plan: track added " + track.name);
+            return trk.gArr.Count - 1;
+        }
+
+        /// <summary>Makes a track the active guidance line and switches the automatic U-turn on.</summary>
+        private void ActivateTrackWithUTurn(int idx)
+        {
+            // a running recorded path would fight the guidance line
+            if (recPath.isDrivingRecordedPath) btnPathGoStop.PerformClick();
+            if (panelDrag.Visible) panelDrag.Visible = false;
+
+            curve.isCurveValid = false;
+            ABLine.isABValid = false;
+            curve.desList?.Clear();
+            if (yt.isYouTurnBtnOn) btnAutoYouTurn.PerformClick();
+
+            trk.idx = idx;
+            yt.ResetYouTurn();
+            PanelUpdateRightAndBottom();
+
+            if (!yt.isYouTurnBtnOn) btnAutoYouTurn.PerformClick();
+            Log.EventWriter("Auto field plan: guidance line active " + trk.gArr[idx].name);
         }
 
         private static string OrderText(string order)
