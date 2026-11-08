@@ -11,4 +11,9 @@
     <PackageReference Include="System.Memory" Version="4.6.0" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- UI text dictionaries for UiTranslator, one file per language -->
+    <EmbeddedResource Include="Translations\UiText_*.txt" LogicalName="AgLibrary.Translations.%(Filename)%(Extension)" />
+  </ItemGroup>
+
 </Project>

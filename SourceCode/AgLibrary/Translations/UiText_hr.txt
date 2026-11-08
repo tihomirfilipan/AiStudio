@@ -1,0 +1,967 @@
+# Croatian translations for UI text that is hard coded in forms (not in gStr).
+# Format: English<TAB>Croatian. Escapes: \r \n \t \\ . Lines without a TAB are ignored (comments).
+# Matching ignores leading/trailing whitespace of the English text.
+Auto Sections	Automatske sekcije
+Manual Sections	Ručne sekcije
+Reset \r\nto Default	Vrati \r\nzadano
+Start Wizard	Pokreni čarobnjak
+------ Dead Zone -----	------ Mrtva zona -----
+???? \r\n Not Connected	???? \r\n Nije spojeno
+Delete this field and create a new one as Accuracy will be poor	Obrišite ovu parcelu i napravite novu jer će točnost biti loša
+No Boundaries	Nema međa
+Reconnect Request	Zahtjev za ponovno spajanje
+Use Selected	Koristi odabrano
+!! WARNING !!	!! UPOZORENJE !!
+# Sats	# Sat.
+% Coverage	% pokrivenosti
+(De)Select Tracks to use	Odaberite tragove za korištenje
+* Begin * Calibration	* Početak * kalibracije
+* SKIP *  Counts Per Degree and Ackermann Setting?	* PRESKOČI * postavke Counts Per Degree i Ackermann?
+** Dual Position Antenna on Right	** Dvostruka antena - pozicijska desno
+0 = Off	0 = isključeno
+0 to Disable	0 za isključivanje
+1 sec	1 s
+1: Set distance, 2: Tap Build, 3: Create Clip Lines	1: Postavite udaljenost, 2: Dodirnite Izgradi, 3: Napravite linije rezanja
+2 Points - Align Grid	2 točke - poravnaj mrežu
+A B Swapped	A i B zamijenjeni
+A boundary already exists. Do you want to remove it?	Međa već postoji. Želite li je ukloniti?
+A to Z and 0 to 9	A do Z i 0 do 9
+A/D Convertor	A/D pretvarač
+A/D Convertor Connection?	Spoj A/D pretvarača?
+A2D Convertor	A/D pretvarač
+AB Line	AB linija
+AB Line Tramline	Tragovi po AB liniji
+AB Smooth	AB izglađivanje
+AOG Menu	AOG izbornik
+API Key:	API ključ:
+Above Maximum Safe Steering Speed: 	Iznad najveće sigurne brzine upravljanja:
+Ackermann Value:	Ackermann vrijednost:
+Acquire = Factor * Hold	Hvatanje = faktor * držanje
+Acquire Factor	Faktor hvatanja
+Acquire:	Hvatanje:
+Act:	Stv.:
+Activate	Aktiviraj
+Actual	Stvarno
+Add Name	Dodaj naziv
+Add Points	Dodaj točke
+Advanced	Napredno
+Advanced Settings	Napredne postavke
+AgIO - No Profile Open \r\n\r\n Create or Open a Profile	AgIO - nijedan profil nije otvoren \r\n\r\n Napravite ili otvorite profil
+AgIO Default Profile Used	AgIO koristi zadani profil
+AgIO Message	AgIO poruka
+AgIO profile could not be fully loaded (file may be corrupt).\r\n	AgIO profil nije moguće potpuno učitati (datoteka je možda oštećena).\r\n
+AgIO profile was recovered from .last backup because the main file was unreadable.	AgIO profil vraćen je iz .last sigurnosne kopije jer glavnu datoteku nije moguće pročitati.
+AgIO will Restart to Disable UDP Networking Features	AgIO će se ponovno pokrenuti da isključi UDP mrežne značajke
+AgIO will Restart to Enable UDP Networking Features	AgIO će se ponovno pokrenuti da uključi UDP mrežne značajke
+AgIO: Manage Profiles	AgIO: upravljanje profilima
+AgOpenGPS Message	AgOpenGPS poruka
+AgOpenGPS is Already Running	AgOpenGPS je već pokrenut
+AgShare Download	AgShare preuzimanje
+AgShare Settings	AgShare postavke
+AgShare Upload	AgShare prijenos
+AgShare upload failed	AgShare prijenos nije uspio
+Age	Starost
+Agree	Slažem se
+Air NTRIP ON	NTRIP preko interneta UKLJ.
+Alarm Stops Autosteer	Alarm zaustavlja autopilot
+All	Sve
+All Settings	Sve postavke
+All green? Press Build or manually correct!	Sve zeleno? Pritisnite Izgradi ili ručno ispravite!
+Alphanumeric Only	Samo slova i brojke
+Altitude	Nadmorska visina
+An error occurred during upload to AgShare.	Došlo je do greške pri prijenosu na AgShare.
+An error occurred while starting upload to AgShare.	Došlo je do greške pri pokretanju prijenosa na AgShare.
+Angle:	Kut:
+Ant. Offset:	Pomak ant.:
+Ant. Pivot:	Ant. - os:
+Ant.Offset:	Pomak ant.:
+Ant.Pivot:	Ant. - os:
+Antenna	Antena
+Antenna Height	Visina antene
+Antenna Offset	Bočni pomak antene
+Antenna Type	Tip antene
+Antenna\r\nHeight	Visina\r\nantene
+Antenna\r\nPosition	Položaj\r\nantene
+Applied:	Primijenjeno:
+Are you Sure	Jeste li sigurni
+Are you sure ethernet is connected?\r\n	Jeste li sigurni da je ethernet spojen?\r\n
+Area	Površina
+Area:	Površina:
+Attach:	Priključak:
+Attachment Style	Tip priključka
+Authourizing	Autorizacija
+Auto Dual <-> Fix	Auto Dual <-> Fix
+Auto Fill New Subnet	Automatski popuni novu podmrežu
+Auto Find	Automatsko traženje
+Auto Off AgIO?	Automatski isključi AgIO?
+Auto Section	Automatske sekcije
+Auto Start AgIO?	Automatski pokreni AgIO?
+Auto Start GPS-Out	Automatski pokreni GPS-Out
+Auto Steer	Autopilot
+Auto Steer Configuration	Postavke autopilota
+Auto Steer Toggle	Uključi/isključi autopilot
+Auto Steer Wizard	Čarobnjak autopilota
+Auto-Upload	Automatski prijenos
+AutoSteer Disabled	Autopilot onemogućen
+AutoSteer Graph	Graf autopilota
+Auto\r\nRun	Auto\r\npokretanje
+Automatic Canceling Feature	Automatsko poništavanje
+Autosteer Turned Off	Autopilot isključen
+Available Fields	Dostupne parcele
+Available Tracks	Dostupni tragovi
+Background	Pozadina
+Below Minimum Safe Steering Speed: 	Ispod najmanje sigurne brzine upravljanja:
+Bing Maps for Background	Bing karta za pozadinu
+BingMap Error	Greška Bing karte
+Bottom Menu	Donji izbornik
+Boundary	Međa
+Boundary Create Mode	Način izrade međe
+Boundary Exists	Međa postoji
+Boundary Tool	Alat za međe
+Bounds	Granice
+Brightness	Svjetlina
+Build	Izgradi
+Build Boundary From Tracks	Izgradi među iz tragova
+Build failed	Izgradnja nije uspjela
+Button	Gumb
+Button - Push On. Push Off\r\nSwitch - Pushed On, Release Off	Gumb - pritisak uklj., pritisak isklj.\r\nPrekidač - pritisnut uklj., otpušten isklj.
+Button Arrange	Raspored gumba
+Button Error	Greška gumba
+CPD and Ackermann set to defaults	CPD i Ackermann vraćeni na zadano
+Camera Behaviour	Ponašanje kamere
+Can't Find AgDiag	AgDiag nije pronađen
+Can't Find AgIO	AgIO nije pronađen
+Can't Find AgOpenGPS	AgOpenGPS nije pronađen
+Can't Find GPS_Out	GPS_Out nije pronađen
+Can't Find Simulator	Simulator nije pronađen
+Can't Find: 	Nije pronađeno:
+Can't calculate center of field. Missing Outer Boundary or AB line.	Središte parcele nije moguće izračunati. Nedostaje vanjska međa ili AB linija.
+Can't delete the Registery SubKeyTree	Nije moguće obrisati ključ u registru
+Can't delete the Registry SubKeyTree	Nije moguće obrisati ključ u registru
+Cancel	Odustani
+Cannot resolve caster URL: 	Nije moguće pronaći adresu castera:
+Cannot use with zones	Ne može se koristiti sa zonama
+Captured	Snimljeno
+Caster Port:	Port castera:
+Caster closed the connection without sending any data (check mountpoint/credentials)	Caster je zatvorio vezu bez slanja podataka (provjerite mountpoint i prijavne podatke)
+Center	Sredina
+Channels	Kanali
+Charts	Grafovi
+Check for Updates	Provjeri ažuriranja
+Choose	Odaberi
+Choose Existing or Create New Profile	Odaberite postojeći ili napravite novi profil
+Choose Vehicle Type	Odaberite tip vozila
+Click 2 points on the Boundary to Begin	Za početak kliknite 2 točke na međi
+Clip Line	Linija rezanja
+Close	Zatvori
+Close Field	Zatvori parcelu
+Close Field first to run Updater	Prije pokretanja ažuriranja zatvorite parcelu
+Close Nudge Window	Zatvori prozor pomicanja
+Closest Point	Najbliža točka
+Collecting...	Prikupljanje...
+Color Picker	Odabir boje
+Color Set	Skup boja
+Colors	Boje
+Com Ports:	COM portovi:
+Command	Naredba
+Confidence: 0%	Pouzdanost: 0%
+Configuration	Konfiguracija
+Confirm Upload	Potvrdi prijenos
+Connect GPS	Spoji GPS
+Connected	Spojeno
+Connection Problem	Problem s vezom
+Connection already terminated?	Veza je već prekinuta?
+Connection already terminated??	Veza je već prekinuta??
+Consistent Steering Angle!!	Stalan kut upravljanja!!
+Convert	Pretvori
+Convert Old Profile Files to New Format	Pretvaranje starih profila u novi format
+Convert Old Profiles	Pretvori stare profile
+Convert Old profiles	Pretvori stare profile
+Convert Tool	Pretvori priključak
+Convert Vehicle	Pretvori vozilo
+Converting tracks...	Pretvaranje tragova...
+Copied to Clipboard, Paste (CTRL-V) in Telegram	Kopirano u međuspremnik, zalijepite (CTRL-V) u Telegram
+Copy from:	Kopiraj iz:
+Corrected Easting	Ispravljeni easting
+Correction Distance	Udaljenost korekcije
+Count Sensor	Senzor brojanja
+Counts P Deg	Impulsa po stupnju
+Counts per Degree	Impulsa po stupnju
+Counts:	Impulsi:
+Create	Napravi
+Create A Path First	Prvo napravite putanju
+Create Boundary From Mapping	Napravi među iz obrađene površine
+Create Error	Greška pri izradi
+Create New Field 	Nova parcela
+Create New Field From ISO-XML	Nova parcela iz ISO-XML
+Create New Profile	Novi profil
+Create New Record	Novi zapis
+Create or Choose a Profile	Napravite ili odaberite profil
+Critical Registry Error	Kritična greška registra
+Critical Save Error	Kritična greška spremanja
+Crossings Error	Greška presjecišta
+Crossings not Found	Presjecišta nisu pronađena
+Curent Profile	Trenutni profil
+Current Field	Trenutna parcela
+Current GPS Fix:	Trenutna GPS pozicija:
+Current Heading:	Trenutni smjer:
+Current Profile	Trenutni profil
+Current Sensor	Senzor struje
+Current Subnet	Trenutna podmreža
+Current Tool	Trenutni priključak
+Current Turn Sensor	Senzor okretanja po struji
+Current Vehicle	Trenutno vozilo
+Current session is using defaults for missing/invalid values.	Trenutna sesija koristi zadane vrijednosti za nedostajuće/neispravne postavke.
+Current: -	Trenutno: -
+Curve	Krivulja
+Curve is Reversed	Krivulja je obrnuta
+Cycle Lines	Promijeni liniju
+Danfoss Valve	Danfoss ventil
+Day	Dan
+Debug Values	Vrijednosti za otklanjanje grešaka
+Default	Zadano
+Default profiles created	Zadani profili napravljeni
+Default: 2101	Zadano: 2101
+Default: 70%	Zadano: 70%
+Defaults Set	Zadane vrijednosti postavljene
+Delete	Obriši
+Delete Applied	Obriši primijenjeno
+Delete Field	Obriši parcelu
+Delete Last Field Boundary Made?	Obrisati zadnju napravljenu među?
+Delete Record	Obriši zapis
+Description	Opis
+Deselect All	Poništi odabir
+Device Manager	Upravitelj uređaja
+Diameter:	Promjer:
+Different Cloud ID	Drugačiji ID u oblaku
+Different Port Then GPS ?	Drugi port od GPS-a?
+Differential	Diferencijalni
+Direct	Izravno
+Direction Markers	Oznake smjera
+Direction Reset	Smjer poništen
+Directories	Mape
+Disable the Radio NTRIP	Isključite radio NTRIP
+Disagree	Ne slažem se
+Discourse Forum	Discourse forum
+Display?	Prikaz?
+Dist:	Udalj.:
+Distance	Udaljenost
+Distance (km)	Udaljenost (km)
+Distance Error	Greška udaljenosti
+Distance Set to 0, Nothing to Move	Udaljenost je 0, nema se što pomaknuti
+Distance To Flag:	Udaljenost do zastavice:
+Distance:	Udaljenost:
+Do you have use a Danfoss Valve?	Koristite li Danfoss ventil?
+Done?	Gotovo?
+Download Fields From AgShare	Preuzmi parcele s AgSharea
+Downloading...Please Wait	Preuzimanje... pričekajte
+Draw AB - Click 2 points on the Boundary to Begin	Crtanje AB - za početak kliknite 2 točke na međi
+Drive Forward > 1.5 kmh	Vozite naprijed > 1,5 km/h
+Drive In	Ulaz
+Drive Steady	Vozite ravnomjerno
+Drive forward and enable Auto Steer	Vozite naprijed i uključite autopilot
+Drive slowly straight forward, Allow system to steer	Vozite polako ravno naprijed, pustite sustav da upravlja
+Drive straight forward and Touch Zero	Vozite ravno naprijed i dodirnite Nula
+Driver Control Relay	Relej upravljanja vozačem
+Dual Antenna Settings	Postavke dvostruke antene
+Duplicate Field Name	Naziv parcele već postoji
+East (+)	Istok (+)
+Easy Drive	Brza vožnja
+Easy Drive Active	Brza vožnja aktivna
+Edit Color	Uredi boju
+Edit Field Name	Uredi naziv parcele
+Edit Name	Uredi naziv
+Elevation	Visina
+Enable	Omogući
+Enable Steer Switch	Omogući prekidač upravljanja
+End	Kraj
+Enter AB or A+	Unesite AB ili A+
+Enter Broadcaster URL or IP:	Unesite URL ili IP castera:
+Enter Coordinates For Simulator	Unesite koordinate za simulator
+Enter Details Above and Tick Test Connection	Unesite podatke iznad i označite Provjeri vezu
+Enter Field Name	Unesite naziv parcele
+Enter New Subnet Address	Unesite novu adresu podmreže
+Enter Record Name	Unesite naziv zapisa
+Enter Sim Coords	Koordinate simulatora
+Enter Something	Unesite nešto
+Enter Value	Unesite vrijednost
+Enter a File Name To Save...	Unesite naziv datoteke za spremanje...
+Enter a Value	Unesite vrijednost
+Environment	Okruženje
+Environment currently in use	Okruženje se trenutno koristi
+Environment settings loaded!	Postavke okruženja učitane!
+Environment settings reset!	Postavke okruženja vraćene na zadano!
+Environment will use defaults if not selected.	Ako nije odabrano, okruženje koristi zadane vrijednosti.
+Environment: -	Okruženje: -
+Environments	Okruženja
+Err:	Greška:
+Error	Greška
+Error Finding Lat Lon	Greška pri traženju širine/dužine
+Error check format	Greška, provjerite format
+Error connecting to Serial Pass	Greška pri spajanju na serijski prolaz
+Error connecting to radio	Greška pri spajanju na radio
+Error importing tracks: 	Greška pri uvozu tragova:
+Error loading fields	Greška pri učitavanju parcela
+Error loading profile 	Greška pri učitavanju profila
+Error loading tracks	Greška pri učitavanju tragova
+Error opening port	Greška pri otvaranju porta
+Error, Ackermann set to 100	Greška, Ackermann postavljen na 100
+Error, CPD set to 100	Greška, CPD postavljen na 100
+Error:	Greška:
+Ethernet Configuration	Postavke etherneta
+Event Log Viewer	Preglednik dnevnika događaja
+Exceeded Range	Izvan raspona
+Exception	Iznimka
+Excessive Steer Angle - Cannot Zero	Prevelik kut upravljanja - nije moguće postaviti nulu
+Existing	Postojeće
+Exit	Izlaz
+Exit To Windows In:	Izlaz u Windows za:
+Export Flags	Izvezi zastavice
+Extend A	Produži A
+Extend B	Produži B
+F11 -  Full Screen\r\n\r\nNumPad1 - Manual Section\r\nNumPad0 - Auto Section	F11 - cijeli zaslon\r\n\r\nNumPad1 - ručne sekcije\r\nNumPad0 - automatske sekcije
+Failed to download field preview. Check logs for details.	Pregled parcele nije preuzet. Pogledajte dnevnik za detalje.
+Failed to download field.	Parcela nije preuzeta.
+Failed to load field list.	Popis parcela nije učitan.
+Failed to load field list.\n	Popis parcela nije učitan.\n
+Failed to load field list: 	Popis parcela nije učitan:
+Failed to load tracks: 	Tragovi nisu učitani:
+Fast	Brzo
+Feet	Stope
+Field	Parcela
+Field Menu	Izbornik parcele
+Field Name	Naziv parcele
+Field Origin is More Then 20 km from your current GPS Position	Ishodište parcele je više od 20 km od trenutne GPS pozicije
+Field Save As	Spremi parcelu kao
+Field Start is	Početak parcele je
+Field Texture	Tekstura parcele
+Field saved but could not be opened (missing Field.txt).	Parcela je spremljena, ali je nije moguće otvoriti (nedostaje Field.txt).
+Fieldname	Naziv parcele
+Fields directory not found	Mapa s parcelama nije pronađena
+File Name	Naziv datoteke
+File Saved	Datoteka spremljena
+Filename	Naziv datoteke
+Filter	Filtar
+Finding Intersections...	Traženje presjecišta...
+Finish Making Boundary	Završite izradu međe
+Finish Setting All, or Reset to Default	Dovršite sve postavke ili vratite zadano
+Finished !	Gotovo!
+Fix Jump Distance (cm) 	Udaljenost skoka pozicije (cm)
+Fix To Fix Distance	Udaljenost između pozicija
+Flag By Lat Lon	Zastavica po širini/dužini
+Flags	Zastavice
+Flags successfully added!	Zastavice uspješno dodane!
+Flags successfully saved!	Zastavice uspješno spremljene!
+For Now	Za sada
+Format	Format
+Forward is Set	Smjer naprijed postavljen
+Found:	Pronađeno:
+Frame	Okvir
+Free Drive	Slobodna vožnja
+Frequency	Frekvencija
+Frequency is not filled in	Frekvencija nije upisana
+From KML	Iz KML-a
+GGA Interval (secs)	GGA interval (s)
+GPS Baud	GPS brzina (baud)
+GPS Data	GPS podaci
+GPS Port	GPS port
+GPS Port 2	GPS port 2
+Gain	Pojačanje
+Gain Setting	Postavka pojačanja
+Gap	Razmak
+Get All	Dohvati sve
+Get Selected	Dohvati odabrano
+Get Source Table	Dohvati popis izvora
+Get Source Table Error	Greška pri dohvatu popisa izvora
+Go to Settings -> COM Ports to Fix	Ispravite u Postavke -> COM portovi
+Go to UDP Settings to fix.\r\n\r\n	Ispravite u UDP postavkama.\r\n\r\n
+Grid	Mreža
+Guidance Bar	Traka navođenja
+Guidance Steer Angle Limit	Ograničenje kuta upravljanja pri navođenju
+Guide ->	Upute ->
+Guidelines	Pomoćne linije
+Hardware Messages	Poruke hardvera
+Heading	Smjer
+Heading (Degree)	Smjer (stupnjevi)
+Heading Chart	Graf smjera
+Heading Offset (Degree)	Pomak smjera (stupnjevi)
+Heading:	Smjer:
+Headland	Uvratine
+Headland (Build)	Uvratine (izgradnja)
+Headland Dist.	Udalj. uvratina
+Help	Pomoć
+Hide Contour	Sakrij konturu
+Hide Contour Paths	Sakrij putanje konture
+High Field Start Distance Warning	Upozorenje: velika udaljenost od početka parcele
+Highly Recommended	Jako preporučeno
+Hitch Length	Duljina poteznice
+Hitch:	Poteznica:
+Hold:	Držanje:
+Hostname	Naziv računala
+Hostname:	Naziv računala:
+HotKeys	Prečaci
+Hotkey Triggered	Prečac aktiviran
+HoyKey Incomplete	Prečac nije potpun
+Hyd Lift	Hidr. dizanje
+Hydraulic Lift Config	Postavke hidrauličnog dizanja
+Hydraulic Lift Look Ahead (secs)	Predviđanje hidrauličnog dizanja (s)
+IMU X or Y Axis	IMU os X ili Y
+IP Address	IP adresa
+IP Address : Port	IP adresa : port
+IP Located	IP pronađen
+If not Select Invert Roll	Ako nije, odaberite Obrni nagib
+Import	Uvezi
+Import Flags	Uvezi zastavice
+Import Tracks	Uvezi tragove
+Import Tracks From Another Field	Uvezi tragove iz druge parcele
+In	Unutra
+Inch	Inč
+Inches	Inči
+Inner	Unutarnja
+Invalid Frequency	Neispravna frekvencija
+Invalid IP Address	Neispravna IP adresa
+Invalid IP:Port	Neispravan IP:port
+Invalid Id	Neispravan ID
+Invalid Line	Neispravna linija
+Invalid Name	Neispravan naziv
+Invalid selection.	Neispravan odabir.
+Invert Direction	Obrni smjer
+Invert Hydraulic Enable Relay?	Obrnuti relej hidraulike?
+Invert Motor Dir	Obrni smjer motora
+Invert Relays	Obrni releje
+Invert Roll	Obrni nagib
+Invert WAS	Obrni WAS
+Invert WAS Direction	Obrni smjer WAS-a
+Is there maybe only 1 line?	Postoji li možda samo 1 linija?
+It will slowly increase steer angle to reduce cross track error	Polako će povećavati kut upravljanja da smanji bočno odstupanje
+Keep offset even after field is closed?	Zadržati pomak i nakon zatvaranja parcele?
+Keyboard	Tipkovnica
+Kiosk Mode	Kiosk način
+Language	Jezik
+Last Stopped Position	Zadnja pozicija zaustavljanja
+Lat	Šir.
+Lat/Lon	Šir./duž.
+Lat/Lon +	Šir./duž. +
+Lat:	Šir.:
+Lateral	Bočno
+Latitude	Geografska širina
+Lattitude (+- 90)	Geografska širina (+- 90)
+Left	Lijevo
+Less	Manje
+Lightbar	Svjetlosna traka
+Line Error	Greška linije
+Line Shift:	Pomak linije:
+Line Smooth	Izglađivanje linije
+Line Width	Debljina linije
+Lines	Linije
+Linux Only !	Samo Linux!
+Linux Users	Korisnici Linuxa
+Listening	Slušanje
+Load	Učitaj
+Load Defaults	Učitaj zadano
+Load Environment	Učitaj okruženje
+Load Environment:	Učitaj okruženje:
+Load Error: 	Greška učitavanja:
+Local Only	Samo lokalno
+Log Viewer	Preglednik dnevnika
+Lon	Duž.
+Lon:	Duž.:
+Longitude	Geografska dužina
+Longitude ( +- 180)	Geografska dužina ( +- 180)
+Look Ahead	Predviđanje
+Look Ahead (m)	Predviđanje (m)
+Look Ahead Min	Najmanje predviđanje
+Look Ahead Speed Gain	Pojačanje predviđanja po brzini
+Look Ahead Time Settings	Postavke vremena predviđanja
+Lookahead:	Predviđanje:
+Loopback Server	Loopback poslužitelj
+Low	Nisko
+Lower Time (secs)	Vrijeme spuštanja (s)
+Machine	Stroj
+Machine Module	Modul stroja
+Machine:	Stroj:
+Make sure all ends cross and only once	Provjerite da se svi krajevi sijeku, i to samo jednom
+Manual Fix:	Ručna pozicija:
+Manual Section	Ručne sekcije
+Manual Turns	Ručno okretanje
+Map Too Large	Karta je prevelika
+Mapping	Bilježenje površine
+Max 164 Feet	Najviše 164 stope
+Max 50 Meters	Najviše 50 metara
+Max Speed	Najveća brzina
+Max Steer Angle	Najveći kut upravljanja
+Maximum Limit	Gornja granica
+Message	Poruka
+Message 2	Poruka 2
+Metric	Metrički
+Min Speed	Najmanja brzina
+Minimum GPS Step	Najmanji GPS korak
+Minimum Movement Setting	Postavka najmanjeg pomaka
+Minimum to Move	Najmanje za pomak
+Missed	Promašeno
+Mode	Način
+Module 3	Modul 3
+Module Scan	Traženje modula
+Module Sim	Simulator modula
+More	Više
+Motor Driver	Upravljač motora
+Motor Driver Board	Pločica upravljača motora
+Mount Point	Mount point
+Mount:	Mount:
+Move Line Left	Pomakni liniju lijevo
+Move Line Right	Pomakni liniju desno
+Moving	U pokretu
+Multi Color	Više boja
+Multi-Section Colors	Boje po sekcijama
+Must be Greater than 5 degrees	Mora biti veće od 5 stupnjeva
+NTRIP Client Not Set Up	NTRIP klijent nije postavljen
+NTRIP Client Settings	Postavke NTRIP klijenta
+NTRIP Connection Failed	NTRIP veza nije uspjela
+NTRIP Connection Rejected	NTRIP veza odbijena
+NTRIP Not Connected	NTRIP nije spojen
+NTRIP On	NTRIP uključen
+NTRIP also enabled	NTRIP je također uključen
+NTRIP is also enabled, diabling it	NTRIP je također uključen, isključuje se
+Name	Naziv
+Name is not filled in	Naziv nije upisan
+Name:	Naziv:
+Network	Mreža
+Network Address of Modules -> 	Mrežna adresa modula ->
+Network Connection Error	Greška mrežne veze
+Network Prop	Svojstva mreže
+New Bnd	Nova međa
+New Field	Nova parcela
+New Flag	Nova zastavica
+New Key	Nova tipka
+New:	Novo:
+Next	Dalje
+Next Guidance Line Search Time	Vrijeme traženja sljedeće linije
+Night	Noć
+No Adapter For This Subnet	Nema mrežnog adaptera za ovu podmrežu
+No Arduino Port Active	Nijedan Arduino port nije aktivan
+No File Found	Datoteka nije pronađena
+No Image	Nema slike
+No Recorded Paths	Nema snimljenih putanja
+No Selection	Ništa nije odabrano
+No Source Data	Nema izvornih podataka
+No Turn Lines Made	Linije okretanja nisu napravljene
+No channel	Nema kanala
+No field is currently open.	Nijedna parcela nije otvorena.
+No field selected.	Nijedna parcela nije odabrana.
+No profiles found.\n\n	Nisu pronađeni profili.\n\n
+No tracks found in this field	U ovoj parceli nema tragova
+No tracks found.	Tragovi nisu pronađeni.
+No valid boundary could be generated	Nije moguće napraviti ispravnu među
+No valid boundary to save	Nema ispravne međe za spremanje
+None	Ništa
+North (+)	Sjever (+)
+Not Connected	Nije spojeno
+Not Connecting To Caster	Nema veze s casterom
+Not Enough Buttons Added	Nije dodano dovoljno gumba
+Not enough points to make a boundary	Nema dovoljno točaka za među
+Nudge Controls	Kontrole pomicanja
+Nudge Distance	Udaljenost pomicanja
+Nudge Window Open	Prozor pomicanja otvoren
+OFF	ISKLJ.
+Off	Isklj.
+Off (secs)	Isklj. (s)
+Off at %	Isklj. pri %
+OffLine	Izvan mreže
+Offset	Pomak
+Offset Fix	Pomak pozicije
+Offset too large - cannot apply	Pomak je prevelik - nije moguće primijeniti
+Offset:	Pomak:
+Old format profiles detected!\n\n	Pronađeni su profili starog formata!\n\n
+ON	UKLJ.
+On	Uklj.
+On (secs)	Uklj. (s)
+On Delay (sec)	Kašnjenje uključivanja (s)
+On/Off	Uklj./isklj.
+Only	Samo
+Only TCP:Port	Samo TCP:port
+Only for Sections	Samo za sekcije
+Opacity	Neprozirnost
+Open	Otvori
+Open:	Otvori:
+Optional file problem	Problem s neobaveznom datotekom
+Or	Ili
+Or +5	Ili +5
+Or Manually Set Guidance Steer Angle Limit	Ili ručno postavite ograničenje kuta upravljanja
+Or you may have a field open and drove far away	Ili imate otvorenu parcelu i odvezli ste se daleko
+Out	Van
+Outer	Vanjska
+Overide	Nadjačaj
+Overlap	Preklapanje
+Overlap / Gap	Preklapanje / razmak
+Overlap:	Preklapanje:
+Overwrite	Prepiši
+Overwrite This Profile:	Prepiši ovaj profil:
+Overwrite: 	Prepiši:
+P Gain Change	Promjena P pojačanja
+PGN Guide	PGN upute
+PWM Maximum	Najveći PWM
+PWM Minimum Movement	Najmanji PWM za pomak
+Panic Stop Speed	Brzina hitnog zaustavljanja
+Park on level surface and touch "Zero Roll"	Parkirajte na ravnu podlogu i dodirnite "Nula nagiba"
+Passes	Prolazi
+Password	Lozinka
+Paste from Clipboard	Zalijepi iz međuspremnika
+Path Off	Putanja isključena
+Paths Enabled	Putanje uključene
+Pick New Color and Select Square Below to Save Preset	Odaberite novu boju i kvadrat ispod za spremanje
+Pitch	Uzdužni nagib
+Pivot	Os
+Pivot Distance	Udaljenost od osi
+Plant Pop	Gustoća sjetve
+Please Wait	Pričekajte
+Please select a field before saving.	Prije spremanja odaberite parcelu.
+Please select a field first.	Prvo odaberite parcelu.
+Please select at least one field to upload	Odaberite barem jednu parcelu za prijenos
+Please select at least one track to import.	Odaberite barem jedan trag za uvoz.
+Please select or create new profiles.\n\n	Odaberite ili napravite nove profile.\n\n
+Please wait for upload to complete	Pričekajte da se prijenos završi
+Point A	Točka A
+Points	Točke
+Points to Process: 	Točaka za obradu:
+Points:	Točke:
+Pole	Stup
+Polygons	Poligoni
+PopUp AgIO on Warn	Prikaži AgIO kod upozorenja
+Position	Položaj
+Power Loss Shutdown	Gašenje pri gubitku napajanja
+Press Button to Edit Shortcut	Pritisnite gumb za uređivanje prečaca
+Press New Shortcut Key	Pritisnite novu tipku prečaca
+Pressure Sensor	Senzor tlaka
+Pressure Turn Sensor	Senzor okretanja po tlaku
+Preview	Pregled
+Previous	Prethodno
+Previous Field	Prethodna parcela
+Profile Load Warning	Upozorenje pri učitavanju profila
+Profile Recovery	Oporavak profila
+Profile files not found!\n\n	Datoteke profila nisu pronađene!\n\n
+Profiles	Profili
+Profiles Created	Profili napravljeni
+Profiles not available in Easy Drive mode	Profili nisu dostupni u načinu brze vožnje
+Progress:	Napredak:
+Prompt	Upit
+Proportional Gain	Proporcionalno pojačanje
+Proportional Gain set to 1	Proporcionalno pojačanje postavljeno na 1
+Put vehicle leaning strongly to the right. Roll to the right must be POSITIVE.	Nagnite vozilo jako udesno. Nagib udesno mora biti POZITIVAN.
+Quality	Kvaliteta
+RTCM Baud	RTCM brzina (baud)
+RTK Fix Alarm	Alarm za RTK fix
+Radio (Not XBee)	Radio (nije XBee)
+Radio Channel	Radio kanal
+Radio NTRIP ON	Radio NTRIP UKLJ.
+Radio Settings	Postavke radija
+Radio also enabled	Radio je također uključen
+Radio is set to on. But no channel is selected	Radio je uključen, ali nije odabran kanal
+Raise Time (secs)	Vrijeme dizanja (s)
+Rate:	Brzina:
+Reading...	Čitanje...
+Reading....	Čitanje....
+Ready	Spremno
+Ready to Apply	Spremno za primjenu
+Rec Path	Snimljena putanja
+Record Name	Naziv zapisa
+Recorded Path	Snimljena putanja
+Ref Adjust !!!!!	Podešavanje reference !!!!!
+Refresh	Osvježi
+Register here to use AgShare	Registrirajte se ovdje za korištenje AgSharea
+Remain:	Preostalo:
+Remove Offset	Ukloni pomak
+Reset	Poništi
+Reset All	Poništi sve
+Reset All To Defaults	Vrati sve na zadano
+Reset Direction	Poništi smjer
+Reset This Page to Defaults	Vrati ovu stranicu na zadano
+Reset To 100%	Vrati na 100%
+Reset To Default	Vrati na zadano
+Reset to Default	Vrati na zadano
+Response	Odziv
+Restart Required	Potrebno ponovno pokretanje
+Restart Wizard	Ponovno pokreni čarobnjak
+Restart of AgIO is Required - Restarting	Potrebno je ponovno pokrenuti AgIO - ponovno pokretanje
+Resume	Nastavi
+Resume Style	Način nastavka
+Return From Editing	Povratak iz uređivanja
+Reverse Detection	Prepoznavanje vožnje unatrag
+Reverse Distance (m)	Udaljenost unatrag (m)
+Right	Desno
+Right Menu	Desni izbornik
+Roll	Bočni nagib
+Roll Correction Chart	Graf korekcije nagiba
+Roll Degrees	Stupnjevi nagiba
+Roll Filter	Filtar nagiba
+Roll Function	Funkcija nagiba
+Roll Zero	Nula nagiba
+Roll:	Nagib:
+Samples: 0	Uzoraka: 0
+Sats	Sat.
+Save	Spremi
+Save And Return	Spremi i vrati se
+Save As:	Spremi kao:
+Save Error	Greška spremanja
+Saving current tracks...	Spremanje trenutnih tragova...
+Saving tracks...	Spremanje tragova...
+Scanning	Traženje
+Screen Buttons	Gumbi na zaslonu
+Scroll On Off	Pomicanje uklj./isklj.
+Seconds	Sekunde
+Section Color	Boja sekcije
+Section Color Set	Skup boja sekcija
+Section Lines	Linije sekcija
+Section Width	Širina sekcije
+Section or Zone	Sekcija ili zona
+Sections	Sekcije
+Sections are on	Sekcije su uključene
+Sections:	Sekcije:
+Seed	Sjeme
+Select All	Odaberi sve
+Select Buttons	Odaberi gumbe
+Select Preset Color	Odaberi spremljenu boju
+Select Square Below And Pick New Color	Odaberite kvadrat ispod i novu boju
+Select a field from the left, then select tracks to copy	Odaberite parcelu lijevo, zatim tragove za kopiranje
+Select different environment	Odaberite drugo okruženje
+Selected Field:	Odabrana parcela:
+Selected: -	Odabrano: -
+Send +  Save	Pošalji + spremi
+Send + Save	Pošalji + spremi
+Send Error: 	Greška slanja:
+Send GGA	Šalji GGA
+Send NTRIP To GPS Using:	Šalji NTRIP na GPS preko:
+Send To GPS Using:	Šalji na GPS preko:
+Send To Manual Fix	Pošalji u ručnu poziciju
+Serial Monitor	Serijski monitor
+Serial Monitor - Baud: Teensy - 115200   Arduino - 38400	Serijski monitor - baud: Teensy - 115200   Arduino - 38400
+Serial NTRIP ON	Serijski NTRIP UKLJ.
+Serial Pass NTRIP ON	NTRIP serijskim prolazom UKLJ.
+Serial Pass On	Serijski prolaz uključen
+Serial Pass Thru Configuration	Postavke serijskog prolaza
+Serial Port	Serijski port
+Serial RTCM	Serijski RTCM
+Serious Field Origin Error	Ozbiljna greška ishodišta parcele
+Serious Network Connection Error	Ozbiljna greška mrežne veze
+Server:	Poslužitelj:
+Set	Postavi
+Set Antenna Height	Postavi visinu antene
+Set Antenna Offset	Postavi bočni pomak antene
+Set Distance Antenna Is From Pivot Axle	Postavite udaljenost antene od stražnje osovine
+Set Proportional for good response. \r\nSet PWM Maximum to limit turning speed.	Postavite proporcionalno za dobar odziv. \r\nNajveći PWM ograničava brzinu okretanja.
+Set Smoothing to 3 or 4x Radius	Postavite izglađivanje na 3 do 4x radijus
+Set Subnet	Postavi podmrežu
+Set Track Width	Postavi razmak kotača
+Set Wheelbase	Postavi međuosovinski razmak
+Set extension length to 2 or 3x Radius\r\n	Postavite duljinu produžetka na 2 do 3x radijus\r\n
+Set to 99, Max 164 Feet	Postavljeno na 99, najviše 164 stope
+Set to 99, Max 50 Meters	Postavljeno na 99, najviše 50 metara
+Set to Default Local 127.0.0.1	Postavi zadano lokalno 127.0.0.1
+Set:	Zad.:
+Settings Sent To Steer Module	Postavke poslane modulu upravljanja
+Shift GPS Position (cm)	Pomakni GPS poziciju (cm)
+Show\r\nOn\r\nWarn	Prikaži\r\nkod\r\nupoz.
+Shrink A	Skrati A
+Shrink B	Skrati B
+Shutdown	Gašenje
+Shutdown Error	Greška pri gašenju
+Shutdown In:	Gašenje za:
+Sidehill Deg Turn per Deg of Roll	Korekcija na nagibu (st. po st. nagiba)
+Sidehill Deg per Deg of Roll	Korekcija na nagibu (st. po st. nagiba)
+Sim Reverse Touched	Simulator: unatrag
+Simulator On	Simulator uključen
+Simulator can't work while using real Antenna	Simulator ne radi dok se koristi prava antena
+Simulator is off	Simulator je isključen
+Single	Jedna
+Single Antenna Settings	Postavke jedne antene
+Slow	Sporo
+Smart WAS Zero	Smart WAS nula
+Smooth	Izgladi
+Smooth AB Curve	Izgladi AB krivulju
+Snap to Pivot	Privuci liniju na vozilo
+Socket Exception	Greška socketa
+Sort	Sortiraj
+Sound	Zvuk
+Source	Izvor
+Source Data	Izvorni podaci
+South (-)	Jug (-)
+Spacing (m)	Razmak (m)
+Speed	Brzina
+Speed Factor	Faktor brzine
+Speedo	Brzinomjer
+Spray	Prskanje
+Stanley Gains	Stanley pojačanja
+Start Angle:	Početni kut:
+Start At Beginning	Počni od početka
+Start Fullscreen	Pokreni preko cijelog zaslona
+Start Minimized	Pokreni minimizirano
+Start Point = End Point 	Početna točka = završna točka
+Starting AgIO	Pokretanje AgIO-a
+Status: 	Stanje:
+Steer	Upravljanje
+Steer Angle Too Low	Kut upravljanja premalen
+Steer Angle:	Kut upravljanja:
+Steer Bar	Traka upravljanja
+Steer Chart	Graf upravljanja
+Steer Enable	Omogući upravljanje
+Steer Enable Mode	Način omogućavanja upravljanja
+Steer In Reverse?	Upravljati unatrag?
+Steer Motor Direction	Smjer motora upravljanja
+Steer Ping:	Ping upravljanja:
+Steer Response	Odziv upravljanja
+Steer Switch	Prekidač upravljanja
+Steer Wizard	Čarobnjak upravljanja
+Steer:	Upravljanje:
+Steering Disabled	Upravljanje onemogućeno
+Step 1: Select an old profile file:	Korak 1: odaberite staru datoteku profila:
+Step 2: Select to convert (Vehicle and/or Tool):	Korak 2: odaberite što pretvoriti (vozilo i/ili priključak):
+Stop Record Pause Boundary	Zaustavi / snimaj / pauziraj među
+Stopped	Zaustavljeno
+Succes!	Uspjeh!
+Success	Uspjeh
+Switch	Prekidač
+Switch speed	Brzina prebacivanja
+Switch:	Prekidač:
+System / GPS	Sustav / GPS
+System Data	Podaci sustava
+Terms and Conditions	Uvjeti korištenja
+Test Connection	Provjeri vezu
+The profile(s) in the registry cannot be found.\n	Profil(i) iz registra nisu pronađeni.\n
+This Field is Damaged, Please Delete \r\n ALREADY TOLD YOU THAT :)	Ova parcela je oštećena, obrišite je \r\n VEĆ SAM VAM REKAO :)
+This is the line description	Ovo je opis linije
+This will create and load the new profile.	Ovo će napraviti i učitati novi profil.
+This will reset all Environment settings (display, sounds, window positions). Are you Sure?	Ovo će vratiti sve postavke okruženja (prikaz, zvukovi, položaji prozora) na zadano. Jeste li sigurni?
+Thru?	Prolaz?
+Time	Vrijeme
+Title	Naslov
+To File	U datoteku
+To zAgIO_SerialMon_Log.Txt	U zAgIO_SerialMon_Log.Txt
+To zAgIO_UDP_Log.Txt	U zAgIO_UDP_Log.Txt
+Too Wide	Preširoko
+Tool	Priključak
+Tool Error	Greška priključka
+Tool Left	Priključak lijevo
+Tool Name	Naziv priključka
+Tool Offset Direction	Smjer pomaka priključka
+Tool Ping:	Ping priključka:
+Tool Right	Priključak desno
+Tool Width:	Širina priključka:
+Tool profile name:	Naziv profila priključka:
+Tool: -	Priključak: -
+Tools Menu	Izbornik alata
+Total:	Ukupno:
+Touch Button to Reset\r\nThen Push New Key	Dodirnite gumb za poništavanje\r\nzatim pritisnite novu tipku
+Touch Map to Create The Boundary	Dodirujte kartu za izradu međe
+Track	Trag
+Track Changed	Trag promijenjen
+Track Info	Podaci o tragu
+Track Load Error	Greška učitavanja traga
+Track Width:	Razmak kotača:
+Track adjustment failed: 	Podešavanje traga nije uspjelo:
+Tracks	Tragovi
+Tractor	Traktor
+Trail Hitch:	Vučna poteznica:
+Tram Lines	Tragovi u polju
+Tram Width	Širina tragova
+Tram Width:	Širina tragova:
+TramLines	Tragovi u polju
+Tramlines	Tragovi u polju
+Trip	Vožnja
+Turn Auto or Manual Off First	Prvo isključite automatski ili ručni način
+Turn Counts	Impulsi okretanja
+Turn Off Delay (secs)	Kašnjenje isključivanja (s)
+Turn Sensor	Senzor okretanja
+Turn UDP On And Hit OK	Uključite UDP i pritisnite OK
+Turn it off before using NTRIP	Isključite ga prije korištenja NTRIP-a
+Turn it off before using Radio NTRIP	Isključite ga prije korištenja radio NTRIP-a
+Turn it off before using Serial Pass Thru	Isključite ga prije korištenja serijskog prolaza
+Turn on NTRIP	Uključite NTRIP
+Turn steering to your desired limit for guidance and touch OK ->	Okrenite upravljač do željenog ograničenja i dodirnite OK ->
+Type	Tip
+Type:	Tip:
+U-Turn	Okretanje
+UDP Is Off	UDP je isključen
+UDP Off	UDP isključen
+UDP Send Packet Burst \r\nDefault 256 bytes\r\n	UDP veličina paketa \r\nzadano 256 bajtova\r\n
+UDP Server	UDP poslužitelj
+UTurn Compensation	Kompenzacija okretanja
+Unable to connect to Port	Nije moguće spojiti se na port
+Units	Mjerne jedinice
+Units:	Jedinice:
+Unusual error druing Recieve!	Neobična greška pri primanju!
+Up	Gore
+Up + Down	Gore + dolje
+Updater	Ažuriranje
+Updater Not Found	Program za ažuriranje nije pronađen
+Updater not found. Please ensure AgOpenGPS.Updater.exe is in the application directory.	Program za ažuriranje nije pronađen. Provjerite je li AgOpenGPS.Updater.exe u mapi aplikacije.
+Upload Complete	Prijenos završen
+Upload Selected	Prenesi odabrano
+Upload already in progress	Prijenos je već u tijeku
+Upload in Progress	Prijenos u tijeku
+Use 'Convert' to import them, or use 'New' to create new profiles.\n\n	Uvezite ih s 'Pretvori' ili napravite nove profile s 'Novo'.\n\n
+Use 'New' to create Vehicle and Tool profiles.\n\n	Profile vozila i priključka napravite s 'Novo'.\n\n
+Use AB LIne or Curve Only	Samo AB linija ili krivulja
+Use GPS Fix	Koristi GPS poziciju
+Use Manual Fix	Koristi ručnu poziciju
+User 1	Korisnik 1
+User 2	Korisnik 2
+User 3	Korisnik 3
+User 4	Korisnik 4
+Username	Korisničko ime
+Using Default Profile	Koristi se zadani profil
+Values Set to Inital Default	Vrijednosti vraćene na početne
+Vehicle	Vozilo
+Vehicle / Tool	Vozilo / priključak
+Vehicle / Tool...	Vozilo / priključak...
+Vehicle Name	Naziv vozila
+Vehicle Settings	Postavke vozila
+Vehicle profile name:	Naziv profila vozila:
+Vehicle: -	Vozilo: -
+Verified: 	Provjereno:
+Verify URL or IP	Provjerite URL ili IP
+Version:	Verzija:
+View All Settings	Prikaži sve postavke
+WAS Calibration	Kalibracija WAS-a
+WAS Offset	Pomak WAS-a
+WAS Zero	WAS nula
+WAS Zeroing	Postavljanje nule WAS-a
+Wait GPS	Čekam GPS
+Waiting	Čekanje
+Warning	Upozorenje
+Watch	Prati
+West (-)	Zapad (-)
+What Style of Motor Driver?	Koji tip upravljača motora?
+Wheel Track	Razmak kotača
+Wheelbase	Međuosovinski razmak
+Wheelbase:	Međuosovinski razmak:
+Width:	Širina:
+Wizard	Čarobnjak
+Wizards	Čarobnjaci
+Work Switch	Radni prekidač
+Work:	Rad:
+Worked	Obrađeno
+Working Width	Radna širina
+XTE Chart	Graf bočnog odstupanja
+XTE Graph	Graf bočnog odstupanja
+You Turn	Okretanje
+You can't have more zones then sections	Ne može biti više zona nego sekcija
+YouTube Tutorials	YouTube upute
+Your tool is too small	Priključak je premalen
+Zero	Nula
+Zero Roll	Nula nagiba
+Zero or +5	Nula ili +5
+Zone 1	Zona 1
+Zone 2	Zona 2
+Zone 3	Zona 3
+Zone 4	Zona 4
+Zone 5	Zona 5
+Zone 6	Zona 6
+Zone 7	Zona 7
+Zone 8	Zona 8
+Zones	Zone
+Zoom In	Približi
+[2 - 254] May not exist. \r\n	[2 - 254] Možda ne postoji. \r\n
+\r\n\r\n  Exiting	\r\n\r\n  Izlaz
+cm Per Pixel	cm po pikselu
+info	info
+pixels	piksela
+✔ See you next time!	✔ Vidimo se sljedeći put!

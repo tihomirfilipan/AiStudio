@@ -27,6 +27,7 @@ namespace AgOpenGPS
                 RegistrySettings.Load();
                 Thread.CurrentThread.CurrentCulture = new System.Globalization.CultureInfo(RegistrySettings.culture);
                 Thread.CurrentThread.CurrentUICulture = new System.Globalization.CultureInfo(RegistrySettings.culture);
+                AgLibrary.Translations.UiTranslator.Install();
                 Application.EnableVisualStyles();
                 Application.SetCompatibleTextRenderingDefault(false);
                 Application.Run(new FormGPS());
