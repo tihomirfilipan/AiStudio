@@ -163,13 +163,19 @@ namespace AgOpenGPS.AutoPlan
             V2 leftN = new V2(-midDir.N, midDir.E);
             double side = PointInPolygon(fence, refEdge[mid] + leftN * (W * 0.5)) ? 1.0 : -1.0;
 
+            // Pass centre lines: each one is offset from the previous one by the work width and
+            // rounded to a minimum radius, so bends of the edge straighten out towards the inside
+            // of the field instead of folding into sharp kinks
+            double minRadius = Math.Max(1.5 * R, 10.0);
+            var lanesEnds = new LaneLines(refExt, side, W, W * 0.5, minRadius, s);
+
             // --- Work area: headland only at the pass ends, or all around ---
             bool endsOnly = !set.HeadlandOnLongSides;
             int[] endRunId = null;
             List<V2> work = null;
             if (endsOnly)
             {
-                endRunId = ClassifyEnds(fence, refExt, side, W, diag, s);
+                endRunId = ClassifyEnds(fence, lanesEnds, W, diag, s);
                 bool anyEnd = false, anySide = false;
                 foreach (int id in endRunId) { if (id >= 0) anyEnd = true; else anySide = true; }
                 if (anyEnd && anySide)
@@ -187,15 +193,16 @@ namespace AgOpenGPS.AutoPlan
             res.WorkArea = work;
 
             // --- Passes ---
+            LaneLines lanes = endsOnly ? lanesEnds : new LaneLines(refExt, side, W, headWidth + W * 0.5, minRadius, s);
             var passes = new List<Pass>();
-            var refGrid = new SegmentGrid(refExt, false, Math.Max(5.0, W));
             int emptyInRow = 0;
             for (int lane = 0; lane < 10000; lane++)
             {
                 double d = (endsOnly ? 0.0 : headWidth) + W * (lane + 0.5);
                 if (d > diag + headWidth) break;
 
-                List<V2> off = OffsetOpen(refExt, d * side, refGrid, s);
+                List<V2> off = lanes.Get(lane);
+                if (off.Count < 2) break;
                 List<List<V2>> runs = InsideRuns(off, work);
                 double minLen = Math.Max(2.0 * W, 5.0);
                 List<V2> best = null;
@@ -220,8 +227,7 @@ namespace AgOpenGPS.AutoPlan
 
             // Guidance track: first pass line over the whole field (not cut at the headland)
             {
-                double d0 = (endsOnly ? 0.0 : headWidth) + W * 0.5;
-                List<V2> line = OffsetOpen(refExt, d0 * side, refGrid, s);
+                List<V2> line = lanes.Get(0);
                 List<V2> bestRun = null;
                 foreach (var run in InsideRuns(line, fence))
                     if (bestRun == null || run.Count > bestRun.Count) bestRun = run;
@@ -233,14 +239,13 @@ namespace AgOpenGPS.AutoPlan
             if (endsOnly && set.AddExtraPass)
             {
                 Pass last = passes[passes.Count - 1];
-                double dLast = W * (last.Lane + 0.5);
                 double lastLen = OpenLength(last.Pts);
                 // distance to the work area edge: equal to the boundary along a long side, the inner
                 // edge of the headland at the ends (the extra pass must not run into the headland)
                 var fenceSeg = new SegmentGrid(work, true, Math.Max(5.0, W));
                 for (double f = 1.0; f >= 0.25; f -= 0.05)
                 {
-                    List<V2> off = OffsetOpen(refExt, (dLast + W * f) * side, refGrid, s);
+                    List<V2> off = lanes.Beyond(last.Lane, f);
                     List<V2> best = null;
                     foreach (var run in InsideRuns(off, work))
                         if (best == null || run.Count > best.Count) best = run;
@@ -392,13 +397,12 @@ namespace AgOpenGPS.AutoPlan
         /// For every boundary point: -1 if it is part of a long side (roughly parallel to the passes),
         /// otherwise the number of the end (0, 1, ...) it belongs to.
         /// </summary>
-        private static int[] ClassifyEnds(List<V2> fence, List<V2> refExt, double side, double W, double diag, double s)
+        private static int[] ClassifyEnds(List<V2> fence, LaneLines lanes, double W, double diag, double s)
         {
             // The ends are where passes run into the boundary: lay out passes over the whole
             // field (no headland) and mark the boundary around every pass end.
             int n = fence.Count;
             var isEnd = new bool[n];
-            var refGrid = new SegmentGrid(refExt, false, Math.Max(5.0, W));
             int mark = Math.Max(1, (int)Math.Ceiling(W * 0.75 / s));
             double minLen = Math.Max(2.0 * W, 5.0);
             int emptyInRow = 0;
@@ -407,7 +411,8 @@ namespace AgOpenGPS.AutoPlan
             {
                 double d = W * (lane + 0.5);
                 if (d > diag) break;
-                List<V2> off = OffsetOpen(refExt, d * side, refGrid, s);
+                List<V2> off = lanes.Get(lane);
+                if (off.Count < 2) break;
                 bool found = false;
                 foreach (var piece in InsideRuns(off, fence))
                 {
@@ -1279,6 +1284,51 @@ namespace AgOpenGPS.AutoPlan
         // =====================================================================
         // Spatial helpers
         // =====================================================================
+
+        /// <summary>
+        /// Pass centre lines, built one from the other: lane 0 is the reference edge offset by the
+        /// first distance, every next lane the previous one offset by the work width. Each line is
+        /// rounded to a minimum radius the vehicle can follow.
+        /// </summary>
+        private class LaneLines
+        {
+            private readonly List<List<V2>> lines = new List<List<V2>>();
+            private readonly List<V2> refLine;
+            private readonly double side, width, firstDist, minRadius, spacing;
+
+            public LaneLines(List<V2> refLine, double side, double width, double firstDist, double minRadius, double spacing)
+            {
+                this.refLine = refLine;
+                this.side = side;
+                this.width = width;
+                this.firstDist = firstDist;
+                this.minRadius = minRadius;
+                this.spacing = spacing;
+            }
+
+            public List<V2> Get(int lane)
+            {
+                while (lines.Count <= lane)
+                {
+                    List<V2> prev = lines.Count == 0 ? refLine : lines[lines.Count - 1];
+                    double d = lines.Count == 0 ? firstDist : width;
+                    lines.Add(Next(prev, d));
+                }
+                return lines[lane];
+            }
+
+            /// <summary>Line a fraction of a width beyond the given lane (for the extra pass).</summary>
+            public List<V2> Beyond(int lane, double fraction) => Next(Get(lane), width * fraction);
+
+            private List<V2> Next(List<V2> prev, double d)
+            {
+                if (prev.Count < 3) return new List<V2>();
+                var grid = new SegmentGrid(prev, false, Math.Max(5.0, width));
+                List<V2> off = OffsetOpen(prev, d * side, grid, spacing);
+                if (off.Count < 3) return off;
+                return RoundOpen(off, minRadius, spacing);
+            }
+        }
 
         /// <summary>Fast minimum distance from a point to a polyline using a uniform grid.</summary>
         private class SegmentGrid

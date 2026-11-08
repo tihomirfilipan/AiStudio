@@ -188,6 +188,37 @@ namespace AgOpenGPS.Tests.AutoPlan
         }
 
         [Test]
+        public void PickedEdgeWithCorner_PassesHaveNoKinks()
+        {
+            // bottom edge straight for 150 m, then turning 35 degrees; picked across the corner
+            double c = Math.Cos(35 * Math.PI / 180), sn = Math.Sin(35 * Math.PI / 180);
+            var fence = new List<V2>
+            {
+                new V2(0, 0), new V2(150, 0), new V2(150 + 150 * c, 150 * sn),
+                new V2(150 + 150 * c - 200 * sn, 150 * sn + 200 * c), new V2(0, 220)
+            };
+            var set = new FieldPlanSettings
+            {
+                WorkWidth = 6,
+                TurnRadius = 6,
+                ReferenceEdge = new List<V2> { fence[0], fence[1], fence[2] }
+            };
+            var res = FieldPlanner.Build(fence, set, new V2(0, 0), 0);
+            Assert.That(res.Ok, Is.True, res.Error);
+
+            // inside the passes no bend tighter than the minimum pass radius (1.5 x 6 m, at least 10 m)
+            var p = res.Points;
+            for (int i = 3; i < p.Count - 3; i++)
+            {
+                if (!p[i - 3].IsWork || !p[i + 3].IsWork || p[i].IsHeadland) continue;
+                double d = Math.Sqrt(Math.Pow(p[i + 3].E - p[i - 3].E, 2) + Math.Pow(p[i + 3].N - p[i - 3].N, 2));
+                if (d < 1) continue;
+                double k = Math.Abs(FieldPlanner.AngleDiff(p[i + 3].Heading, p[i - 3].Heading)) / d;
+                Assert.That(k, Is.LessThan(1.0 / 8.0), $"kink at point {i}");
+            }
+        }
+
+        [Test]
         public void TooSmallField_ReturnsError()
         {
             var res = FieldPlanner.Build(Rectangle(10, 10), new FieldPlanSettings { WorkWidth = 6, TurnRadius = 6 }, new V2(0, 0), 0);
