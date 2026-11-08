@@ -18,9 +18,9 @@ namespace AgOpenGPS
         {
             btnSimTimeFactor = new Button
             {
-                Text = "x1",
-                Font = new Font("Tahoma", 14F, FontStyle.Bold),
-                Size = new Size(70, panelSim.Height),
+                Text = "PLAY x1",
+                Font = new Font("Tahoma", 12F, FontStyle.Bold),
+                Size = new Size(110, Math.Max(40, panelSim.Height)),
                 BackColor = Color.WhiteSmoke,
                 FlatStyle = FlatStyle.Flat,
                 Anchor = AnchorStyles.Bottom,
@@ -29,7 +29,7 @@ namespace AgOpenGPS
             btnSimTimeFactor.Click += (s, e) =>
             {
                 simTimeFactor = simTimeFactor == 1 ? 10 : (simTimeFactor == 10 ? 50 : 1);
-                btnSimTimeFactor.Text = "x" + simTimeFactor;
+                btnSimTimeFactor.Text = "PLAY x" + simTimeFactor;
                 btnSimTimeFactor.BackColor = simTimeFactor == 1 ? Color.WhiteSmoke : Color.Orange;
             };
 
@@ -38,13 +38,17 @@ namespace AgOpenGPS
 
             void Place()
             {
-                btnSimTimeFactor.Location = new Point(panelSim.Right + 4, panelSim.Top);
-                btnSimTimeFactor.Height = panelSim.Height;
+                // left of the simulator controls, where the map is free (the right side is covered
+                // by the button panel on many screens)
+                btnSimTimeFactor.Height = Math.Max(40, panelSim.Height);
+                btnSimTimeFactor.Location = new Point(Math.Max(0, panelSim.Left - btnSimTimeFactor.Width - 6),
+                    panelSim.Bottom - btnSimTimeFactor.Height);
+                btnSimTimeFactor.BringToFront();
                 btnSimTimeFactor.Visible = panelSim.Visible;
                 if (!panelSim.Visible && simTimeFactor != 1)
                 {
                     simTimeFactor = 1;
-                    btnSimTimeFactor.Text = "x1";
+                    btnSimTimeFactor.Text = "PLAY x1";
                     btnSimTimeFactor.BackColor = Color.WhiteSmoke;
                 }
             }
