@@ -24,10 +24,13 @@ namespace AgOpenGPS.Core.DrawLib
             _fontTexture = fontTexture;
         }
 
+        // size: multiplier on the camera-distance based text size (1.0 = default).
+        // center: text centred on (x1, y1) instead of starting there.
         public void DrawText3D(
-            double x1, double y1, string text, double camHeadingHint, double size = 1.0)
+            double x1, double y1, string text, double camHeadingHint, double size = 1.0, bool center = false)
         {
             double x = 0, y = 0;
+            double scale = size;
 
             GL.PushMatrix();
 
@@ -40,6 +43,7 @@ namespace AgOpenGPS.Core.DrawLib
                 size = -_camera.camSetDistance;
                 size = Math.Pow(size, 0.8);
                 size /= 800;
+                size *= scale;
             }
             else
             {
@@ -47,6 +51,12 @@ namespace AgOpenGPS.Core.DrawLib
                 size = -_camera.camSetDistance;
                 size = Math.Pow(size, 0.85);
                 size /= 1000;
+                size *= scale;
+            }
+            if (center)
+            {
+                x -= text.Length * CharXSpacing * size * 0.5;
+                y -= GlyphHeight * size * 0.5;
             }
             double yTop = y + GlyphHeight * size;
             double yBottom = y;

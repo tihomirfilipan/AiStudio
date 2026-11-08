@@ -153,7 +153,7 @@ namespace AgOpenGPS
 
             foreach (RunLabel label in recPathLabels)
             {
-                GL.PointSize(10.0f);
+                GL.PointSize(26.0f);
                 GL.Begin(PrimitiveType.Points);
                 if (label.IsHeadland) GL.Color3(0.45f, 0.47f, 0.50f);
                 else GL.Color3(0.05f, 0.28f, 0.63f);
@@ -162,7 +162,7 @@ namespace AgOpenGPS
 
                 if (label.IsHeadland) GL.Color3(0.82f, 0.84f, 0.86f);
                 else GL.Color3(1.0f, 0.84f, 0.31f);
-                font.DrawText3D(label.E, label.N, label.Text, camHeading);
+                font.DrawText3D(label.E, label.N, label.Text, camHeading, 2.0, true);
             }
             GL.PointSize(1.0f);
         }
