@@ -2333,6 +2333,21 @@ namespace AgOpenGPS
                 return;
             }
 
+            // Fast simulation: several normal-size sim steps per tick, each with the full position
+            // and guidance update, so steering behaves exactly as at x1 and the speed shown stays real.
+            // The main view is only redrawn after the last step.
+            int steps = Math.Max(1, simTimeFactor);
+            for (int i = 0; i < steps; i++)
+            {
+                isSimSubStep = i < steps - 1;
+                SimStepOnce();
+                if (isSimDisabledLocked || !timerSim.Enabled) break;
+            }
+            isSimSubStep = false;
+        }
+
+        private void SimStepOnce()
+        {
             if (recPath.isDrivingRecordedPath || isBtnAutoSteerOn && (guidanceLineDistanceOff != 32000))
             {
                 if (vehicle.isInDeadZone)

@@ -1139,9 +1139,12 @@ namespace AgOpenGPS
                 SendPgnToLoop(p_229.pgn);
             }
 
-            //update main window
-            oglMain.MakeCurrent();
-            oglMain.Refresh();
+            //update main window (skipped for the intermediate steps of fast simulation)
+            if (!isSimSubStep)
+            {
+                oglMain.MakeCurrent();
+                oglMain.Refresh();
+            }
 
             //stop the timer and calc how long it took to do calcs and draw
             frameTimeRough = (double)(swFrame.ElapsedTicks * 1000) / (double)System.Diagnostics.Stopwatch.Frequency;

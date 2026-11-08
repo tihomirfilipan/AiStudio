@@ -322,6 +322,9 @@ namespace AgOpenGPS
             //automatic whole-field path planner menu entry
             AddAutoPlanMenu();
 
+            //fast simulation button (x1 / x10 / x50)
+            AddSimTimeButton();
+
             AppCore = new ApplicationCore(
                 new DirectoryInfo(RegistrySettings.baseDirectory),
                 null,
