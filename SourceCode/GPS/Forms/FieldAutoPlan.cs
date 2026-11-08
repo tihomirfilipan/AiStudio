@@ -145,24 +145,11 @@ namespace AgOpenGPS
         /// Draws pass numbers (1, 2, 3... in driving order) in the middle of every working run
         /// of the recorded path, and U1, U2... on headland laps.
         /// </summary>
+        private double[] recPathCumLength;
+
         private void DrawRecPathPassNumbers()
         {
-            var list = recPath.recList;
-            int n = list.Count;
-            if (n < 5 || recPath.isRecordOn) return;
-
-            int key = n ^ list[0].easting.GetHashCode() ^ (list[n - 1].northing.GetHashCode() * 31);
-            if (recPathLabels == null || key != recPathLabelKey)
-            {
-                var pts = new List<PlanPoint>(n);
-                foreach (CRecPathPt p in list)
-                    pts.Add(new PlanPoint { E = p.easting, N = p.northing, Heading = p.heading, IsWork = p.autoBtnState });
-                recPathLabels = FieldPlanner.GetRunLabels(pts);
-                recPathLabelKey = key;
-            }
-
-            // Nothing to number on a single plain recording
-            if (recPathLabels.Count < 2) return;
+            if (!UpdateRecPathLabels()) return;
 
             foreach (RunLabel label in recPathLabels)
             {
@@ -178,6 +165,141 @@ namespace AgOpenGPS
                 font.DrawText3D(label.E, label.N, label.Text, camHeading);
             }
             GL.PointSize(1.0f);
+        }
+
+        /// <summary>
+        /// Rebuilds the pass labels when the recorded path changed.
+        /// Returns false if there is nothing to number (no path or a single plain recording).
+        /// </summary>
+        private bool UpdateRecPathLabels()
+        {
+            var list = recPath.recList;
+            int n = list.Count;
+            if (n < 5 || recPath.isRecordOn) return false;
+
+            int key = n ^ list[0].easting.GetHashCode() ^ (list[n - 1].northing.GetHashCode() * 31);
+            if (recPathLabels == null || key != recPathLabelKey)
+            {
+                var pts = new List<PlanPoint>(n);
+                foreach (CRecPathPt p in list)
+                    pts.Add(new PlanPoint { E = p.easting, N = p.northing, Heading = p.heading, IsWork = p.autoBtnState });
+                recPathLabels = FieldPlanner.GetRunLabels(pts);
+                recPathLabelKey = key;
+
+                // cumulative distance along the path, for progress
+                recPathCumLength = new double[n];
+                for (int i = 1; i < n; i++)
+                    recPathCumLength[i] = recPathCumLength[i - 1] + glm.Distance(list[i - 1].easting, list[i - 1].northing, list[i].easting, list[i].northing);
+            }
+
+            // Nothing to number on a single plain recording
+            return recPathLabels.Count >= 2;
+        }
+
+        /// <summary>
+        /// 2D card with the plan progress: current pass, next pass, passes done, remaining distance.
+        /// Shown while the recorded path panel is open. Text is ASCII only (OpenGL font).
+        /// </summary>
+        private void DrawAutoPlanCard()
+        {
+            if (!panelDrag.Visible && !recPath.isDrivingRecordedPath) return;
+            if (!UpdateRecPathLabels()) return;
+
+            int n = recPath.recList.Count;
+            int idx = recPath.isFollowingRecPath ? recPath.currentPositonIndex : 0;
+            if (idx < 0) idx = 0;
+            if (idx >= n) idx = n - 1;
+
+            int totalPasses = 0, donePasses = 0;
+            int current = -1;
+            for (int i = 0; i < recPathLabels.Count; i++)
+            {
+                RunLabel l = recPathLabels[i];
+                if (!l.IsHeadland)
+                {
+                    totalPasses++;
+                    if (l.EndIndex < idx) donePasses++;
+                }
+                if (current < 0 && l.EndIndex >= idx) current = i;
+            }
+
+            string state;
+            string next;
+            bool inRun = current >= 0 && idx >= recPathLabels[current].StartIndex;
+
+            if (!recPath.isDrivingRecordedPath)
+            {
+                state = T("Ready - press Play", "Spremno - pritisni Play");
+                next = current >= 0 ? RunName(recPathLabels[current]) : "-";
+            }
+            else if (recPath.isFollowingDubinsToPath)
+            {
+                state = T("Driving to start", "Prilaz putanji");
+                next = current >= 0 ? RunName(recPathLabels[current]) : "-";
+            }
+            else if (inRun)
+            {
+                state = RunName(recPathLabels[current]);
+                if (!recPathLabels[current].IsHeadland) state += " / " + totalPasses;
+                next = current + 1 < recPathLabels.Count ? RunName(recPathLabels[current + 1]) : T("end", "kraj");
+            }
+            else
+            {
+                state = T("Turn", "Okret");
+                next = current >= 0 ? RunName(recPathLabels[current]) : T("end", "kraj");
+            }
+
+            double total = recPathCumLength[n - 1];
+            double done = recPathCumLength[idx];
+            int percent = total > 0 ? (int)Math.Round(done * 100.0 / total) : 0;
+            double remainingKm = (total - done) / 1000.0;
+
+            string[] lines =
+            {
+                T("FIELD PLAN", "PLAN PARCELE"),
+                state,
+                T("Next: ", "Slijedi: ") + next,
+                T("Progress: ", "Napredak: ") + donePasses + "/" + totalPasses + "  " + percent + "%",
+                T("Remaining: ", "Preostalo: ") + remainingKm.ToString("0.0", CultureInfo.InvariantCulture) + " km"
+            };
+
+            // Card in the lower left corner of the map
+            double size = 0.85;
+            int lineH = 30;
+            int width = 330;
+            int height = lineH * lines.Length + 20;
+            double left = -oglMain.Width / 2.0 + 12;
+            double top = oglMain.Height - height - 110;
+
+            GL.Color4(0.12, 0.14, 0.17, 0.85);
+            GL.Begin(PrimitiveType.Quads);
+            GL.Vertex2(left, top);
+            GL.Vertex2(left + width, top);
+            GL.Vertex2(left + width, top + height);
+            GL.Vertex2(left, top + height);
+            GL.End();
+
+            // progress bar along the bottom edge of the card
+            GL.Color4(0.25, 0.49, 0.31, 0.95);
+            GL.Begin(PrimitiveType.Quads);
+            GL.Vertex2(left, top + height - 6);
+            GL.Vertex2(left + width * percent / 100.0, top + height - 6);
+            GL.Vertex2(left + width * percent / 100.0, top + height);
+            GL.Vertex2(left, top + height);
+            GL.End();
+
+            for (int i = 0; i < lines.Length; i++)
+            {
+                if (i == 0) GL.Color3(1.0f, 0.84f, 0.31f);
+                else if (i == 1) GL.Color3(1.0f, 1.0f, 1.0f);
+                else GL.Color3(0.82f, 0.85f, 0.88f);
+                font.DrawText(left + 12, top + 8 + i * lineH, lines[i], i == 1 ? size * 1.1 : size);
+            }
+        }
+
+        private static string RunName(RunLabel l)
+        {
+            return l.IsHeadland ? T("Headland ", "Uvratine ") + l.Text : T("Pass ", "Prohod ") + l.Text;
         }
 
         private static string OrderText(string order)

@@ -485,6 +485,8 @@ namespace AgOpenGPS
 
                     if (trk.idx > -1 && !ct.isContourBtnOn) DrawTrackInfo();
 
+                    DrawAutoPlanCard();
+
                     if (bnd.bndList.Count > 0 && yt.isYouTurnBtnOn) DrawUTurnBtn();
 
                     if ((isBtnAutoSteerOn || yt.isYouTurnBtnOn) && !ct.isContourBtnOn) DrawManUTurnBtn();

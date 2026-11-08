@@ -33,6 +33,7 @@ namespace AgOpenGPS.AutoPlan
         public double E, N, Heading;
         public string Text;
         public bool IsHeadland;
+        public int StartIndex, EndIndex; // point index range of the run in the path
     }
 
     public class FieldPlanSettings
@@ -294,6 +295,8 @@ namespace AgOpenGPS.AutoPlan
                     N = pts[m].N,
                     Heading = pts[m].Heading,
                     IsHeadland = isLoop,
+                    StartIndex = start,
+                    EndIndex = end,
                     Text = isLoop ? "U" + (++lap) : (++pass).ToString(System.Globalization.CultureInfo.InvariantCulture)
                 });
             }

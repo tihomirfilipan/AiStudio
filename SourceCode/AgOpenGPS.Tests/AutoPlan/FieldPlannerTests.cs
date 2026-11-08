@@ -102,6 +102,8 @@ namespace AgOpenGPS.Tests.AutoPlan
             int passLabels = 0, lapLabels = 0;
             foreach (RunLabel l in labels)
             {
+                Assert.That(l.StartIndex, Is.LessThan(l.EndIndex));
+                Assert.That(res.Points[l.StartIndex].IsWork && res.Points[l.EndIndex].IsWork, Is.True);
                 if (l.IsHeadland) { lapLabels++; Assert.That(l.Text, Is.EqualTo("U" + lapLabels)); }
                 else { passLabels++; Assert.That(l.Text, Is.EqualTo(passLabels.ToString())); }
                 // label in the middle of the field length (passes run east-west)
