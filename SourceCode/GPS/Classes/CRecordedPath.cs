@@ -622,20 +622,42 @@ namespace AgOpenGPS
             mf.guidanceLineSteerAngle = (short)(steerAngleRP * 100);
         }
 
+        // Colours used for the turns of a recorded path, repeated in this order
+        private static readonly float[][] TurnColors =
+        {
+            new[] { 1.00f, 0.44f, 0.26f }, // orange
+            new[] { 0.93f, 0.25f, 0.48f }, // pink
+            new[] { 0.15f, 0.78f, 0.85f }, // cyan
+            new[] { 0.67f, 0.28f, 0.74f }, // purple
+            new[] { 0.94f, 0.33f, 0.31f }, // red
+            new[] { 0.26f, 0.65f, 0.96f }, // blue
+        };
+
         public void DrawRecordedLine()
         {
             int ptCount = recList.Count;
             if (ptCount < 1) return;
             GL.LineWidth(1);
             GL.Begin(PrimitiveType.LineStrip);
+            int turnIndex = -1;
             for (int h = 0; h < ptCount; h++)
             {
-                // yellow while working (sections on), orange in turns (sections off)
-                if (recList[h].autoBtnState) GL.Color3(0.98f, 0.92f, 0.460f);
-                else GL.Color3(1.0f, 0.44f, 0.26f);
+                // yellow while working (sections on); every turn (sections off) gets the next
+                // colour of the palette so overlapping turns in the headland are easy to tell apart
+                if (recList[h].autoBtnState)
+                {
+                    GL.Color3(0.98f, 0.92f, 0.460f);
+                }
+                else
+                {
+                    if (h == 0 || recList[h - 1].autoBtnState) turnIndex++;
+                    float[] c = TurnColors[turnIndex % TurnColors.Length];
+                    GL.Color3(c[0], c[1], c[2]);
+                }
                 GL.Vertex3(recList[h].easting, recList[h].northing, 0);
             }
             GL.End();
+            GL.LineWidth(1);
 
             if (!isRecordOn)
             {
