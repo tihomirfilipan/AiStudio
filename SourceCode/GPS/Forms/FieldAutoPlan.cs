@@ -155,12 +155,12 @@ namespace AgOpenGPS
             {
                 GL.PointSize(10.0f);
                 GL.Begin(PrimitiveType.Points);
-                if (label.IsHeadland) GL.Color3(0.40f, 0.73f, 0.42f);
+                if (label.IsHeadland) GL.Color3(0.45f, 0.47f, 0.50f);
                 else GL.Color3(0.05f, 0.28f, 0.63f);
                 GL.Vertex3(label.E, label.N, 0);
                 GL.End();
 
-                if (label.IsHeadland) GL.Color3(0.65f, 0.95f, 0.65f);
+                if (label.IsHeadland) GL.Color3(0.82f, 0.84f, 0.86f);
                 else GL.Color3(1.0f, 0.84f, 0.31f);
                 font.DrawText3D(label.E, label.N, label.Text, camHeading);
             }

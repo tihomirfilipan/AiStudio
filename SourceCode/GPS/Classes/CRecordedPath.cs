@@ -633,30 +633,58 @@ namespace AgOpenGPS
             new[] { 0.26f, 0.65f, 0.96f }, // blue
         };
 
+        // A working run that ends where it started is a headland lap
+        private bool IsClosedLoop(int a, int b)
+        {
+            if (b - a < 3) return false;
+            double len = 0;
+            for (int k = a + 1; k <= b; k++)
+                len += glm.Distance(recList[k - 1].easting, recList[k - 1].northing, recList[k].easting, recList[k].northing);
+            double gap = glm.Distance(recList[a].easting, recList[a].northing, recList[b].easting, recList[b].northing);
+            return len > 50.0 && gap < len * 0.05;
+        }
+
         public void DrawRecordedLine()
         {
             int ptCount = recList.Count;
             if (ptCount < 1) return;
-            GL.LineWidth(1);
-            GL.Begin(PrimitiveType.LineStrip);
+            // Draw the path run by run: passes yellow, headland laps (closed loops) grey,
+            // and every turn thicker in the next colour of the palette
             int turnIndex = -1;
-            for (int h = 0; h < ptCount; h++)
+            int i = 0;
+            while (i < ptCount)
             {
-                // yellow while working (sections on); every turn (sections off) gets the next
-                // colour of the palette so overlapping turns in the headland are easy to tell apart
-                if (recList[h].autoBtnState)
+                bool work = recList[i].autoBtnState;
+                int runStart = i;
+                while (i < ptCount && recList[i].autoBtnState == work) i++;
+                int runEnd = i - 1;
+                int from = Math.Max(0, runStart - 1); // connect to the previous run
+
+                if (work)
                 {
-                    GL.Color3(0.98f, 0.92f, 0.460f);
+                    if (IsClosedLoop(runStart, runEnd))
+                    {
+                        GL.LineWidth(2);
+                        GL.Color3(0.62f, 0.64f, 0.67f);
+                    }
+                    else
+                    {
+                        GL.LineWidth(1);
+                        GL.Color3(0.98f, 0.92f, 0.460f);
+                    }
                 }
                 else
                 {
-                    if (h == 0 || recList[h - 1].autoBtnState) turnIndex++;
+                    turnIndex++;
                     float[] c = TurnColors[turnIndex % TurnColors.Length];
+                    GL.LineWidth(3);
                     GL.Color3(c[0], c[1], c[2]);
                 }
-                GL.Vertex3(recList[h].easting, recList[h].northing, 0);
+
+                GL.Begin(PrimitiveType.LineStrip);
+                for (int h = from; h <= runEnd; h++) GL.Vertex3(recList[h].easting, recList[h].northing, 0);
+                GL.End();
             }
-            GL.End();
             GL.LineWidth(1);
 
             if (!isRecordOn)
