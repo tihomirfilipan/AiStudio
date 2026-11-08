@@ -147,12 +147,39 @@ namespace AgOpenGPS
         /// </summary>
         private double[] recPathCumLength;
 
+        private const double PassNumberSize = 2.0;
+
         private void DrawRecPathPassNumbers()
         {
             if (!UpdateRecPathLabels()) return;
 
-            foreach (RunLabel label in recPathLabels)
+            // World size of the text, same formula as Font.DrawText3D, used to keep labels apart
+            double dist = -camera.camSetDistance;
+            double textSize = camera.PitchInDegrees < -45 ? Math.Pow(dist, 0.8) / 800.0 : Math.Pow(dist, 0.85) / 1000.0;
+            double minSep = AgOpenGPS.Core.DrawLib.Font.GlyphHeight * textSize * PassNumberSize * 1.15;
+            double minSepSq = minSep * minSep;
+
+            // Current and next run are always shown, the rest only where there is room
+            int idx = recPath.isFollowingRecPath ? recPath.currentPositonIndex : 0;
+            int current = recPathLabels.FindIndex(l => l.EndIndex >= idx);
+            var order = new List<int>(recPathLabels.Count);
+            if (current >= 0) order.Add(current);
+            if (current >= 0 && current + 1 < recPathLabels.Count) order.Add(current + 1);
+            for (int i = 0; i < recPathLabels.Count; i++) if (i != current && i != current + 1) order.Add(i);
+
+            var shown = new List<RunLabel>(recPathLabels.Count);
+            foreach (int i in order)
             {
+                RunLabel label = recPathLabels[i];
+                bool free = true;
+                foreach (RunLabel o in shown)
+                {
+                    double dx = o.E - label.E, dy = o.N - label.N;
+                    if (dx * dx + dy * dy < minSepSq) { free = false; break; }
+                }
+                if (!free && shown.Count >= 2) continue;
+                shown.Add(label);
+
                 GL.PointSize(26.0f);
                 GL.Begin(PrimitiveType.Points);
                 if (label.IsHeadland) GL.Color3(0.45f, 0.47f, 0.50f);
@@ -162,7 +189,7 @@ namespace AgOpenGPS
 
                 if (label.IsHeadland) GL.Color3(0.82f, 0.84f, 0.86f);
                 else GL.Color3(1.0f, 0.84f, 0.31f);
-                font.DrawText3D(label.E, label.N, label.Text, camHeading, 2.0, true);
+                font.DrawText3D(label.E, label.N, label.Text, camHeading, PassNumberSize, true);
             }
             GL.PointSize(1.0f);
         }
