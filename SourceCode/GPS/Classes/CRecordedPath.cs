@@ -78,8 +78,23 @@ namespace AgOpenGPS
 
         private int starPathIndx = 0;
 
+        // Simulator speed while driving a path: the path speed scaled by the user's choice.
+        // When the sim speed buttons are used, the new ratio to the path speed is kept, so turns
+        // stay slower than passes but at the speed level the user picked.
+        private double simSpeedFactor = 1.0;
+        private double lastSimStep = double.NaN;
+
+        private void SetSimSpeed(double pathStep)
+        {
+            if (!double.IsNaN(lastSimStep) && Math.Abs(mf.sim.stepDistance - lastSimStep) > 1e-6 && pathStep > 1e-6)
+                simSpeedFactor = Math.Max(0.0, mf.sim.stepDistance / pathStep);
+            lastSimStep = pathStep * simSpeedFactor;
+            mf.sim.stepDistance = lastSimStep;
+        }
+
         public bool StartDrivingRecordedPath()
         {
+            lastSimStep = double.NaN;
             //create the dubins path based on start and goal to start of recorded path
             A = B = C = 0;
 
@@ -165,7 +180,7 @@ namespace AgOpenGPS
             if (isFollowingDubinsToPath)
             {
                 //set a speed of 10 kmh
-                mf.sim.stepDistance = shuttleDubinsList[C].speed / 50;
+                SetSimSpeed(shuttleDubinsList[C].speed / 50);
 
                 pivotAxlePosRP = mf.pivotAxlePos;
 
@@ -201,7 +216,7 @@ namespace AgOpenGPS
                 //if end of the line then stop
                 if (!isEndOfTheRecLine)
                 {
-                    mf.sim.stepDistance = recList[C].speed / 34.86;
+                    SetSimSpeed(recList[C].speed / 34.86);
                     north = recList[C].northing;
 
                     pathCount = recList.Count - C;
@@ -246,7 +261,7 @@ namespace AgOpenGPS
                     return;
                 }
 
-                mf.sim.stepDistance = shuttleDubinsList[C].speed / 35;
+                SetSimSpeed(shuttleDubinsList[C].speed / 35);
                 pivotAxlePosRP = mf.pivotAxlePos;
 
                 //StanleyDubinsPath(shuttleListCount);
