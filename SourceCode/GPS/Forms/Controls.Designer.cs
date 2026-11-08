@@ -149,6 +149,9 @@ namespace AgOpenGPS
                 //ref nudge
                 flp1.Controls[6].Visible = tracksVisible > 0;
 
+                //buttons the user switched off
+                ApplyTrackPanelHidden();
+
                 for (int i = 0; i < flp1.Controls.Count; i++)
                 {
                     if (flp1.Controls[i].Visible) btnCount++;

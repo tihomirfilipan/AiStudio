@@ -325,6 +325,9 @@ namespace AgOpenGPS
             //fast simulation button (x1 / x10 / x50)
             AddSimTimeButton();
 
+            //'Edit' button in the track flyout to hide buttons
+            AddTrackPanelEditButton();
+
             AppCore = new ApplicationCore(
                 new DirectoryInfo(RegistrySettings.baseDirectory),
                 null,
