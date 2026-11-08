@@ -662,7 +662,7 @@ namespace AgOpenGPS
 
                 if (work)
                 {
-                    if (IsClosedLoop(runStart, runEnd))
+                    if (IsClosedLoop(runStart, runEnd) || Math.Abs(recList[runStart].speed - FormGPS.AutoPlanHeadlandSpeed) < 0.05)
                     {
                         GL.LineWidth(2);
                         GL.Color3(0.62f, 0.64f, 0.67f);

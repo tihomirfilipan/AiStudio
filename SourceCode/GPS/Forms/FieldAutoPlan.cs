@@ -21,6 +21,8 @@ namespace AgOpenGPS
         // Speeds stored in the path (only used by the simulator), km/h
         private const double AutoPlanWorkSpeed = 10.0;
         private const double AutoPlanTurnSpeed = 6.0;
+        // Headland laps/strips are stored with this speed so they can be recognised after loading
+        public const double AutoPlanHeadlandSpeed = 8.0;
 
         private static bool IsCroatian => CultureInfo.CurrentUICulture.TwoLetterISOLanguageName == "hr";
         private static string T(string en, string hr) => IsCroatian ? hr : en;
@@ -123,8 +125,8 @@ namespace AgOpenGPS
             recPath.recList.Clear();
             foreach (PlanPoint p in plan.Points)
             {
-                recPath.recList.Add(new CRecPathPt(p.E, p.N, p.Heading,
-                    p.IsWork ? AutoPlanWorkSpeed : AutoPlanTurnSpeed, p.IsWork));
+                double speed = !p.IsWork ? AutoPlanTurnSpeed : (p.IsHeadland ? AutoPlanHeadlandSpeed : AutoPlanWorkSpeed);
+                recPath.recList.Add(new CRecPathPt(p.E, p.N, p.Heading, speed, p.IsWork));
             }
 
             // Active path of the field, plus a named copy for the path picker
@@ -209,7 +211,14 @@ namespace AgOpenGPS
             {
                 var pts = new List<PlanPoint>(n);
                 foreach (CRecPathPt p in list)
-                    pts.Add(new PlanPoint { E = p.easting, N = p.northing, Heading = p.heading, IsWork = p.autoBtnState });
+                    pts.Add(new PlanPoint
+                    {
+                        E = p.easting,
+                        N = p.northing,
+                        Heading = p.heading,
+                        IsWork = p.autoBtnState,
+                        IsHeadland = p.autoBtnState && Math.Abs(p.speed - AutoPlanHeadlandSpeed) < 0.05
+                    });
                 recPathLabels = FieldPlanner.GetRunLabels(pts);
                 recPathLabelKey = key;
 

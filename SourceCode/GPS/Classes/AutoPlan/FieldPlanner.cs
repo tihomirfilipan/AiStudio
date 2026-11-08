@@ -25,6 +25,7 @@ namespace AgOpenGPS.AutoPlan
     {
         public double E, N, Heading;
         public bool IsWork;
+        public bool IsHeadland; // working point on a headland lap or headland strip
     }
 
     /// <summary>Label for one working run of a path (pass number or headland lap).</summary>
@@ -52,6 +53,12 @@ namespace AgOpenGPS.AutoPlan
 
         /// <summary>Drive the headland laps after all passes are done.</summary>
         public bool WorkHeadland = true;
+
+        /// <summary>
+        /// false (default): headland only at the ends of the passes, where the turns are; the first
+        /// and last pass run along the long sides. true: headland all around the field.
+        /// </summary>
+        public bool HeadlandOnLongSides = false;
 
         /// <summary>Distance between generated path points, meters.</summary>
         public double PointSpacing = 1.0;
@@ -126,14 +133,6 @@ namespace AgOpenGPS.AutoPlan
             if (laps <= 0) laps = Math.Max(1, (int)Math.Ceiling((R + set.TurnMargin) / W));
             double headWidth = laps * W;
 
-            List<V2> work = InsetLoop(fence, headWidth, s);
-            if (work.Count < 10 || Math.Abs(SignedArea(work)) < W * W * 4)
-            {
-                res.Error = "Field too small for headland";
-                return;
-            }
-            res.WorkArea = work;
-
             // --- Reference edge: longest smooth part of the boundary ---
             List<V2> refEdge = FindReferenceEdge(fence, s);
             if (refEdge.Count < 5) { res.Error = "No usable edge found"; return; }
@@ -149,13 +148,36 @@ namespace AgOpenGPS.AutoPlan
             V2 leftN = new V2(-midDir.N, midDir.E);
             double side = PointInPolygon(fence, refEdge[mid] + leftN * (W * 0.5)) ? 1.0 : -1.0;
 
+            // --- Work area: headland only at the pass ends, or all around ---
+            bool endsOnly = !set.HeadlandOnLongSides;
+            int[] endRunId = null;
+            List<V2> work = null;
+            if (endsOnly)
+            {
+                endRunId = ClassifyEnds(fence, refExt, side, W, diag, s);
+                bool anyEnd = false, anySide = false;
+                foreach (int id in endRunId) { if (id >= 0) anyEnd = true; else anySide = true; }
+                if (anyEnd && anySide)
+                    work = InsetEnds(fence, endRunId, headWidth, s);
+                else
+                    endsOnly = false; // no clear long sides (round field): headland all around
+            }
+            if (!endsOnly) work = InsetLoop(fence, headWidth, s);
+
+            if (work == null || work.Count < 10 || Math.Abs(SignedArea(work)) < W * W * 4)
+            {
+                res.Error = "Field too small for headland";
+                return;
+            }
+            res.WorkArea = work;
+
             // --- Passes ---
             var passes = new List<Pass>();
             var refGrid = new SegmentGrid(refExt, false, Math.Max(5.0, W));
             int emptyInRow = 0;
             for (int lane = 0; lane < 10000; lane++)
             {
-                double d = headWidth + W * (lane + 0.5);
+                double d = (endsOnly ? 0.0 : headWidth) + W * (lane + 0.5);
                 if (d > diag + headWidth) break;
 
                 List<V2> off = OffsetOpen(refExt, d * side, refGrid, s);
@@ -206,8 +228,12 @@ namespace AgOpenGPS.AutoPlan
             }
             res.Passes = order.Count;
 
-            // --- Headland laps, from inside to the boundary ---
-            if (set.WorkHeadland)
+            // --- Headland: strips at the pass ends, or laps all around ---
+            if (set.WorkHeadland && endsOnly)
+            {
+                BuildEndStrips(fence, endRunId, laps, W, R, s, fenceGrid, path, res);
+            }
+            else if (set.WorkHeadland)
             {
                 for (int j = 0; j < laps; j++)
                 {
@@ -241,7 +267,7 @@ namespace AgOpenGPS.AutoPlan
                         if (CountOutside(conn, fenceGrid) > 0) res.TurnsLeavingField++;
                         AppendPoints(path, conn, false, true);
                     }
-                    AppendPoints(path, loop, true, true);
+                    AppendPoints(path, loop, true, true, true);
                     res.HeadlandLaps++;
                 }
             }
@@ -288,7 +314,7 @@ namespace AgOpenGPS.AutoPlan
                 }
 
                 double gap = Math.Sqrt(Sq(pts[end].E - pts[start].E) + Sq(pts[end].N - pts[start].N));
-                bool isLoop = len > 50.0 && gap < len * 0.05;
+                bool isLoop = (len > 50.0 && gap < len * 0.05) || pts[m].IsHeadland;
                 labels.Add(new RunLabel
                 {
                     E = pts[m].E,
@@ -301,6 +327,237 @@ namespace AgOpenGPS.AutoPlan
                 });
             }
             return labels;
+        }
+
+        // =====================================================================
+        // Headland only at the pass ends
+        // =====================================================================
+
+        /// <summary>
+        /// For every boundary point: -1 if it is part of a long side (roughly parallel to the passes),
+        /// otherwise the number of the end (0, 1, ...) it belongs to.
+        /// </summary>
+        private static int[] ClassifyEnds(List<V2> fence, List<V2> refExt, double side, double W, double diag, double s)
+        {
+            // The ends are where passes run into the boundary: lay out passes over the whole
+            // field (no headland) and mark the boundary around every pass end.
+            int n = fence.Count;
+            var isEnd = new bool[n];
+            var refGrid = new SegmentGrid(refExt, false, Math.Max(5.0, W));
+            int mark = Math.Max(1, (int)Math.Ceiling(W * 0.75 / s));
+            double minLen = Math.Max(2.0 * W, 5.0);
+            int emptyInRow = 0;
+            bool anyPass = false;
+            for (int lane = 0; lane < 10000; lane++)
+            {
+                double d = W * (lane + 0.5);
+                if (d > diag) break;
+                List<V2> off = OffsetOpen(refExt, d * side, refGrid, s);
+                bool found = false;
+                foreach (var piece in InsideRuns(off, fence))
+                {
+                    if (OpenLength(piece) < minLen) continue;
+                    found = true;
+                    foreach (V2 endPt in new[] { piece[0], piece[piece.Count - 1] })
+                    {
+                        int f = NearestIndex(fence, endPt);
+                        for (int q = -mark; q <= mark; q++) isEnd[((f + q) % n + n) % n] = true;
+                    }
+                }
+                if (found) { anyPass = true; emptyInRow = 0; }
+                else if (anyPass && ++emptyInRow > 3) break;
+            }
+
+            // Drop short pieces (corners, small bends) so the sides and ends are continuous
+            int minRun = Math.Max(3, (int)(15.0 / s));
+            for (int iter = 0; iter < 3; iter++) FlipShortRuns(isEnd, minRun);
+
+            var id = new int[n];
+            for (int i = 0; i < n; i++) id[i] = -1;
+            int startSide = Array.IndexOf(isEnd, false);
+            if (startSide < 0) { for (int i = 0; i < n; i++) id[i] = 0; return id; }
+            int run = -1;
+            for (int c = 1; c <= n; c++)
+            {
+                int i = (startSide + c) % n;
+                if (isEnd[i])
+                {
+                    if (!isEnd[(i - 1 + n) % n]) run++;
+                    id[i] = run;
+                }
+            }
+            return id;
+        }
+
+        private static void FlipShortRuns(bool[] flags, int minRun)
+        {
+            int n = flags.Length;
+            int start = 0;
+            while (start < n && flags[start] == flags[(start - 1 + n) % n]) start++;
+            if (start >= n) return; // all the same
+            int c = 0;
+            while (c < n)
+            {
+                int i = (start + c) % n;
+                bool v = flags[i];
+                int len = 0;
+                while (len < n - c && flags[(i + len) % n] == v) len++;
+                if (len < minRun)
+                    for (int q = 0; q < len; q++) flags[(i + q) % n] = !v;
+                c += len;
+            }
+        }
+
+        /// <summary>
+        /// Work area with the headland only at the ends: end points are moved inwards by the
+        /// headland width, long side points stay on the boundary.
+        /// </summary>
+        private static List<V2> InsetEnds(List<V2> loop, int[] endRunId, double dist, double s)
+        {
+            int n = loop.Count;
+
+            // Side points inside the headland band of an end belong to the end
+            var endPts = new List<V2>();
+            for (int i = 0; i < n; i++) if (endRunId[i] >= 0) endPts.Add(loop[i]);
+            var isEnd = new bool[n];
+            double d2 = dist * dist;
+            for (int i = 0; i < n; i++)
+            {
+                if (endRunId[i] >= 0) { isEnd[i] = true; continue; }
+                foreach (V2 e in endPts)
+                    if (Sq(e.E - loop[i].E) + Sq(e.N - loop[i].N) < d2) { isEnd[i] = true; break; }
+            }
+
+            var grid = new SegmentGrid(loop, true, Math.Max(5.0, dist));
+            var tester = new PolygonTester(loop);
+            var r = new List<V2>(n);
+            for (int i = 0; i < n; i++)
+            {
+                if (!isEnd[i]) { r.Add(loop[i]); continue; }
+                V2 d = Dir(loop[(i - 1 + n) % n], loop[(i + 1) % n]);
+                V2 p = loop[i] + new V2(-d.N, d.E) * dist;
+                if (grid.MinDistance(p, dist) < dist * 0.98) continue;
+                if (!tester.Inside(p)) continue;
+                r.Add(p);
+            }
+            if (r.Count < 3) return new List<V2>();
+            return ResampleLoop(r, s);
+        }
+
+        /// <summary>
+        /// Headland strips along the ends of the field, inner strip first, each end in turn.
+        /// The direction of every strip is chosen so that the connecting turn is short and inside.
+        /// </summary>
+        private static void BuildEndStrips(List<V2> fence, int[] endRunId, int laps, double W, double R, double s,
+            PolygonTester fenceGrid, List<PlanPoint> path, FieldPlanResult res)
+        {
+            var groups = new Dictionary<int, List<List<V2>>>(); // end id -> strips, inner first
+            for (int j = laps - 1; j >= 0; j--)
+            {
+                List<V2> lap = InsetLoop(fence, W * (j + 0.5), s);
+                if (lap.Count < 10) continue;
+
+                // end id of each lap point from its nearest boundary point
+                int m = lap.Count;
+                var ids = new int[m];
+                for (int i = 0; i < m; i++) ids[i] = endRunId[NearestIndex(fence, lap[i])];
+
+                int start = Array.IndexOf(ids, -1);
+                if (start < 0) continue;
+                List<V2> cur = null;
+                int curId = -1;
+                for (int c = 1; c <= m; c++)
+                {
+                    int i = (start + c) % m;
+                    if (ids[i] != curId)
+                    {
+                        if (cur != null) AddStrip(groups, curId, cur, W, R, s, fenceGrid);
+                        cur = null;
+                        curId = ids[i];
+                        if (curId >= 0) cur = new List<V2>();
+                    }
+                    if (cur != null) cur.Add(lap[i]);
+                }
+                if (cur != null) AddStrip(groups, curId, cur, W, R, s, fenceGrid);
+            }
+
+            var remaining = new List<int>(groups.Keys);
+            while (remaining.Count > 0)
+            {
+                LastPose(path, s, out V2 p0, out double h0);
+
+                // nearest end first
+                int bestG = remaining[0];
+                double bestD = double.MaxValue;
+                foreach (int g in remaining)
+                    foreach (var st in groups[g])
+                    {
+                        double d = Math.Min((st[0] - p0).Length, (st[st.Count - 1] - p0).Length);
+                        if (d < bestD) { bestD = d; bestG = g; }
+                    }
+                remaining.Remove(bestG);
+
+                foreach (var strip in groups[bestG])
+                {
+                    LastPose(path, s, out V2 cp, out double ch);
+                    List<V2> best = null, bestConn = null;
+                    double bestCost = double.MaxValue;
+                    for (int r = 0; r < 2; r++)
+                    {
+                        var pts = new List<V2>(strip);
+                        if (r == 1) pts.Reverse();
+                        var conn = DubinsPath(cp, ch, pts[0], HeadingOf(pts[0], pts[Math.Min(3, pts.Count - 1)]), R, s);
+                        if (conn == null) continue;
+                        double cost = OpenLength(conn) + 1000.0 * CountOutside(conn, fenceGrid);
+                        if (cost < bestCost) { bestCost = cost; best = pts; bestConn = conn; }
+                    }
+                    if (best == null) continue;
+                    if (CountOutside(bestConn, fenceGrid) > 0) res.TurnsLeavingField++;
+                    AppendPoints(path, bestConn, false, true);
+                    AppendPoints(path, best, true, true, true);
+                    res.HeadlandLaps++;
+                }
+            }
+        }
+
+        private static void AddStrip(Dictionary<int, List<List<V2>>> groups, int id, List<V2> pts, double W, double R, double s, PolygonTester fence)
+        {
+            if (pts.Count < 3) return;
+
+            // Stop short of the long sides so the turn to the next strip fits inside the field
+            int trim = (int)Math.Ceiling((R + 3.0) / s);
+            if (pts.Count - 2 * trim < 3 || (pts.Count - 2 * trim) * s < 2.0 * W) return;
+            pts = pts.GetRange(trim, pts.Count - 2 * trim);
+
+            List<V2> sharp = pts;
+            List<V2> round = RoundOpen(pts, R, s);
+            for (int k = 0; k < round.Count; k++)
+                if (!fence.Inside(round[k])) round[k] = sharp[NearestIndex(sharp, round[k])];
+            if (!groups.TryGetValue(id, out var list)) groups[id] = list = new List<List<V2>>();
+            list.Add(round);
+        }
+
+        /// <summary>Smooths an open line until no bend is tighter than the turning radius.</summary>
+        private static List<V2> RoundOpen(List<V2> line, double R, double s)
+        {
+            int win = 2 * Math.Max(2, (int)Math.Round(R / (2.0 * s))) + 1;
+            int span = Math.Max(2, (int)Math.Round(2.0 / s));
+            var cur = line;
+            for (int pass = 0; pass < 40; pass++)
+            {
+                double maxK = 0;
+                for (int i = span; i < cur.Count - span; i++)
+                {
+                    V2 a = cur[i - span], b = cur[i], c = cur[i + span];
+                    double d = (c - a).Length;
+                    if (d < 1e-6) continue;
+                    double k = Math.Abs(AngleDiff(HeadingOf(b, c), HeadingOf(a, b))) / (d * 0.5);
+                    if (k > maxK) maxK = k;
+                }
+                if (maxK <= 1.0 / R) break;
+                cur = ResampleOpen(SmoothOpen(cur, win, 1), s);
+            }
+            return cur;
         }
 
         // =====================================================================
@@ -405,7 +662,7 @@ namespace AgOpenGPS.AutoPlan
                     // Take the cheapest turn that stays inside the boundary (check the best few)
                     Step pick = null;
                     double pickCost = double.MaxValue;
-                    for (int c = 0; c < Math.Min(8, cands.Count); c++)
+                    for (int c = 0; c < Math.Min(40, cands.Count); c++)
                     {
                         Step cand = cands[c].Value;
                         EntryPose(cand.Pass, cand.Reverse, out V2 p, out double h);
@@ -921,7 +1178,7 @@ namespace AgOpenGPS.AutoPlan
             h = HeadingOf(new V2(a.E, a.N), p);
         }
 
-        private static void AppendPoints(List<PlanPoint> path, List<V2> pts, bool work, bool skipFirstIfSame)
+        private static void AppendPoints(List<PlanPoint> path, List<V2> pts, bool work, bool skipFirstIfSame, bool headland = false)
         {
             for (int i = 0; i < pts.Count; i++)
             {
@@ -930,7 +1187,7 @@ namespace AgOpenGPS.AutoPlan
                     PlanPoint l = path[path.Count - 1];
                     if (Sq(l.E - pts[0].E) + Sq(l.N - pts[0].N) < 0.01) continue;
                 }
-                path.Add(new PlanPoint { E = pts[i].E, N = pts[i].N, IsWork = work });
+                path.Add(new PlanPoint { E = pts[i].E, N = pts[i].N, IsWork = work, IsHeadland = work && headland });
             }
         }
 

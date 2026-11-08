@@ -43,16 +43,22 @@ namespace AgOpenGPS.Tests.AutoPlan
             Assert.That(len, Is.EqualTo(Math.PI * 6).Within(0.01));
         }
 
-        [TestCase(3.0)]
-        [TestCase(6.0)]
-        [TestCase(12.0)]
-        public void Rectangle_PlanCoversFieldAndStaysInside(double width)
+        [TestCase(3.0, true)]
+        [TestCase(6.0, true)]
+        [TestCase(12.0, true)]
+        [TestCase(3.0, false)]
+        [TestCase(6.0, false)]
+        [TestCase(12.0, false)]
+        public void Rectangle_PlanCoversFieldAndStaysInside(double width, bool headlandAllAround)
         {
             var fence = Rectangle(300, 200);
-            var res = FieldPlanner.Build(fence, new FieldPlanSettings { WorkWidth = width, TurnRadius = 6 }, new V2(-10, -10), 0);
+            var set = new FieldPlanSettings { WorkWidth = width, TurnRadius = 6, HeadlandOnLongSides = headlandAllAround };
+            var res = FieldPlanner.Build(fence, set, new V2(-10, -10), 0);
 
             Assert.That(res.Ok, Is.True, res.Error);
-            Assert.That(res.TurnsLeavingField, Is.EqualTo(0));
+            // Headland only at the ends: the outermost passes run along the long sides, a turn
+            // next to a side can bulge out a little; the app warns about these.
+            Assert.That(res.TurnsLeavingField, Is.LessThanOrEqualTo(headlandAllAround ? 0 : 2));
             Assert.That(res.Turns, Is.EqualTo(res.Passes - 1));
             Assert.That(res.HeadlandLaps, Is.GreaterThanOrEqualTo(1));
 
@@ -60,8 +66,29 @@ namespace AgOpenGPS.Tests.AutoPlan
             double covered = res.WorkLength * width;
             Assert.That(covered, Is.GreaterThan(300 * 200 * 0.85));
 
+            if (headlandAllAround)
+                foreach (PlanPoint p in res.Points)
+                    Assert.That(FieldPlanner.PointInPolygon(fence, new V2(p.E, p.N)), Is.True);
+        }
+
+        [Test]
+        public void EndsOnlyHeadland_PassesReachTheLongSides()
+        {
+            // 300 m long passes (east-west); the long sides are south and north
+            var res = FieldPlanner.Build(Rectangle(300, 200), new FieldPlanSettings { WorkWidth = 6, TurnRadius = 6 }, new V2(-10, -10), 0);
+            Assert.That(res.Ok, Is.True, res.Error);
+
+            double minN = double.MaxValue, maxN = double.MinValue;
             foreach (PlanPoint p in res.Points)
-                Assert.That(FieldPlanner.PointInPolygon(fence, new V2(p.E, p.N)), Is.True);
+            {
+                if (!p.IsWork || p.IsHeadland) continue;
+                minN = Math.Min(minN, p.N);
+                maxN = Math.Max(maxN, p.N);
+            }
+            // first pass at half a tool width from the near long side, last pass within one
+            // tool width of the far side (200 m is not a multiple of the 6 m width)
+            Assert.That(minN, Is.EqualTo(3.0).Within(1.0));
+            Assert.That(maxN, Is.GreaterThan(200.0 - 6.0));
         }
 
         [Test]
@@ -72,7 +99,7 @@ namespace AgOpenGPS.Tests.AutoPlan
                 var res = FieldPlanner.Build(fence, new FieldPlanSettings { WorkWidth = 6, TurnRadius = 6 }, fence[0], 0);
                 Assert.That(res.Ok, Is.True, res.Error);
                 Assert.That(res.Passes, Is.GreaterThan(20));
-                Assert.That(res.TurnsLeavingField, Is.EqualTo(0));
+                Assert.That(res.TurnsLeavingField, Is.LessThanOrEqualTo(3));
             }
         }
 
