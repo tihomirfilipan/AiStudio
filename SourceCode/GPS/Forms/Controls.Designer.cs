@@ -166,6 +166,20 @@ namespace AgOpenGPS
         {
             longAvgPivDistance = 0;
 
+            // A recorded path (e.g. the auto field plan) steers by itself: the autosteer
+            // button starts it when the path panel is open, and stops it while it is driving
+            if (recPath.isDrivingRecordedPath)
+            {
+                btnPathGoStop.PerformClick();
+                return;
+            }
+            if (!isBtnAutoSteerOn && trk.idx < 0 && !ct.isContourBtnOn
+                && panelDrag.Visible && recPath.recList.Count > 4)
+            {
+                btnPathGoStop.PerformClick();
+                return;
+            }
+
             if (!timerSim.Enabled)
             {
                 if (avgSpeed > vehicle.maxSteerSpeed)

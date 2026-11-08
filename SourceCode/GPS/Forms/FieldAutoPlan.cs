@@ -130,8 +130,8 @@ namespace AgOpenGPS
             if (addTrack && plan.TrackLine.Count > 2)
                 msg += "\r\n" + T("A new curve track of the first pass will be added (dashed line).", "Bit će dodan novi trag - krivulja prvog prohoda (isprekidana linija).");
 
-            msg += "\r\n\r\n" + T("Save: the plan becomes the recorded path. Start it with Play in the recorded path panel, with autosteer on.",
-                "Spremi: plan postaje snimljena putanja. Pokrenite je gumbom Play u panelu snimljene putanje, uz uključen autopilot.");
+            msg += "\r\n\r\n" + T("Save: the plan becomes the recorded path. Start it with Play in the recorded path panel or with the autosteer button - steering switches on by itself.",
+                "Spremi: plan postaje snimljena putanja. Pokrenite je gumbom Play u panelu snimljene putanje ili gumbom autopilota - upravljanje se uključuje samo.");
 
             // Preview with the plan drawn, save or cancel
             using (var preview = new Forms.Field.FormAutoPlanPreview(plan, fence, msg,
@@ -286,7 +286,7 @@ namespace AgOpenGPS
 
             if (!recPath.isDrivingRecordedPath)
             {
-                state = T("Ready - press Play", "Spremno - pritisni Play");
+                state = T("Ready - Play or autosteer", "Spremno - Play ili autopilot");
                 next = current >= 0 ? RunName(recPathLabels[current]) : "-";
             }
             else if (recPath.isFollowingDubinsToPath)
