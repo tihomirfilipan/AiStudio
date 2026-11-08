@@ -319,6 +319,9 @@ namespace AgOpenGPS
 
             InitializeLanguages();
 
+            //automatic whole-field path planner menu entry
+            AddAutoPlanMenu();
+
             AppCore = new ApplicationCore(
                 new DirectoryInfo(RegistrySettings.baseDirectory),
                 null,
