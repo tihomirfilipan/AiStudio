@@ -85,10 +85,11 @@ namespace AgOpenGPS.Tests.AutoPlan
                 minN = Math.Min(minN, p.N);
                 maxN = Math.Max(maxN, p.N);
             }
-            // first pass at half a tool width from the near long side, last pass within one
-            // tool width of the far side (200 m is not a multiple of the 6 m width)
+            // first pass at half a tool width from the near long side; 200 m is not a multiple of
+            // 6 m, so an extra overlapping pass puts the tool edge on the far side too
             Assert.That(minN, Is.EqualTo(3.0).Within(1.0));
-            Assert.That(maxN, Is.GreaterThan(200.0 - 6.0));
+            Assert.That(res.ExtraSidePass, Is.True);
+            Assert.That(maxN, Is.EqualTo(197.0).Within(1.0));
         }
 
         [Test]

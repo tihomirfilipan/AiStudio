@@ -74,6 +74,7 @@ namespace AgOpenGPS.AutoPlan
         public int TurnsLeavingField;
         public int HeadlandLaps;
         public int SkippedPieces;
+        public bool ExtraSidePass;     // an extra overlapping pass was added along the far long side
         public double TotalLength;
         public double WorkLength;
         public string OrderDescription;
@@ -202,6 +203,34 @@ namespace AgOpenGPS.AutoPlan
             }
 
             if (passes.Count == 0) { res.Error = "No passes fit inside the field"; return; }
+
+            // Headland only at the ends: if a strip is left along the far long side, add one more
+            // pass (overlapping the previous one) with the tool edge on the boundary
+            if (endsOnly)
+            {
+                Pass last = passes[passes.Count - 1];
+                double dLast = W * (last.Lane + 0.5);
+                double lastLen = OpenLength(last.Pts);
+                var fenceSeg = new SegmentGrid(fence, true, Math.Max(5.0, W));
+                for (double f = 1.0; f >= 0.25; f -= 0.05)
+                {
+                    List<V2> off = OffsetOpen(refExt, (dLast + W * f) * side, refGrid, s);
+                    List<V2> best = null;
+                    foreach (var run in InsideRuns(off, work))
+                        if (best == null || run.Count > best.Count) best = run;
+                    if (best == null || OpenLength(best) < 0.5 * lastLen) continue;
+
+                    // tool must stay inside: centre at least half a width from the boundary
+                    var dists = new List<double>(best.Count);
+                    foreach (V2 q in best) dists.Add(fenceSeg.MinDistance(q, W));
+                    dists.Sort();
+                    if (dists[dists.Count / 2] < W * 0.5 - 0.2) continue;
+
+                    passes.Add(new Pass { Lane = last.Lane + 1, Pts = ResampleOpen(best, s) });
+                    res.ExtraSidePass = true;
+                    break;
+                }
+            }
 
             // --- Order passes and build turns ---
             var fenceGrid = new PolygonTester(fence);
