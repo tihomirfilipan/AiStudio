@@ -1,3 +1,58 @@
+# AiStudio – AgOpenGPS s automatskim planom parcele
+
+Ovaj repozitorij je inačica (fork) projekta [AgOpenGPS](https://github.com/AgOpenGPS-Official/AgOpenGPS)
+s dodatnim funkcijama i hrvatskim prijevodom. Izvorni opis projekta je niže, ispod crte.
+
+**Preuzimanje:** [zadnja verzija (Releases)](https://github.com/tihomirfilipan/AiStudio/releases/latest) –
+raspakirajte ZIP u novu mapu i pokrenite `AgOpenGPS.exe` (Windows, .NET Framework 4.8).
+Ako Windows blokira datoteke: desni klik na ZIP → Properties → Unblock prije raspakiravanja.
+
+## Novosti
+
+### Automatski plan parcele
+Kompletna putanja za cijelu parcelu bez intervencije vozača.
+
+- **Pokretanje:** izbornik alata parcele → *Automatski plan parcele*, ili gumb **Auto plan**
+  u prozoru *Generiraj AB* (s 2 kliknute točke na međi prohodi idu uz taj rub; bez točaka uz najdulji rub).
+- **Opcije prije izrade:** prikaz širine priključka i radijusa okretanja iz aplikacije (mogu se promijeniti
+  samo za plan), širina uvratine (automatski), uvratine samo na krajevima ili svuda, obrada uvratina na kraju
+  (zadano isključeno), dodatni prohod uz zadnji rub, novi trag.
+- **Prohodi:** krivi, paralelni s odabranim rubom; na kutovima ruba blagi luk (bez lomova).
+  Uvratine samo tamo gdje prohodi završavaju; uz duge rubove prvi i zadnji prohod idu do same međe.
+- **Pametni okreti:** Dubins okreti (U ili omega) uz radijus okretanja, redoslijed prohoda s preskakanjem
+  redova kad je to kraće; okreti drže cijeli priključak unutar polja.
+- **Predpregled** plana prije spremanja (međa, brojevi prohoda, okreti, novi trag) sa *Spremi* / *Odustani*.
+- **Dva načina vožnje:**
+  - *Snimljena putanja* – cijeli plan s okretima; pokreće se gumbom ▶ u panelu snimljene putanje ili gumbom
+    autopilota, upravljanje se uključuje samo. Sekcije se gase u okretima.
+  - *Krivulja za navođenje + automatsko okretanje* – krivulja prvog prohoda postaje aktivna linija,
+    uključuje se automatsko okretanje aplikacije, autopilot se uključuje normalno.
+- **Na karti:** brojevi prohoda na sredini traga (ne preklapaju se kad je karta odzumirana), okreti debljim
+  linijama u različitim bojama, uvratine sivo, kartica napretka dolje lijevo
+  (trenutni i sljedeći prohod, napredak, preostali km).
+
+### Simulator
+- **PLAY x1 / x10 / x50** (lijevo od kontrola simulatora): ubrzano vrijeme, svaki korak normalne duljine,
+  pa autopilot i sekcije rade kao pri normalnoj brzini; prikazana brzina ostaje stvarna.
+- Brzina se može mijenjati i dok se vozi snimljena putanja (okreti ostaju sporiji od prohoda).
+- Popravljeno zapinjanje na prilazu snimljenoj putanji.
+
+### Sučelje
+- **Hrvatski prijevod** gotovo cijelog sučelja AgOpenGPS-a i AgIO-a (jezik: *Hrvatski*).
+- **Skrivanje gumba:** u panelu tragova gumb **Uredi** – svaki gumb panela tragova i donje trake može se sakriti.
+- **Moderan izgled izbornika parcele** (tamna tema, velike pločice, istaknuto *Nastavi*/*Nova*).
+- **Automatska satelitska snimka** parcele s 50 m okolo kao pozadina karte (kad se otvori parcela s međom).
+
+### Uklonjeno
+- ISOBUS komunikacija (ISOXML uvoz polja je zadržan).
+
+## Napomene
+- Prije rada na pravom traktoru sve isprobajte u simulatoru.
+- Upozorenja u predpregledu plana (npr. okreti blizu međe) provjerite na karti.
+- Kutovi uz duge rubove i oštri kutovi međe ostaju za ručnu doradu.
+
+---
+
 # AgOpenGPS - Guidance software
 
 # ⚠️ Project Status: Maintenance Mode
