@@ -44,6 +44,7 @@ namespace AgOpenGPS.Properties
         // Buttons hidden by the user in the track flyout panel (control names, comma separated)
         public string setTrackPanel_hidden = "";
         public string setBottomPanel_hidden = "";
+        public bool setDisplay_modernTheme = true;
         public Point setWindow_QuickABLocation = new Point(100, 100);
         public Size setWindow_gridSize = new Size(400, 400);
         public Point setWindow_gridLocation = new Point(20, 20);

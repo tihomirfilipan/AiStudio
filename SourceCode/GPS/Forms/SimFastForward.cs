@@ -59,3 +59,31 @@ namespace AgOpenGPS
         }
     }
 }
+
+namespace AgOpenGPS
+{
+    public partial class FormGPS
+    {
+        private void AddThemeMenu()
+        {
+            var item = new System.Windows.Forms.ToolStripMenuItem
+            {
+                Text = T("Dark theme", "Tamni izgled"),
+                Font = menustripLanguage.Font,
+                Size = menustripLanguage.Size,
+                CheckOnClick = true,
+                Checked = Properties.Settings.Default.setDisplay_modernTheme
+            };
+            item.Click += (s, e) =>
+            {
+                Properties.Settings.Default.setDisplay_modernTheme = item.Checked;
+                Properties.Settings.Default.Save();
+                Forms.FormDialog.Show(T("Dark theme", "Tamni izgled"),
+                    T("Restart AgOpenGPS to apply the change.", "Ponovno pokrenite AgOpenGPS da se promjena primijeni."),
+                    Forms.DialogSeverity.Info);
+            };
+            int idx = fileToolStripMenuItem.DropDownItems.IndexOf(menustripLanguage);
+            fileToolStripMenuItem.DropDownItems.Insert(idx + 1, item);
+        }
+    }
+}

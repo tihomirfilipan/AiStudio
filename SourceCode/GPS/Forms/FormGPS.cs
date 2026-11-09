@@ -328,6 +328,9 @@ namespace AgOpenGPS
             //'Edit' button in the track flyout to hide buttons
             AddTrackPanelEditButton();
 
+            //dark theme on/off in the file menu
+            AddThemeMenu();
+
             AppCore = new ApplicationCore(
                 new DirectoryInfo(RegistrySettings.baseDirectory),
                 null,
@@ -505,6 +508,10 @@ namespace AgOpenGPS
 
             // load all the gui elements in gui.designer.cs
             LoadSettings();
+
+            // dark modern look for all windows (option in the file menu)
+            AgLibrary.Controls.ModernTheme.Enabled = Properties.Settings.Default.setDisplay_modernTheme;
+            AgLibrary.Controls.ModernTheme.Install();
 
             //for field data and overlap
             oglZoom.Width = 400;

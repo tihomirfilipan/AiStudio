@@ -29,6 +29,7 @@ namespace AgOpenGPS
             const int headerHeight = 84;
 
             SuspendLayout();
+            Tag = "modern-themed"; // own look, the general dark theme leaves it alone
             BackColor = ThemeBack;
             ForeColor = ThemeText;
 
