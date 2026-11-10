@@ -331,6 +331,9 @@ namespace AgOpenGPS
             //dark theme on/off in the file menu
             AddThemeMenu();
 
+            //plan mini map on/off in the file menu
+            AddMiniMapMenu();
+
             AppCore = new ApplicationCore(
                 new DirectoryInfo(RegistrySettings.baseDirectory),
                 null,

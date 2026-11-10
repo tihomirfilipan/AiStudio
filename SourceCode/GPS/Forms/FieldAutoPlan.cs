@@ -341,13 +341,13 @@ namespace AgOpenGPS
                 T("Remaining: ", "Preostalo: ") + remainingKm.ToString("0.0", CultureInfo.InvariantCulture) + " km"
             };
 
-            // Card in the lower left corner of the map
+            // Card in the upper left corner, below the mini map (it used to cover the field at the bottom)
             double size = 0.85;
             int lineH = 30;
             int width = 330;
             int height = lineH * lines.Length + 20;
-            double left = -oglMain.Width / 2.0 + 12;
-            double top = oglMain.Height - height - 110;
+            double left = -oglMain.Width / 2.0 + MiniMapLeftOffset;
+            double top = MiniMapTop + (Properties.Settings.Default.setDisplay_planMiniMap ? MiniMapHeight + 10 : 0);
 
             GL.Color4(0.12, 0.14, 0.17, 0.85);
             GL.Begin(PrimitiveType.Quads);
@@ -373,6 +373,118 @@ namespace AgOpenGPS
                 else GL.Color3(0.82f, 0.85f, 0.88f);
                 font.DrawText(left + 12, top + 8 + i * lineH, lines[i], i == 1 ? size * 1.1 : size);
             }
+        }
+
+        // Upper left area: clear of the pan button (top) and the recorded path panel (left edge)
+        private const int MiniMapLeftOffset = 95;
+        private const int MiniMapTop = 70;
+        private const int MiniMapWidth = 330;
+        private const int MiniMapHeight = 240;
+
+        /// <summary>
+        /// Small overview of the whole plan in the upper left corner: boundary, done part of the
+        /// path green, the rest yellow, turns grey, vehicle red. Switched in the file menu.
+        /// </summary>
+        private void DrawPlanMiniMap()
+        {
+            if (!Properties.Settings.Default.setDisplay_planMiniMap) return;
+            if (!panelDrag.Visible && !recPath.isDrivingRecordedPath) return;
+            if (!UpdateRecPathLabels()) return;
+
+            var list = recPath.recList;
+            int n = list.Count;
+
+            // bounds: boundary if there is one, otherwise the path
+            double minE = double.MaxValue, maxE = double.MinValue, minN = double.MaxValue, maxN = double.MinValue;
+            var fence = bnd.bndList.Count > 0 ? bnd.bndList[0].fenceLine : null;
+            if (fence != null && fence.Count > 2)
+            {
+                foreach (vec3 p in fence)
+                {
+                    minE = Math.Min(minE, p.easting); maxE = Math.Max(maxE, p.easting);
+                    minN = Math.Min(minN, p.northing); maxN = Math.Max(maxN, p.northing);
+                }
+            }
+            else
+            {
+                foreach (CRecPathPt p in list)
+                {
+                    minE = Math.Min(minE, p.easting); maxE = Math.Max(maxE, p.easting);
+                    minN = Math.Min(minN, p.northing); maxN = Math.Max(maxN, p.northing);
+                }
+            }
+            if (maxE - minE < 1 || maxN - minN < 1) return;
+
+            double left = -oglMain.Width / 2.0 + MiniMapLeftOffset;
+            double top = MiniMapTop;
+            const double pad = 10;
+            double sc = Math.Min((MiniMapWidth - 2 * pad) / (maxE - minE), (MiniMapHeight - 2 * pad) / (maxN - minN));
+            double ox = left + pad + ((MiniMapWidth - 2 * pad) - (maxE - minE) * sc) / 2;
+            double oy = top + pad + ((MiniMapHeight - 2 * pad) - (maxN - minN) * sc) / 2;
+            double X(double e) => ox + (e - minE) * sc;
+            double Y(double nn) => oy + (maxN - nn) * sc; // screen y grows downwards
+
+            // background
+            GL.Color4(0.12, 0.14, 0.17, 0.85);
+            GL.Begin(PrimitiveType.Quads);
+            GL.Vertex2(left, top);
+            GL.Vertex2(left + MiniMapWidth, top);
+            GL.Vertex2(left + MiniMapWidth, top + MiniMapHeight);
+            GL.Vertex2(left, top + MiniMapHeight);
+            GL.End();
+
+            // boundary
+            if (fence != null && fence.Count > 2)
+            {
+                GL.LineWidth(2);
+                GL.Color3(0.92f, 0.92f, 0.92f);
+                GL.Begin(PrimitiveType.LineLoop);
+                foreach (vec3 p in fence) GL.Vertex2(X(p.easting), Y(p.northing));
+                GL.End();
+            }
+
+            // path: done part green, rest yellow (work) / grey (turns); thinned to a few thousand points
+            int idx = recPath.isFollowingRecPath ? recPath.currentPositonIndex : 0;
+            int step = Math.Max(1, n / 3000);
+            GL.LineWidth(1.5f);
+            GL.Begin(PrimitiveType.LineStrip);
+            for (int i = 0; i < n; i += step)
+            {
+                CRecPathPt p = list[i];
+                if (i <= idx) GL.Color3(0.30f, 0.85f, 0.40f);
+                else if (p.autoBtnState) GL.Color3(0.98f, 0.88f, 0.40f);
+                else GL.Color3(0.55f, 0.58f, 0.62f);
+                GL.Vertex2(X(p.easting), Y(p.northing));
+            }
+            GL.End();
+
+            // vehicle
+            GL.PointSize(9.0f);
+            GL.Begin(PrimitiveType.Points);
+            GL.Color3(1.0f, 0.32f, 0.32f);
+            GL.Vertex2(X(pivotAxlePos.easting), Y(pivotAxlePos.northing));
+            GL.End();
+            GL.PointSize(1.0f);
+            GL.LineWidth(1);
+        }
+
+        private void AddMiniMapMenu()
+        {
+            var item = new ToolStripMenuItem
+            {
+                Text = T("Plan mini map", "Mala karta plana"),
+                Font = menustripLanguage.Font,
+                Size = menustripLanguage.Size,
+                CheckOnClick = true,
+                Checked = Properties.Settings.Default.setDisplay_planMiniMap
+            };
+            item.Click += (s, e) =>
+            {
+                Properties.Settings.Default.setDisplay_planMiniMap = item.Checked;
+                Properties.Settings.Default.Save();
+            };
+            int i = fileToolStripMenuItem.DropDownItems.IndexOf(menustripLanguage);
+            fileToolStripMenuItem.DropDownItems.Insert(i + 1, item);
         }
 
         private static string RunName(RunLabel l)
