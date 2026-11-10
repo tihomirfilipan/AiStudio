@@ -131,8 +131,8 @@ namespace AgOpenGPS
 
             if (guidanceMode)
             {
-                msg += "\r\n\r\n" + T("Save: the curve of the first pass (dashed line) becomes the active guidance line and the automatic U-turn is switched on. Switch on autosteer as usual. The app's own U-turn settings (skip, headland distance) are used; the recorded path is not changed.",
-                    "Spremi: krivulja prvog prohoda (isprekidana linija) postaje aktivna linija za navođenje i uključuje se automatsko okretanje. Autopilot uključite normalno. Koriste se postavke okretanja iz aplikacije (preskakanje, udaljenost od međe); snimljena putanja se ne mijenja.");
+                msg += "\r\n\r\n" + T("Save: the curve of the first pass (dashed line) becomes the active guidance line and the automatic U-turn is switched on. The planned headland replaces the app's headland line and switches the sections off in it. Switch on autosteer as usual. The app's own U-turn settings (skip, distance) are used; the recorded path is not changed.",
+                    "Spremi: krivulja prvog prohoda (isprekidana linija) postaje aktivna linija za navođenje i uključuje se automatsko okretanje. Uvratina iz plana postaje linija uvratine aplikacije i u njoj se sekcije gase. Autopilot uključite normalno. Koriste se postavke okretanja iz aplikacije (preskakanje, udaljenost); snimljena putanja se ne mijenja.");
             }
             else
             {
@@ -158,6 +158,9 @@ namespace AgOpenGPS
                     FormDialog.Show(title, T("No guidance line could be made.", "Linija za navođenje nije napravljena."), DialogSeverity.Error);
                     return;
                 }
+                // the app's headland line = inner edge of the planned headland, sections off there,
+                // so U-turns along the boundary do not work the headland
+                ApplyPlanHeadland(plan.WorkArea);
                 ActivateTrackWithUTurn(idx);
                 return;
             }
@@ -604,6 +607,35 @@ namespace AgOpenGPS
             FileSaveTracks();
             Log.EventWriter("Auto field plan: track added " + track.name);
             return trk.gArr.Count - 1;
+        }
+
+        /// <summary>
+        /// Uses the inner edge of the planned headland as the app's headland line, switches the
+        /// headland on and lets it switch the sections off (they stay off in the headland).
+        /// </summary>
+        private void ApplyPlanHeadland(List<V2> work)
+        {
+            if (work == null || work.Count < 10 || bnd.bndList.Count == 0) return;
+
+            var hd = bnd.bndList[0].hdLine;
+            hd.Clear();
+            int n = work.Count;
+            for (int i = 0; i < n; i++)
+            {
+                V2 a = work[i], b = work[(i + 1) % n];
+                double heading = Math.Atan2(b.E - a.E, b.N - a.N);
+                if (heading < 0) heading += glm.twoPI;
+                hd.Add(new vec3(a.E, a.N, heading));
+            }
+            FileSaveHeadland();
+
+            if (!bnd.isHeadlandOn) btnHeadlandOnOff.PerformClick();
+            if (!cboxIsSectionControlled.Checked)
+            {
+                cboxIsSectionControlled.Checked = true;
+                cboxIsSectionControlled_Click(cboxIsSectionControlled, EventArgs.Empty);
+            }
+            Log.EventWriter("Auto field plan: headland line set from the plan, sections controlled by headland");
         }
 
         /// <summary>Makes a track the active guidance line and switches the automatic U-turn on.</summary>
