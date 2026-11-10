@@ -240,6 +240,28 @@ namespace AgOpenGPS.Tests.AutoPlan
         }
 
         [Test]
+        public void ShiftWorkFlags_FollowsTheToolBehindThePivot()
+        {
+            // straight line 0..100 m, work from 20 m to 60 m
+            var pts = new List<PlanPoint>();
+            for (int i = 0; i <= 100; i++) pts.Add(new PlanPoint { E = 0, N = i, IsWork = i >= 20 && i <= 60 });
+
+            var shifted = FieldPlanner.ShiftWorkFlags(pts, 5.0);
+            // tool 5 m behind: sections on when the pivot is at 25 m, off after 65 m
+            Assert.That(shifted[24].IsWork, Is.False);
+            Assert.That(shifted[25].IsWork, Is.True);
+            Assert.That(shifted[65].IsWork, Is.True);
+            Assert.That(shifted[66].IsWork, Is.False);
+
+            var front = FieldPlanner.ShiftWorkFlags(pts, -3.0);
+            // tool 3 m in front: on at 17 m, off after 57 m
+            Assert.That(front[16].IsWork, Is.False);
+            Assert.That(front[17].IsWork, Is.True);
+            Assert.That(front[57].IsWork, Is.True);
+            Assert.That(front[58].IsWork, Is.False);
+        }
+
+        [Test]
         public void TooSmallField_ReturnsError()
         {
             var res = FieldPlanner.Build(Rectangle(10, 10), new FieldPlanSettings { WorkWidth = 6, TurnRadius = 6 }, new V2(0, 0), 0);

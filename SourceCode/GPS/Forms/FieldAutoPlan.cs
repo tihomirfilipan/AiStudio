@@ -5,6 +5,7 @@ using AgOpenGPS.Forms;
 using OpenTK.Graphics.OpenGL;
 using System;
 using System.Collections.Generic;
+using System.Drawing;
 using System.Globalization;
 using System.Windows.Forms;
 
@@ -165,7 +166,15 @@ namespace AgOpenGPS
 
             recPath.StopDrivingRecordedPath();
             recPath.recList.Clear();
-            foreach (PlanPoint p in plan.Points)
+
+            // sections follow the tool, which is behind (or in front of) the pivot the path is for
+            double toolBehind = -(tool.hitchLength
+                + (tool.isToolTrailing ? tool.trailingHitchLength + (tool.isToolTBT ? tool.tankTrailingHitchLength : 0) : 0));
+            toolBehind = Math.Max(-20.0, Math.Min(30.0, toolBehind));
+            var planPoints = FieldPlanner.ShiftWorkFlags(plan.Points, toolBehind);
+            Log.EventWriter("Auto field plan: section switching shifted by " + toolBehind.ToString("0.0", CultureInfo.InvariantCulture) + " m");
+
+            foreach (PlanPoint p in planPoints)
             {
                 double speed = !p.IsWork ? AutoPlanTurnSpeed : (p.IsHeadland ? AutoPlanHeadlandSpeed : AutoPlanWorkSpeed);
                 recPath.recList.Add(new CRecPathPt(p.E, p.N, p.Heading, speed, p.IsWork));
@@ -347,7 +356,9 @@ namespace AgOpenGPS
             int width = 330;
             int height = lineH * lines.Length + 20;
             double left = -oglMain.Width / 2.0 + MiniMapLeftOffset;
-            double top = MiniMapTop + (Properties.Settings.Default.setDisplay_planMiniMap ? MiniMapHeight + 10 : 0);
+            double top = MiniMapTop + (IsMiniMapShown ? MiniMapHeight + 10 : 0);
+            // no room below the mini map: put the card above it
+            if (top + height > oglMain.Height) top = Math.Max(0, MiniMapTop - height - 10);
 
             GL.Color4(0.12, 0.14, 0.17, 0.85);
             GL.Begin(PrimitiveType.Quads);
@@ -375,26 +386,34 @@ namespace AgOpenGPS
             }
         }
 
-        // Upper left area: clear of the pan button (top) and the recorded path panel (left edge)
-        private const int MiniMapLeftOffset = 95;
-        private const int MiniMapTop = 70;
-        private const int MiniMapWidth = 330;
-        private const int MiniMapHeight = 240;
+        private const int MiniMapWidth = 300;
+        private const int MiniMapHeight = 280;
+        private bool miniMapDragging;
+        private Point miniMapDragOffset;
+
+        // Mini map position in map pixels (left/top), kept inside the map
+        private int MiniMapX => Math.Max(0, Math.Min(oglMain.Width - MiniMapWidth, Properties.Settings.Default.setDisplay_miniMapX));
+        private int MiniMapY => Math.Max(0, Math.Min(oglMain.Height - MiniMapHeight, Properties.Settings.Default.setDisplay_miniMapY));
+        private int MiniMapLeftOffset => MiniMapX;
+        private int MiniMapTop => MiniMapY;
+
+        private bool IsMiniMapShown =>
+            Properties.Settings.Default.setDisplay_planMiniMap && (panelDrag.Visible || recPath.isDrivingRecordedPath)
+            && recPath.recList.Count > 4 && !recPath.isRecordOn;
 
         /// <summary>
-        /// Small overview of the whole plan in the upper left corner: boundary, done part of the
-        /// path green, the rest yellow, turns grey, vehicle red. Switched in the file menu.
+        /// Overview of the whole field like the main map: boundary, worked area (coverage),
+        /// the plan, the vehicle. Turns with the vehicle (driving direction up) and can be dragged.
+        /// Drawn in its own viewport with its own projection.
         /// </summary>
         private void DrawPlanMiniMap()
         {
-            if (!Properties.Settings.Default.setDisplay_planMiniMap) return;
-            if (!panelDrag.Visible && !recPath.isDrivingRecordedPath) return;
-            if (!UpdateRecPathLabels()) return;
+            if (!IsMiniMapShown) return;
 
             var list = recPath.recList;
             int n = list.Count;
 
-            // bounds: boundary if there is one, otherwise the path
+            // field centre and radius (rotation proof fit)
             double minE = double.MaxValue, maxE = double.MinValue, minN = double.MaxValue, maxN = double.MinValue;
             var fence = bnd.bndList.Count > 0 ? bnd.bndList[0].fenceLine : null;
             if (fence != null && fence.Count > 2)
@@ -414,24 +433,47 @@ namespace AgOpenGPS
                 }
             }
             if (maxE - minE < 1 || maxN - minN < 1) return;
+            double cx = (minE + maxE) / 2, cy = (minN + maxN) / 2;
+            double radius = 0.5 * Math.Sqrt((maxE - minE) * (maxE - minE) + (maxN - minN) * (maxN - minN)) * 1.05;
 
-            double left = -oglMain.Width / 2.0 + MiniMapLeftOffset;
-            double top = MiniMapTop;
-            const double pad = 10;
-            double sc = Math.Min((MiniMapWidth - 2 * pad) / (maxE - minE), (MiniMapHeight - 2 * pad) / (maxN - minN));
-            double ox = left + pad + ((MiniMapWidth - 2 * pad) - (maxE - minE) * sc) / 2;
-            double oy = top + pad + ((MiniMapHeight - 2 * pad) - (maxN - minN) * sc) / 2;
-            double X(double e) => ox + (e - minE) * sc;
-            double Y(double nn) => oy + (maxN - nn) * sc; // screen y grows downwards
+            int x = MiniMapX, y = MiniMapY;
 
-            // background
-            GL.Color4(0.12, 0.14, 0.17, 0.85);
+            // background (in the normal 2D overlay coordinates)
+            double left = -oglMain.Width / 2.0 + x;
+            GL.Color4(0.12, 0.14, 0.17, 0.88);
             GL.Begin(PrimitiveType.Quads);
-            GL.Vertex2(left, top);
-            GL.Vertex2(left + MiniMapWidth, top);
-            GL.Vertex2(left + MiniMapWidth, top + MiniMapHeight);
-            GL.Vertex2(left, top + MiniMapHeight);
+            GL.Vertex2(left, y);
+            GL.Vertex2(left + MiniMapWidth, y);
+            GL.Vertex2(left + MiniMapWidth, y + MiniMapHeight);
+            GL.Vertex2(left, y + MiniMapHeight);
             GL.End();
+
+            // own viewport and projection: field fitted, vehicle heading up
+            GL.Viewport(x, oglMain.Height - y - MiniMapHeight, MiniMapWidth, MiniMapHeight);
+            GL.MatrixMode(MatrixMode.Projection);
+            GL.PushMatrix();
+            GL.LoadIdentity();
+            double aspect = (double)MiniMapWidth / MiniMapHeight;
+            GL.Ortho(-radius * aspect, radius * aspect, -radius, radius, -10, 10);
+            GL.MatrixMode(MatrixMode.Modelview);
+            GL.PushMatrix();
+            GL.LoadIdentity();
+            GL.Rotate(glm.toDegrees(pivotAxlePos.heading), 0, 0, 1);
+            GL.Translate(-cx, -cy, 0);
+
+            // worked area, like the main map (first entry of each patch holds the colour)
+            for (int j = 0; j < triStrip.Count; j++)
+            {
+                foreach (var triList in triStrip[j].patchList)
+                {
+                    int count = triList.Count;
+                    if (count < 4) continue;
+                    GL.Color4((byte)triList[0].easting, (byte)triList[0].northing, (byte)triList[0].heading, (byte)200);
+                    GL.Begin(PrimitiveType.TriangleStrip);
+                    for (int i = 1; i < count; i++) GL.Vertex3(triList[i].easting, triList[i].northing, 0);
+                    GL.End();
+                }
+            }
 
             // boundary
             if (fence != null && fence.Count > 2)
@@ -439,33 +481,68 @@ namespace AgOpenGPS
                 GL.LineWidth(2);
                 GL.Color3(0.92f, 0.92f, 0.92f);
                 GL.Begin(PrimitiveType.LineLoop);
-                foreach (vec3 p in fence) GL.Vertex2(X(p.easting), Y(p.northing));
+                foreach (vec3 p in fence) GL.Vertex3(p.easting, p.northing, 0);
                 GL.End();
             }
 
-            // path: done part green, rest yellow (work) / grey (turns); thinned to a few thousand points
+            // plan: what is still ahead, passes yellow, turns grey
             int idx = recPath.isFollowingRecPath ? recPath.currentPositonIndex : 0;
-            int step = Math.Max(1, n / 3000);
-            GL.LineWidth(1.5f);
+            int step = Math.Max(1, n / 4000);
+            GL.LineWidth(1.2f);
             GL.Begin(PrimitiveType.LineStrip);
-            for (int i = 0; i < n; i += step)
+            for (int i = Math.Max(0, idx); i < n; i += step)
             {
                 CRecPathPt p = list[i];
-                if (i <= idx) GL.Color3(0.30f, 0.85f, 0.40f);
-                else if (p.autoBtnState) GL.Color3(0.98f, 0.88f, 0.40f);
-                else GL.Color3(0.55f, 0.58f, 0.62f);
-                GL.Vertex2(X(p.easting), Y(p.northing));
+                if (p.autoBtnState) GL.Color3(0.98f, 0.88f, 0.40f);
+                else GL.Color3(0.60f, 0.63f, 0.67f);
+                GL.Vertex3(p.easting, p.northing, 0);
             }
             GL.End();
 
             // vehicle
-            GL.PointSize(9.0f);
+            GL.PointSize(10.0f);
             GL.Begin(PrimitiveType.Points);
             GL.Color3(1.0f, 0.32f, 0.32f);
-            GL.Vertex2(X(pivotAxlePos.easting), Y(pivotAxlePos.northing));
+            GL.Vertex3(pivotAxlePos.easting, pivotAxlePos.northing, 0);
             GL.End();
             GL.PointSize(1.0f);
             GL.LineWidth(1);
+
+            // back to the full map
+            GL.PopMatrix();
+            GL.MatrixMode(MatrixMode.Projection);
+            GL.PopMatrix();
+            GL.MatrixMode(MatrixMode.Modelview);
+            GL.Viewport(0, 0, oglMain.Width, oglMain.Height);
+        }
+
+        // Dragging the mini map (left button / finger inside it)
+        private void HookMiniMapDrag()
+        {
+            oglMain.MouseDown += (s, e) =>
+            {
+                if (e.Button != MouseButtons.Left || !IsMiniMapShown) return;
+                if (e.X >= MiniMapX && e.X <= MiniMapX + MiniMapWidth && e.Y >= MiniMapY && e.Y <= MiniMapY + MiniMapHeight)
+                {
+                    miniMapDragging = true;
+                    miniMapDragOffset = new Point(e.X - MiniMapX, e.Y - MiniMapY);
+                }
+            };
+            oglMain.MouseMove += (s, e) =>
+            {
+                if (!miniMapDragging) return;
+                Properties.Settings.Default.setDisplay_miniMapX = e.X - miniMapDragOffset.X;
+                Properties.Settings.Default.setDisplay_miniMapY = e.Y - miniMapDragOffset.Y;
+                oglMain.Invalidate();
+            };
+            oglMain.MouseUp += (s, e) =>
+            {
+                if (!miniMapDragging) return;
+                miniMapDragging = false;
+                Properties.Settings.Default.setDisplay_miniMapX = MiniMapX;
+                Properties.Settings.Default.setDisplay_miniMapY = MiniMapY;
+                Properties.Settings.Default.Save();
+            };
         }
 
         private void AddMiniMapMenu()
@@ -485,6 +562,8 @@ namespace AgOpenGPS
             };
             int i = fileToolStripMenuItem.DropDownItems.IndexOf(menustripLanguage);
             fileToolStripMenuItem.DropDownItems.Insert(i + 1, item);
+
+            HookMiniMapDrag();
         }
 
         private static string RunName(RunLabel l)

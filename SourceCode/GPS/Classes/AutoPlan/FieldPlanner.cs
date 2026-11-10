@@ -347,6 +347,41 @@ namespace AgOpenGPS.AutoPlan
         }
 
         /// <summary>
+        /// Moves the work (section on/off) flags along the path by the distance the tool is
+        /// behind the vehicle pivot (negative: tool in front). The path is for the pivot, so
+        /// without this the sections switch off when the vehicle, not the tool, reaches the end
+        /// of a pass, leaving an unworked gap of that length at every pass end and start.
+        /// </summary>
+        public static List<PlanPoint> ShiftWorkFlags(IList<PlanPoint> pts, double toolBehind)
+        {
+            var r = new List<PlanPoint>(pts);
+            if (pts.Count < 2 || Math.Abs(toolBehind) < 0.05) return r;
+
+            var cum = new double[pts.Count];
+            for (int i = 1; i < pts.Count; i++)
+                cum[i] = cum[i - 1] + Math.Sqrt(Sq(pts[i].E - pts[i - 1].E) + Sq(pts[i].N - pts[i - 1].N));
+
+            int j = 0;
+            for (int i = 0; i < pts.Count; i++)
+            {
+                // flags of the point where the pivot was (or will be) when the tool is here
+                double target = cum[i] - toolBehind;
+                if (target <= 0) j = 0;
+                else if (target >= cum[pts.Count - 1]) j = pts.Count - 1;
+                else
+                {
+                    if (toolBehind > 0) { while (j + 1 < pts.Count && cum[j + 1] <= target) j++; }
+                    else { if (j < i) j = i; while (j + 1 < pts.Count && cum[j + 1] <= target) j++; }
+                }
+                PlanPoint p = r[i];
+                p.IsWork = pts[j].IsWork;
+                p.IsHeadland = pts[j].IsHeadland;
+                r[i] = p;
+            }
+            return r;
+        }
+
+        /// <summary>
         /// Labels for the working runs of a path, in driving order: passes get 1, 2, 3...,
         /// closed loops (headland laps) get U1, U2... Each label sits at the middle of its run.
         /// </summary>
