@@ -512,6 +512,7 @@ namespace AgOpenGPS
             // dark modern look for all windows (option in the file menu)
             AgLibrary.Controls.ModernTheme.Enabled = Properties.Settings.Default.setDisplay_modernTheme;
             AgLibrary.Controls.ModernTheme.Install();
+            ApplyMainScreenTiles();
 
             //for field data and overlap
             oglZoom.Width = 400;
