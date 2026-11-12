@@ -547,6 +547,7 @@ namespace AgOpenGPS.AutoPlan
             if (slantFirst != null) ExitPose(slantFirst, out orderStart, out orderHeading);
             List<Step> order = ChooseOrder(passes, R, W, fenceGrid, orderStart, orderHeading, s, transferLoop, orderMode, out string orderName);
             if (slantFirst != null) order.Insert(0, slantFirst);
+            else order = AlternateSlant(order, passes, fenceGrid, R);
             res.OrderDescription = orderName;
 
             var path = new List<PlanPoint>();
@@ -1410,6 +1411,40 @@ namespace AgOpenGPS.AutoPlan
             double lateral = Math.Abs(rel.E * dir0.N - rel.N * dir0.E);
             double lengthwise = Math.Abs(rel.E * dir0.E + rel.N * dir0.N);
             bool near = lateral <= 2.0 * R + 5.0 * W && lengthwise <= 150.0;
+            // pass ends on a slanted edge: turn along the headland, up the slant, into the next pass
+            if (wideTurn && loop != null && IsSlantedEnd(p0, h0, fence))
+            {
+                V2 d0 = new V2(Math.Sin(h0), Math.Cos(h0));
+                double reach = fence.Clearance + 0.3 + 1.5;
+                V2 q = p0;
+                for (double e = 0.5; e <= 200.0; e += 0.5)
+                {
+                    V2 c = p0 + d0 * e;
+                    if (!fence.Clear(c) || fence.EdgeDistance(c, reach + 1.0) < reach) break;
+                    q = c;
+                }
+                // the next pass starts as close to its edge as the turn into it allows
+                V2 d1 = new V2(Math.Sin(h1), Math.Cos(h1));
+                double maxBack = 0;
+                for (double e = 0.5; e <= 60.0; e += 0.5)
+                {
+                    V2 c = p1 - d1 * e;
+                    if (!fence.Clear(c)) break;
+                    maxBack = e;
+                }
+                for (double e = maxBack; e >= 0; e -= 1.0)
+                {
+                    V2 entry = p1 - d1 * e;
+                    List<V2> hug = LoopTransfer(q, h0, entry, h1, loop, R, s, fence, out int hugOut, out double hugCost);
+                    if (hug == null || hugOut != 0 || hugCost >= 400.0) continue;
+                    var pts = new List<V2>();
+                    AddStraight(pts, p0, q, s);
+                    for (int k = 1; k < hug.Count; k++) pts.Add(hug[k]);
+                    AddStraight(pts, entry, p1, s);
+                    return pts;
+                }
+            }
+
             if (wideTurn && near)
             {
                 List<V2> wide = WideTurn(p0, h0, p1, h1, R, s, fence);
@@ -1524,6 +1559,102 @@ namespace AgOpenGPS.AutoPlan
                 }
             }
             return best;
+        }
+
+        /// <summary>
+        /// Passes that end on a gently slanted boundary are done in turn with the neighbouring
+        /// passes that end on the normal edge on the same side: up the slanted pass, along the
+        /// headland up the slant to the top, down a top pass, turn at the bottom, up the next
+        /// slanted pass, and so on. The block goes where it joins the rest of the plan best.
+        /// </summary>
+        private static List<Step> AlternateSlant(List<Step> order, List<Pass> passes, PolygonTester fence, double R)
+        {
+            var upEnd = new Dictionary<Pass, bool>();   // true: B is the end on the slant
+            var slanted = new List<Pass>();
+            foreach (Pass ps in passes)
+            {
+                if (ps.Pts.Count < 4) continue;
+                int n = ps.Pts.Count;
+                bool sb = IsSlantedEnd(ps.B, HeadingOf(ps.Pts[n - 3], ps.B), fence);
+                bool sa = IsSlantedEnd(ps.A, HeadingOf(ps.Pts[2], ps.A), fence);
+                if (sa == sb) continue;
+                upEnd[ps] = sb;
+                slanted.Add(ps);
+            }
+            if (slanted.Count < 2) return order;
+
+            var byLane = new Dictionary<int, Pass>();
+            foreach (Pass ps in passes) byLane[ps.Lane] = ps;
+            int minLane = int.MaxValue, maxLane = int.MinValue;
+            foreach (Pass ps in slanted) { minLane = Math.Min(minLane, ps.Lane); maxLane = Math.Max(maxLane, ps.Lane); }
+
+            // neighbouring passes ending on the normal edge, on the side next to the slanted ones
+            List<Pass> TopSide(int startLane, int step)
+            {
+                var list = new List<Pass>();
+                for (int l = startLane; list.Count < slanted.Count && byLane.TryGetValue(l, out Pass ps); l += step)
+                {
+                    if (upEnd.ContainsKey(ps)) break;
+                    list.Add(ps);
+                }
+                return list;
+            }
+            List<Pass> below = TopSide(minLane - 1, -1), above = TopSide(maxLane + 1, 1);
+            bool useBelow = below.Count >= above.Count;
+            List<Pass> tops = useBelow ? below : above;
+            if (tops.Count == 0) return order;
+
+            // slanted passes starting next to the top ones
+            slanted.Sort((x, y) => useBelow ? x.Lane.CompareTo(y.Lane) : y.Lane.CompareTo(x.Lane));
+
+            var block = new List<Step>();
+            int pairs = Math.Min(slanted.Count, tops.Count);
+            for (int k = 0; k < pairs; k++)
+            {
+                Pass sp = slanted[k];
+                bool sUpIsB = upEnd[sp];
+                block.Add(new Step { Pass = sp, Reverse = !sUpIsB });       // drive towards the slant
+                V2 up = sUpIsB ? sp.B : sp.A;
+                Pass tp = tops[k];
+                bool enterAtB = (tp.B - up).Length < (tp.A - up).Length;
+                block.Add(new Step { Pass = tp, Reverse = enterAtB });      // enter at its top end
+            }
+            for (int k = pairs; k < slanted.Count; k++)
+                block.Add(new Step { Pass = slanted[k], Reverse = !upEnd[slanted[k]] });
+
+            var inBlock = new HashSet<Pass>();
+            foreach (Step st in block) inBlock.Add(st.Pass);
+            var rest = new List<Step>();
+            foreach (Step st in order) if (!inBlock.Contains(st.Pass)) rest.Add(st);
+
+            // put the block where the joins are shortest
+            double Join(Step a, Step b)
+            {
+                ExitPose(a, out V2 p, out double h);
+                EntryPose(b.Pass, b.Reverse, out V2 q, out double hq);
+                return DubinsLength(p, h, q, hq, R);
+            }
+            int bestPos = rest.Count;
+            double bestCost = double.MaxValue;
+            for (int pos = 0; pos <= rest.Count; pos++)
+            {
+                double c = 0;
+                if (pos > 0) c += Join(rest[pos - 1], block[0]);
+                if (pos < rest.Count) c += Join(block[block.Count - 1], rest[pos]);
+                if (pos > 0 && pos < rest.Count) c -= Join(rest[pos - 1], rest[pos]);
+                if (c < bestCost) { bestCost = c; bestPos = pos; }
+            }
+            rest.InsertRange(bestPos, block);
+            return rest;
+        }
+
+        /// <summary>The pass meets the boundary at a gentle angle (slanted end).</summary>
+        private static bool IsSlantedEnd(V2 p, double h, PolygonTester fence)
+        {
+            V2 d = new V2(Math.Sin(h), Math.Cos(h));
+            V2 edge = fence.EdgeDirection(p);
+            double c = Math.Abs(edge.E * d.E + edge.N * d.N);
+            return c >= 0.85 && c <= 0.995;   // gently slanted (under about 30 degrees)
         }
 
         /// <summary>

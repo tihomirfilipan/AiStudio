@@ -350,7 +350,7 @@ namespace AgOpenGPS.Forms.Field
             tileAddTrack.Selected = true;
             tileAvoidWorked.Selected = false;
             tileSplit.Selected = false;
-            tileSlant.Selected = true;
+            tileSlant.Selected = false;
             edgeIndex = -1;
             OptionsChanged();
         }
