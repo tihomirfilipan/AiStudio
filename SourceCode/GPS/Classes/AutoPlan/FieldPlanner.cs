@@ -1423,21 +1423,21 @@ namespace AgOpenGPS.AutoPlan
                     if (!fence.Clear(c) || fence.EdgeDistance(c, reach + 1.0) < reach) break;
                     q = c;
                 }
-                // next pass also starts on the slant (further down): along the boundary to the
-                // top, turn there and back down on a second line inside, into that pass
-                if (IsSlantedEnd(p1, Mod2Pi(h1 + Math.PI), fence))
-                {
-                    List<V2> around = AroundTheTop(p0, q, h0, p1, h1, loop, R, W, s, fence);
-                    if (around != null) return around;
-                }
+                // the next pass starts before the boundary is reached: plain turn into it there,
+                // not up to the boundary and back over the own track
+                double reachLen = (q - p0).Length;
+                double targetLen = (p1 - p0).E * d0.E + (p1 - p0).N * d0.N;
+                if (targetLen < reachLen - 2.0 * R) goto NoHug;
 
                 // the next pass starts as close to its edge as the turn into it allows
                 V2 d1 = new V2(Math.Sin(h1), Math.Cos(h1));
+                // (not closer to the edge than the turn from the boundary line needs)
+                double keep = fence.Clearance + 0.3 + R;
                 double maxBack = 0;
                 for (double e = 0.5; e <= 60.0; e += 0.5)
                 {
                     V2 c = p1 - d1 * e;
-                    if (!fence.Clear(c)) break;
+                    if (!fence.Clear(c) || fence.EdgeDistance(c, keep + 1.0) < keep) break;
                     maxBack = e;
                 }
                 for (double e = maxBack; e >= 0; e -= 1.0)
@@ -1452,6 +1452,7 @@ namespace AgOpenGPS.AutoPlan
                     return pts;
                 }
             }
+            NoHug:
 
             if (wideTurn && near)
             {
@@ -1644,10 +1645,12 @@ namespace AgOpenGPS.AutoPlan
                 bool enterAtB = (tp.B - up).Length < (tp.A - up).Length;
                 block.Add(new Step { Pass = tp, Reverse = enterAtB });      // enter at its top end
             }
-            // slanted passes without a top pass: up and down in turn
-            for (int k = pairs; k < slanted.Count; k++)
+            // slanted passes without a top pass: the lowest one first going up, along the boundary
+            // up the slant into the next higher one going down, and so on (always forward along
+            // the boundary)
+            for (int k = slanted.Count - 1, c = 0; k >= pairs; k--, c++)
             {
-                bool goUp = (k - pairs) % 2 == 0;
+                bool goUp = c % 2 == 0;
                 block.Add(new Step { Pass = slanted[k], Reverse = goUp ? !upEnd[slanted[k]] : upEnd[slanted[k]] });
             }
 
@@ -1675,61 +1678,6 @@ namespace AgOpenGPS.AutoPlan
             }
             rest.InsertRange(bestPos, block);
             return rest;
-        }
-
-        /// <summary>
-        /// From a pass end on the slant to the next pass that also starts on the slant: up along
-        /// the boundary line, round the corner and along the top edge, a half turn onto a second
-        /// line two turning radii further in, back round the corner and down the slant on it,
-        /// and into the next pass. Null if it does not fit.
-        /// </summary>
-        private static List<V2> AroundTheTop(V2 p0, V2 q, double h0, V2 p1, double h1, List<V2> loop, double R, double W, double s, PolygonTester fence)
-        {
-            int m = loop.Count;
-            int iq = NearestIndex(loop, q);
-            int dir = Math.Abs(AngleDiff(HeadingOf(loop[iq], loop[(iq + 1) % m]), h0)) < Math.PI / 2 ? 1 : -1;
-            double Hd(List<V2> l, int i, int d) => HeadingOf(l[((i % l.Count) + l.Count) % l.Count], l[(((i + d) % l.Count) + l.Count) % l.Count]);
-
-            // along the outer line until it has turned round the corner onto the top edge
-            int it = iq;
-            int extra = (int)Math.Ceiling(2.5 * R / s);
-            for (int k = 0; k < m / 2; k++)
-            {
-                it = ((iq + dir * k) % m + m) % m;
-                if (Math.Abs(AngleDiff(Hd(loop, it, dir), h0)) > 100.0 * Math.PI / 180.0) { it = ((it + dir * extra) % m + m) % m; break; }
-            }
-
-            // join the outer line a little ahead of q
-            int ia = ((iq + dir * extra) % m + m) % m;
-            List<V2> c1 = ClearDubins(q, h0, loop[ia], Hd(loop, ia, dir), R, s, fence);
-            if (c1 == null) return null;
-
-            // second line further in, driven the other way
-            List<V2> inner = InsetLoop(fence.Polygon, W * 0.5 + 2.0 * R, s);
-            if (inner.Count < 10) return null;
-            inner = RoundLoop(inner, R, s);
-            int n2 = inner.Count;
-            int jt = NearestIndex(inner, loop[it]);
-            int dir2 = Math.Abs(AngleDiff(Hd(inner, jt, 1), Hd(loop, it, dir))) < Math.PI / 2 ? -1 : 1;   // opposite way
-            int jb = ((jt + dir2 * extra) % n2 + n2) % n2;
-            List<V2> uturn = ClearDubins(loop[it], Hd(loop, it, dir), inner[jb], Hd(inner, jb, dir2), R, s, fence);
-            if (uturn == null) return null;
-
-            int je = NearestIndex(inner, p1);
-            je = ((je - dir2 * extra) % n2 + n2) % n2;
-            List<V2> c2 = ClearDubins(inner[je], Hd(inner, je, dir2), p1, h1, R, s, fence);
-            if (c2 == null) return null;
-
-            var pts = new List<V2>();
-            AddStraight(pts, p0, q, s);
-            for (int k = 1; k < c1.Count; k++) pts.Add(c1[k]);
-            for (int i = ia; i != it; i = ((i + dir) % m + m) % m) pts.Add(loop[i]);
-            for (int k = 0; k < uturn.Count; k++) pts.Add(uturn[k]);
-            int guard = 0;
-            for (int i = jb; i != je && guard++ < n2; i = ((i + dir2) % n2 + n2) % n2) pts.Add(inner[i]);
-            for (int k = 0; k < c2.Count; k++) pts.Add(c2[k]);
-            if (guard >= n2 || CountOutside(pts, fence) > 0) return null;
-            return pts;
         }
 
         /// <summary>The pass meets the boundary at a gentle angle (slanted end).</summary>
