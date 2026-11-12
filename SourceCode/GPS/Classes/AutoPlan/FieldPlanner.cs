@@ -304,7 +304,7 @@ namespace AgOpenGPS.AutoPlan
                 {
                     LastPose(path, s, out V2 lastP, out double lastH);
                     double entryH = HeadingOf(pts[0], pts[Math.Min(3, pts.Count - 1)]);
-                    if ((pts[0] - lastP).Length <= 2.0 * R + 4.0 * W)
+                    if ((pts[0] - lastP).Length <= 2.0 * R + 4.0 * W + 40.0)
                     {
                         var man = ReverseManeuver.Find(lastP, lastH, pts[0], entryH, R, s, fenceGrid.Clear);
                         if (man != null)

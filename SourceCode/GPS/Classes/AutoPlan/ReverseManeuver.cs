@@ -30,7 +30,7 @@ namespace AgOpenGPS.AutoPlan
         /// Null if nothing was found within the search limit.
         /// </summary>
         public static List<Pose> Find(V2 p0, double h0, V2 p1, double h1, double R, double spacing,
-            Func<V2, bool> inside, int maxExpansions = 30000)
+            Func<V2, bool> inside, int maxExpansions = 60000)
         {
             double step = Math.Max(1.0, R * Math.PI / 8.0);   // length of one primitive
             double cell = Math.Max(0.5, step * 0.5);
