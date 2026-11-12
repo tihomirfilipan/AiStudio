@@ -44,6 +44,7 @@ namespace AgOpenGPS
         // ---- satellite background without a field ----
         private const double BrowserSatHalfSize = 1500.0;   // meters around the view center
         private GeoTexture2D browserSatTexture;
+        private Bitmap browserSatBitmap;   // must live as long as the texture (it is uploaded on first draw)
         private Bitmap browserSatPendingBitmap;
         private Wgs84 browserSatNW, browserSatSE;
         private GeoBoundingBox browserSatBox;
@@ -214,6 +215,26 @@ namespace AgOpenGPS
         /// </summary>
         private void DrawFieldBrowser()
         {
+            try
+            {
+                DrawFieldBrowserCore();
+            }
+            catch (Exception ex)
+            {
+                // never break the main view because of the field map
+                Log.EventWriter("Field browser: draw failed " + ex.Message);
+                browserSatTexture?.Dispose();
+                browserSatTexture = null;
+                browserSatBitmap?.Dispose();
+                browserSatBitmap = null;
+                browserSatNextTry = DateTime.Now.AddSeconds(30);
+                GL.Disable(EnableCap.Texture2D);
+                GL.LineWidth(1);
+            }
+        }
+
+        private void DrawFieldBrowserCore()
+        {
             GL.GetDouble(GetPName.ModelviewMatrix, fbModel);
             GL.GetDouble(GetPName.ProjectionMatrix, fbProj);
             fbMatricesValid = true;
@@ -284,8 +305,9 @@ namespace AgOpenGPS
             if (browserSatPendingBitmap != null)
             {
                 browserSatTexture?.Dispose();
-                browserSatTexture = new GeoTexture2D(browserSatPendingBitmap);
-                browserSatPendingBitmap.Dispose();
+                browserSatBitmap?.Dispose();
+                browserSatBitmap = browserSatPendingBitmap;
+                browserSatTexture = new GeoTexture2D(browserSatBitmap);
                 browserSatPendingBitmap = null;
                 browserSatPlane = null;
             }
