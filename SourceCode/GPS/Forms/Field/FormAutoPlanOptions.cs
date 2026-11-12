@@ -21,7 +21,7 @@ namespace AgOpenGPS.Forms.Field
 
         private readonly PictureTile tilePath, tileGuidance;
         private readonly PictureTile tileEnds, tileAllAround;
-        private readonly PictureTile tileTurnsEdge, tileTurnsShort;
+        private readonly PictureTile tileTurnsEdge, tileTurnsShort, tileTurnsReverse;
         private readonly PictureTile tileOrderAuto, tileOrderNeighbour, tileOrderSkip;
         private readonly PictureTile tileWorkHeadland, tileExtraPass, tileAddTrack;
 
@@ -113,7 +113,9 @@ namespace AgOpenGPS.Forms.Field
             var right = Column();
             tileTurnsEdge = new PictureTile(T("Out at the edge", "Uz među"), DrawTurnsAtEdge);
             tileTurnsShort = new PictureTile(T("Short at pass end", "Kratki na kraju"), DrawTurnsShort);
-            AddGroup(right, T("Turns", "Okreti"), true, set.setAutoPlan_turnsAtBoundary ? 0 : 1, tileTurnsEdge, tileTurnsShort);
+            tileTurnsReverse = new PictureTile(T("With reversing", "S vožnjom unazad"), DrawTurnsReverse);
+            AddGroup(right, T("Turns", "Okreti"), true, set.setAutoPlan_reverseTurns ? 2 : (set.setAutoPlan_turnsAtBoundary ? 0 : 1),
+                tileTurnsEdge, tileTurnsShort, tileTurnsReverse);
 
             tileOrderAuto = new PictureTile(T("Automatic", "Automatski"), DrawOrderAuto);
             tileOrderNeighbour = new PictureTile(T("Neighbour passes", "Susjedni prohodi"), DrawOrderNeighbour);
@@ -253,7 +255,8 @@ namespace AgOpenGPS.Forms.Field
                 WorkHeadland = tileWorkHeadland.Selected,
                 AddExtraPass = tileExtraPass.Selected,
                 OrderMode = order,
-                TurnsAtBoundary = tileTurnsEdge.Selected
+                TurnsAtBoundary = tileTurnsEdge.Selected,
+                HeadlandReverseTurns = tileTurnsReverse.Selected
             };
 
             var set = Properties.Settings.Default;
@@ -265,6 +268,7 @@ namespace AgOpenGPS.Forms.Field
             set.setAutoPlan_guidanceMode = tileGuidance.Selected;
             set.setAutoPlan_orderMode = order;
             set.setAutoPlan_turnsAtBoundary = tileTurnsEdge.Selected;
+            set.setAutoPlan_reverseTurns = tileTurnsReverse.Selected;
             set.Save();
 
             DialogResult = DialogResult.OK;
@@ -397,6 +401,27 @@ namespace AgOpenGPS.Forms.Field
             int step = (r.Width - 36) / 5;
             for (int i = 0; i < 5; i += 2)
                 UTurn(g, i % 4 == 0 ? CTurn : CTurn2, r.Left + 18 + i * step, r.Left + 18 + (i + 1) * step, r.Top + 30, true);
+        }
+
+        private static void DrawTurnsReverse(Graphics g, Rectangle r)
+        {
+            // three point turn into the neighbour pass: forward turn, back, forward
+            Field(g, r);
+            using (var p = new Pen(Color.FromArgb(150, CHead), 1f) { DashStyle = DashStyle.Dash })
+                g.DrawLine(p, r.Left + 4, r.Top + 34, r.Right - 4, r.Top + 34);
+            Passes(g, r.Left + 30, r.Right - 30, r.Top + 34, r.Bottom - 6, 4, CPass);
+            int xa = r.Left + 30, xb = r.Left + 30 + (r.Width - 60) / 3;
+            using (Pen p = P(CTurn, 2.6f))
+                g.DrawArc(p, xa, r.Top + 10, 2 * (xb - xa), 48, 180, 90);   // forward, turning
+            using (var p = new Pen(Color.White, 2.6f) { DashStyle = DashStyle.Dash })
+            {
+                p.CustomEndCap = new AdjustableArrowCap(4, 4);
+                g.DrawLine(p, xa + (xb - xa), r.Top + 12, xa + (xb - xa) + 16, r.Top + 12);   // back
+            }
+            using (Pen p = P(CTurn2, 2.6f))
+                g.DrawArc(p, xb, r.Top + 12, 32, 44, 270, 90);              // forward into the next pass
+            using (var f = new Font("Tahoma", 9F, FontStyle.Bold))
+                g.DrawString("R", f, Brushes.White, r.Right - 24, r.Top + 4);
         }
 
         private static void Numbers(Graphics g, Rectangle r, int[] order, int y)

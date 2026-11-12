@@ -447,7 +447,8 @@ namespace AgOpenGPS
             //update base on autosteer settings and distance from line
             double goalPointDistance = mf.vehicle.UpdateGoalPointDistance();
 
-            bool ReverseHeading = !mf.isReverse;
+            // a planned reverse part (negative speed) is still followed along the path order
+            bool ReverseHeading = !mf.isReverse || recList[A].speed < 0;
 
             int count = ReverseHeading ? 1 : -1;
             CRecPathPt start = new CRecPathPt(rEastRP, rNorthRP, 0, 0, false);
@@ -720,6 +721,21 @@ namespace AgOpenGPS
                 for (int h = from; h <= runEnd; h++) GL.Vertex3(recList[h].easting, recList[h].northing, 0);
                 GL.End();
             }
+
+            // reverse parts of turns: white, dashed
+            GL.LineWidth(4);
+            GL.Color3(1.0f, 1.0f, 1.0f);
+            GL.Enable(EnableCap.LineStipple);
+            GL.LineStipple(1, 0x0F0F);
+            GL.Begin(PrimitiveType.Lines);
+            for (int h = 1; h < ptCount; h++)
+            {
+                if (recList[h].speed >= 0) continue;
+                GL.Vertex3(recList[h - 1].easting, recList[h - 1].northing, 0);
+                GL.Vertex3(recList[h].easting, recList[h].northing, 0);
+            }
+            GL.End();
+            GL.Disable(EnableCap.LineStipple);
             GL.LineWidth(1);
 
             if (!isRecordOn)

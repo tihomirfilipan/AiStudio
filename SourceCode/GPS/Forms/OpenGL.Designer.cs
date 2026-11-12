@@ -490,6 +490,7 @@ namespace AgOpenGPS
 
                     DrawPlanMiniMap();
                     DrawAutoPlanCard();
+                    DrawReverseHint();
 
                     if (bnd.bndList.Count > 0 && yt.isYouTurnBtnOn) DrawUTurnBtn();
 

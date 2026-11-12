@@ -26,6 +26,7 @@ namespace AgOpenGPS.AutoPlan
         public double E, N, Heading;
         public bool IsWork;
         public bool IsHeadland; // working point on a headland lap or headland strip
+        public bool IsReverse;  // reached driving backwards (Heading is still where the vehicle faces)
     }
 
     /// <summary>Label for one working run of a path (pass number or headland lap).</summary>
@@ -71,6 +72,12 @@ namespace AgOpenGPS.AutoPlan
         /// edge, turn back); false: shortest turn right at the pass end.
         /// </summary>
         public bool TurnsAtBoundary = true;
+
+        /// <summary>
+        /// Turns in the headland (pass to next pass, headland strip to strip) as forward/reverse
+        /// manoeuvres (three point turns) into the neighbour pass instead of half turns or loops.
+        /// </summary>
+        public bool HeadlandReverseTurns = false;
 
         /// <summary>
         /// Part of the boundary the passes follow (e.g. picked with 2 points on the map).
@@ -190,7 +197,7 @@ namespace AgOpenGPS.AutoPlan
                 foreach (int id in endRunId) { if (id >= 0) anyEnd = true; else anySide = true; }
                 if (anyEnd && anySide)
                     // slanted ends get a wider headland, so turns between passes fit without loops
-                    work = InsetEnds(fence, endRunId, headWidth, s, midDir, set.WorkHeadland ? 0.0 : Math.Max(2.0 * R, W));
+                    work = InsetEnds(fence, endRunId, headWidth, s, midDir, set.WorkHeadland || set.HeadlandReverseTurns ? 0.0 : Math.Max(2.0 * R, W));
                 else
                     endsOnly = false; // no clear long sides (round field): headland all around
             }
@@ -281,7 +288,9 @@ namespace AgOpenGPS.AutoPlan
             // drive line along the boundary (outer headland lap / first pass) for long transfers
             List<V2> transferLoop = BuildTransferLoop(fence, W, R, s, fenceGrid);
 
-            List<Step> order = ChooseOrder(passes, R, W, fenceGrid, startPos, startHeading, s, transferLoop, set.OrderMode, out string orderName);
+            // with reverse turns the neighbour pass is next (no skipping needed)
+            int orderMode = set.HeadlandReverseTurns && set.OrderMode == 0 ? 1 : set.OrderMode;
+            List<Step> order = ChooseOrder(passes, R, W, fenceGrid, startPos, startHeading, s, transferLoop, orderMode, out string orderName);
             res.OrderDescription = orderName;
 
             var path = new List<PlanPoint>();
@@ -291,6 +300,23 @@ namespace AgOpenGPS.AutoPlan
                 List<V2> pts = st.Pass.Pts;
                 if (st.Reverse) { pts = new List<V2>(pts); pts.Reverse(); }
 
+                if (i > 0 && set.HeadlandReverseTurns)
+                {
+                    LastPose(path, s, out V2 lastP, out double lastH);
+                    double entryH = HeadingOf(pts[0], pts[Math.Min(3, pts.Count - 1)]);
+                    if ((pts[0] - lastP).Length <= 2.0 * R + 4.0 * W)
+                    {
+                        var man = ReverseManeuver.Find(lastP, lastH, pts[0], entryH, R, s, fenceGrid.Clear);
+                        if (man != null)
+                        {
+                            foreach (var q in man)
+                                path.Add(new PlanPoint { E = q.P.E, N = q.P.N, IsWork = false, IsReverse = q.Reverse });
+                            res.Turns++;
+                            AppendPoints(path, pts, true, true);
+                            continue;
+                        }
+                    }
+                }
                 if (i > 0)
                 {
                     LastPose(path, s, out V2 lastP, out double lastH);
@@ -307,7 +333,7 @@ namespace AgOpenGPS.AutoPlan
             // --- Headland: strips at the pass ends, or laps all around ---
             if (set.WorkHeadland && endsOnly)
             {
-                BuildEndStrips(fence, endRunId, laps, W, R, s, fenceGrid, path, res, transferLoop);
+                BuildEndStrips(fence, endRunId, laps, W, R, s, fenceGrid, path, res, transferLoop, set.HeadlandReverseTurns);
             }
             else if (set.WorkHeadland)
             {
@@ -586,7 +612,7 @@ namespace AgOpenGPS.AutoPlan
         /// The direction of every strip is chosen so that the connecting turn is short and inside.
         /// </summary>
         private static void BuildEndStrips(List<V2> fence, int[] endRunId, int laps, double W, double R, double s,
-            PolygonTester fenceGrid, List<PlanPoint> path, FieldPlanResult res, List<V2> transferLoop)
+            PolygonTester fenceGrid, List<PlanPoint> path, FieldPlanResult res, List<V2> transferLoop, bool reverseTurns)
         {
             var groups = new Dictionary<int, List<List<V2>>>(); // end id -> strips, inner first
             for (int j = laps - 1; j >= 0; j--)
@@ -649,12 +675,49 @@ namespace AgOpenGPS.AutoPlan
                         if (cost < bestCost) { bestCost = cost; best = pts; bestConn = conn; }
                     }
                     if (best == null) continue;
+
+                    // forward / reverse manoeuvre instead of a half turn or loop, where one fits
+                    if (reverseTurns && TryReverseManeuver(path, cp, ch, strip, R, s, fenceGrid, out List<V2> stripDir))
+                    {
+                        AppendPoints(path, stripDir, true, true, true);
+                        res.HeadlandLaps++;
+                        continue;
+                    }
+
                     if (CountOutside(bestConn, fenceGrid) > 0) res.TurnsLeavingField++;
                     AppendPoints(path, bestConn, false, true);
                     AppendPoints(path, best, true, true, true);
                     res.HeadlandLaps++;
                 }
             }
+        }
+
+        /// <summary>
+        /// Joins the next headland strip (either direction) with the shortest forward/reverse
+        /// manoeuvre and appends it; stripDir is the strip in the chosen direction.
+        /// </summary>
+        private static bool TryReverseManeuver(List<PlanPoint> path, V2 cp, double ch, List<V2> strip, double R, double s,
+            PolygonTester fence, out List<V2> stripDir)
+        {
+            stripDir = null;
+            List<ReverseManeuver.Pose> best = null;
+            double bestLen = double.MaxValue;
+            for (int r = 0; r < 2; r++)
+            {
+                var pts = new List<V2>(strip);
+                if (r == 1) pts.Reverse();
+                if ((pts[0] - cp).Length > 60.0) continue;   // far away: a normal transfer
+                var man = ReverseManeuver.Find(cp, ch, pts[0], HeadingOf(pts[0], pts[Math.Min(3, pts.Count - 1)]), R, s, fence.Clear);
+                if (man == null) continue;
+                double len = 0;
+                V2 prev = cp;
+                foreach (var q in man) { len += (q.P - prev).Length * (q.Reverse ? 1.3 : 1.0); prev = q.P; }
+                if (len < bestLen) { bestLen = len; best = man; stripDir = pts; }
+            }
+            if (best == null) return false;
+            foreach (var q in best)
+                path.Add(new PlanPoint { E = q.P.E, N = q.P.N, IsWork = false, IsReverse = q.Reverse });
+            return true;
         }
 
         private static void AddStrip(Dictionary<int, List<List<V2>>> groups, int id, List<V2> pts, double W, double R, double s, PolygonTester fence)
@@ -1673,9 +1736,14 @@ namespace AgOpenGPS.AutoPlan
             }
             for (int i = 0; i < r.Count; i++)
             {
-                PlanPoint a = r[Math.Max(0, i - 1)], b = r[Math.Min(r.Count - 1, i + 1)];
                 PlanPoint p = r[i];
-                p.Heading = HeadingOf(new V2(a.E, a.N), new V2(b.E, b.N));
+                // neighbours driven in the same direction (a direction change is a cusp)
+                int ia = i > 0 && r[i - 1].IsReverse == p.IsReverse ? i - 1 : i;
+                int ib = i + 1 < r.Count && r[i + 1].IsReverse == p.IsReverse ? i + 1 : i;
+                if (ia == ib) { ia = Math.Max(0, i - 1); ib = i; }
+                PlanPoint a = r[ia], b = r[ib];
+                double motion = HeadingOf(new V2(a.E, a.N), new V2(b.E, b.N));
+                p.Heading = p.IsReverse ? Mod2Pi(motion + Math.PI) : motion;
                 r[i] = p;
             }
             return r;

@@ -333,6 +333,27 @@ namespace AgOpenGPS.Tests.AutoPlan
         }
 
         [Test]
+        public void ReverseTurns_ThreePointTurnsIntoNeighbourPasses()
+        {
+            var fence = Rectangle(300, 200);
+            var res = FieldPlanner.Build(fence, new FieldPlanSettings { WorkWidth = 6, TurnRadius = 6, WorkHeadland = false, HeadlandReverseTurns = true }, new V2(-10, -10), 0);
+            Assert.That(res.Ok, Is.True, res.Error);
+            Assert.That(res.TurnsLeavingField, Is.EqualTo(0));
+
+            // reverse parts exist, every point of them is inside, and the path ends driving forward
+            int reversePts = 0;
+            foreach (PlanPoint p in res.Points)
+            {
+                if (!p.IsReverse) continue;
+                reversePts++;
+                Assert.That(p.IsWork, Is.False);
+                Assert.That(p.E > 0 && p.E < 300 && p.N > 0 && p.N < 200, Is.True);
+            }
+            Assert.That(reversePts, Is.GreaterThan(0));
+            Assert.That(res.Points[res.Points.Count - 1].IsReverse, Is.False);
+        }
+
+        [Test]
         public void TooSmallField_ReturnsError()
         {
             var res = FieldPlanner.Build(Rectangle(10, 10), new FieldPlanSettings { WorkWidth = 6, TurnRadius = 6 }, new V2(0, 0), 0);

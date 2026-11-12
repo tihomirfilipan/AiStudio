@@ -22,6 +22,8 @@ namespace AgOpenGPS
         // Speeds stored in the path (only used by the simulator), km/h
         private const double AutoPlanWorkSpeed = 10.0;
         private const double AutoPlanTurnSpeed = 6.0;
+        // reverse parts of a turn: negative speed, the simulator drives backwards there
+        private const double AutoPlanReverseSpeed = -4.0;
         // Headland laps/strips are stored with this speed so they can be recognised after loading
         public const double AutoPlanHeadlandSpeed = 8.0;
 
@@ -266,7 +268,8 @@ namespace AgOpenGPS
 
             foreach (PlanPoint p in planPoints)
             {
-                double speed = !p.IsWork ? AutoPlanTurnSpeed : (p.IsHeadland ? AutoPlanHeadlandSpeed : AutoPlanWorkSpeed);
+                double speed = p.IsReverse ? AutoPlanReverseSpeed
+                    : !p.IsWork ? AutoPlanTurnSpeed : (p.IsHeadland ? AutoPlanHeadlandSpeed : AutoPlanWorkSpeed);
                 recPath.recList.Add(new CRecPathPt(p.E, p.N, p.Heading, speed, p.IsWork));
             }
 
@@ -475,6 +478,35 @@ namespace AgOpenGPS
                 else GL.Color3(0.82f, 0.85f, 0.88f);
                 font.DrawText(left + 12, top + 8 + i * lineH, lines[i], i == 1 ? size * 1.1 : size);
             }
+        }
+
+        /// <summary>Big "REVERSE" sign while the recorded path goes backwards (driver shifts gear).</summary>
+        private void DrawReverseHint()
+        {
+            if (!recPath.isFollowingRecPath || recPath.recList.Count == 0) return;
+            int c = Math.Max(0, Math.Min(recPath.recList.Count - 1, recPath.currentPositonIndex));
+            // also warn a few metres before the direction changes
+            bool now = recPath.recList[c].speed < 0;
+            bool soon = false;
+            for (int i = c; i < Math.Min(recPath.recList.Count, c + 6) && !now; i++)
+                if (recPath.recList[i].speed < 0) soon = true;
+            if (!now && !soon) return;
+
+            string text = now ? T("< REVERSE", "< VOŽNJA UNAZAD") : T("STOP - REVERSE NEXT", "STANI - SLIJEDI UNAZAD");
+            double size = 2.2;
+            double w = text.Length * AgOpenGPS.Core.DrawLib.Font.CharXSpacing * size + 30;
+            double h = AgOpenGPS.Core.DrawLib.Font.GlyphHeight * size + 16;
+            double left = -w / 2, top = oglMain.Height * 0.22;
+            GL.Enable(EnableCap.Blend);
+            if (now) GL.Color4(0.75, 0.1, 0.1, 0.85); else GL.Color4(0.85, 0.55, 0.05, 0.85);
+            GL.Begin(PrimitiveType.Quads);
+            GL.Vertex2(left, top);
+            GL.Vertex2(left + w, top);
+            GL.Vertex2(left + w, top + h);
+            GL.Vertex2(left, top + h);
+            GL.End();
+            GL.Color3(1.0f, 1.0f, 1.0f);
+            font.DrawText(left + 15, top + 8, text, size);
         }
 
         private const int MiniMapWidth = 300;

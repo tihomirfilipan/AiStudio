@@ -21,6 +21,14 @@ Kompletna putanja za cijelu parcelu bez intervencije vozača.
   Uvratine samo tamo gdje prohodi završavaju; uz duge rubove prvi i zadnji prohod idu do same međe.
 - **Pametni okreti:** Dubins okreti (U ili omega) uz radijus okretanja, redoslijed prohoda s preskakanjem
   redova kad je to kraće; okreti drže cijeli priključak unutar polja.
+- **Opcije sa sličicama:** način vožnje, uvratina (samo na krajevima / svuda), okreti (uz među / kratki /
+  s vožnjom unazad), redoslijed prohoda (automatski / susjedni / preskakanje) i dodatno (obrada uvratina,
+  dodatni prohod, novi trag). Tipka **Automatski plan** je i u donjoj traci, desno od tipke za tragove.
+- **Okreti uz među:** ravno do R od međe, zaokret, usporedno s međom, zaokret u sljedeći prohod; na kosim
+  krajevima bez petlji. Dugi prijelazi idu uz rub polja (uvratina / prvi prohod), ne preko obrađenog.
+- **Okreti s vožnjom unazad** (opcija): u susjedni prohod zaokretom, kratko unazad (bijelo isprekidano na
+  karti) i naprijed; na ekranu natpis *VOŽNJA UNAZAD*. U simulatoru vozi unazad sam, s pravim traktorom
+  vozač prebacuje u rikverc.
 - **Predpregled** plana prije spremanja (međa, brojevi prohoda, okreti, novi trag) sa *Spremi* / *Odustani*.
 - **Dva načina vožnje:**
   - *Snimljena putanja* – cijeli plan s okretima; pokreće se gumbom ▶ u panelu snimljene putanje ili gumbom
