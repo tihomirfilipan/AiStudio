@@ -1412,7 +1412,8 @@ namespace AgOpenGPS.AutoPlan
             double lengthwise = Math.Abs(rel.E * dir0.E + rel.N * dir0.N);
             bool near = lateral <= 2.0 * R + 5.0 * W && lengthwise <= 150.0;
             // pass ends on a slanted edge: turn along the headland, up the slant, into the next pass
-            if (wideTurn && loop != null && IsSlantedEnd(p0, h0, fence))
+            // every turn between passes: along the boundary line (the way the driver wants it)
+            if (wideTurn && loop != null)
             {
                 V2 d0 = new V2(Math.Sin(h0), Math.Cos(h0));
                 double reach = fence.Clearance + 0.3 + 1.5;
@@ -1501,7 +1502,9 @@ namespace AgOpenGPS.AutoPlan
             // sideways gap smaller than two radii: only a loop (omega) turn fits
             double gap = Math.Abs((p1 - p0).E * d0.N - (p1 - p0).N * d0.E);
             // a gap under two radii is turned without a loop at the boundary (two part turns), small extra cost
-            return (level - l0) + (level - l1) + DubinsLength(a, h0, b, h1, R) + (gap < 1.9 * R ? 4.0 * R : 0.0);
+            // turns go out along the boundary (part turn, along it, part turn into the pass): that
+            // needs two turning radii sideways, so closer passes are skipped (smart skipping)
+            return (level - l0) + (level - l1) + DubinsLength(a, h0, b, h1, R) + (gap < 1.9 * R ? 300.0 : 0.0);
         }
 
         /// <summary>
