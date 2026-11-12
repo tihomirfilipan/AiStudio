@@ -1098,9 +1098,8 @@ namespace AgOpenGPS.AutoPlan
 
             List<V2> along = LoopTransfer(p0, h0, p1, h1, loop, R, s, fence, out int alongOut);
             if (along == null) return direct;
-            if (alongOut < directOut) return along;
-            // along the boundary unless it is a very long way round
-            if (alongOut == directOut && OpenLength(along) <= 3.0 * directLen + 150.0) return along;
+            // along the boundary (headland) even when it is a longer way round
+            if (alongOut <= directOut) return along;
             return direct;
         }
 
