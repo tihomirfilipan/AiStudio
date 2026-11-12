@@ -28,6 +28,9 @@ namespace AgOpenGPS
             // rings in the current local plane, rebuilt when the plane changes
             public List<List<vec2>> Rings = new List<List<vec2>>();
             public double MinE, MaxE, MinN, MaxN;
+            public double LabelE, LabelN;   // a point inside the field for the name
+            public double LongSide;         // longer side of the bounding box, m
+            public double Area => (MaxE - MinE) * (MaxN - MinN);
         }
 
         // ---- saved fields ----
@@ -98,6 +101,12 @@ namespace AgOpenGPS
             oglMain.MouseDown += FieldBrowser_MouseDown;
             oglMain.MouseMove += FieldBrowser_MouseMove;
             oglMain.MouseUp += FieldBrowser_MouseUp;
+            oglMain.MouseLeave += (s, e) =>
+            {
+                if (hoverField == null) return;
+                hoverField = null;
+                oglMain.Invalidate();
+            };
         }
 
         private void CreateFieldBrowserButtons()
@@ -255,19 +264,27 @@ namespace AgOpenGPS
             if (!ReferenceEquals(savedFieldsPlane, plane)) ConvertSavedFields(plane);
 
             double heading = ViewHeadingDeg;
+
+            // line width follows the zoom: thin when far out, thicker close up
+            double ppm = PixelsPerMeterAt(isFreeView ? freeE : pivotAxlePos.easting, isFreeView ? freeN : pivotAxlePos.northing, heading);
+            float width = (float)Math.Max(1.5, Math.Min(4.0, 1.2 + ppm * 1.2));
+
             foreach (SavedFieldOutline f in savedFields)
             {
+                bool special = f == pickStartField || f == hoverField;
+                float lw = special ? width + 1.5f : width;
                 foreach (List<vec2> ring in f.Rings)
                 {
                     // dark outline under a bright one, readable on any satellite image
-                    GL.LineWidth(6);
+                    GL.LineWidth(lw + 2.5f);
                     GL.Color3(0.05f, 0.05f, 0.05f);
                     GL.Begin(PrimitiveType.LineLoop);
                     foreach (vec2 p in ring) GL.Vertex3(p.easting, p.northing, 0);
                     GL.End();
 
-                    GL.LineWidth(3);
+                    GL.LineWidth(lw);
                     if (f == pickStartField) GL.Color3(0.0f, 0.9f, 1.0f);
+                    else if (f == hoverField) GL.Color3(1.0f, 1.0f, 1.0f);
                     else GL.Color3(1.0f, 0.84f, 0.2f);
                     GL.Begin(PrimitiveType.LineLoop);
                     foreach (vec2 p in ring) GL.Vertex3(p.easting, p.northing, 0);
@@ -283,41 +300,70 @@ namespace AgOpenGPS
         #endregion
 
         /// <summary>
-        /// Field names, small, only where the field is big enough on screen and the
-        /// name does not overlap another one (bigger fields first).
+        /// Field names inside the field, sized to the field on screen, never overlapping.
+        /// The field under the mouse and the chosen field come first, then bigger fields.
         /// </summary>
         private void DrawSavedFieldLabels(double heading)
         {
             int w = oglMain.Width, h = oglMain.Height;
             var order = new List<SavedFieldOutline>(savedFields);
-            order.Sort((a, b) => ((b.MaxE - b.MinE) * (b.MaxN - b.MinN)).CompareTo((a.MaxE - a.MinE) * (a.MaxN - a.MinN)));
+            order.Sort((a, b) =>
+            {
+                int pa = (a == hoverField || a == pickStartField) ? 1 : 0;
+                int pb = (b == hoverField || b == pickStartField) ? 1 : 0;
+                if (pa != pb) return pb.CompareTo(pa);
+                return b.Area.CompareTo(a.Area);
+            });
 
-            const double charPx = 9.0, linePx = 22.0;
+            // world size of the text at scale 1 (same formula as Font.DrawText3D)
+            double dist = -camera.camSetDistance;
+            double unit = camera.PitchInDegrees < -45 ? Math.Pow(dist, 0.8) / 800 : Math.Pow(dist, 0.85) / 1000;
+            const double charW = AgOpenGPS.Core.DrawLib.Font.CharXSpacing;
+            const double charH = AgOpenGPS.Core.DrawLib.Font.GlyphHeight;
+
             var shown = new List<RectangleF>();
-            GL.Color3(1.0f, 1.0f, 1.0f);
             foreach (SavedFieldOutline f in order)
             {
                 if (f.Rings.Count == 0) continue;
-                if (!ProjectToScreen(f.MinE, f.MinN, out double x0, out double y0)
-                    || !ProjectToScreen(f.MaxE, f.MaxN, out double x1, out double y1)
-                    || !ProjectToScreen((f.MinE + f.MaxE) / 2, (f.MinN + f.MaxN) / 2, out double cx, out double cy))
-                    continue;
+                bool important = f == hoverField || f == pickStartField;
+                if (!ProjectToScreen(f.LabelE, f.LabelN, out double cx, out double cy)) continue;
                 if (cx < -50 || cx > w + 50 || cy < -20 || cy > h + 20) continue;
 
-                // too small on screen: outline only
-                double diag = Math.Sqrt((x1 - x0) * (x1 - x0) + (y1 - y0) * (y1 - y0));
-                if (diag < 45) continue;
+                double ppm = PixelsPerMeterAt(f.LabelE, f.LabelN, heading);
+                if (ppm <= 0) continue;
+                double fieldPx = f.LongSide * ppm;
+                if (!important && fieldPx < 30) continue;   // too small on screen: outline only
 
-                double tw = f.Name.Length * charPx + 8;
-                var r = new RectangleF((float)(cx - tw / 2), (float)(cy - linePx / 2), (float)tw, (float)linePx);
+                // text as wide as the field, within limits
+                double textPx1 = f.Name.Length * charW * unit * ppm;   // width at scale 1
+                double scale = textPx1 > 0 ? fieldPx * 0.9 / textPx1 : 0.8;
+                scale = Math.Max(0.45, Math.Min(important ? 0.9 : 0.8, scale));
+                if (important) scale = Math.Max(scale, 0.7);
+
+                double tw = textPx1 * scale + 6;
+                double th = charH * unit * ppm * scale + 4;
+                var r = new RectangleF((float)(cx - tw / 2), (float)(cy - th / 2), (float)tw, (float)th);
                 bool free = true;
                 foreach (RectangleF o in shown)
                     if (o.IntersectsWith(r)) { free = false; break; }
                 if (!free) continue;
                 shown.Add(r);
 
-                font.DrawText3D((f.MinE + f.MaxE) / 2, (f.MinN + f.MaxN) / 2, f.Name, heading, 0.75, true);
+                if (f == pickStartField) GL.Color3(0.0f, 0.9f, 1.0f);
+                else GL.Color3(1.0f, 1.0f, 1.0f);
+                font.DrawText3D(f.LabelE, f.LabelN, f.Name, heading, scale, true);
             }
+        }
+
+        // Screen pixels per meter along the screen's horizontal direction at a ground point
+        private double PixelsPerMeterAt(double e, double n, double headingDeg)
+        {
+            double hr = headingDeg * Math.PI / 180.0;
+            double rx = Math.Cos(hr), ry = -Math.Sin(hr);
+            if (!ProjectToScreen(e, n, out double x0, out double y0)
+                || !ProjectToScreen(e + rx * 10, n + ry * 10, out double x1, out double y1))
+                return 0;
+            return Math.Sqrt((x1 - x0) * (x1 - x0) + (y1 - y0) * (y1 - y0)) / 10.0;
         }
 
         // World point (z = 0) to window pixels, using the matrices of this frame
@@ -417,8 +463,58 @@ namespace AgOpenGPS
                     }
                     f.Rings.Add(ring);
                 }
+                if (f.Rings.Count > 0)
+                {
+                    LabelPoint(f.Rings[0], f, out f.LabelE, out f.LabelN);
+                    f.LongSide = Math.Max(f.MaxE - f.MinE, f.MaxN - f.MinN);
+                }
             }
             savedFieldsPlane = plane;
+        }
+
+        /// <summary>
+        /// Point for the field name: the area centroid if it lies inside the field,
+        /// otherwise the middle of the longest inside piece of a few horizontal lines.
+        /// </summary>
+        private static void LabelPoint(List<vec2> ring, SavedFieldOutline f, out double le, out double ln)
+        {
+            double a2 = 0, sx = 0, sy = 0;
+            for (int i = 0, j = ring.Count - 1; i < ring.Count; j = i++)
+            {
+                double cr = ring[j].easting * ring[i].northing - ring[i].easting * ring[j].northing;
+                a2 += cr;
+                sx += (ring[j].easting + ring[i].easting) * cr;
+                sy += (ring[j].northing + ring[i].northing) * cr;
+            }
+            if (Math.Abs(a2) > 1e-6)
+            {
+                le = sx / (3 * a2);
+                ln = sy / (3 * a2);
+                if (InsideRing(ring, le, ln)) return;
+            }
+
+            le = (f.MinE + f.MaxE) / 2;
+            ln = (f.MinN + f.MaxN) / 2;
+            double best = 0;
+            for (int k = 1; k <= 9; k++)
+            {
+                double y = f.MinN + (f.MaxN - f.MinN) * k / 10.0;
+                var xs = new List<double>();
+                for (int i = 0, j = ring.Count - 1; i < ring.Count; j = i++)
+                {
+                    if ((ring[i].northing > y) != (ring[j].northing > y))
+                        xs.Add(ring[j].easting + (ring[i].easting - ring[j].easting)
+                            * (y - ring[j].northing) / (ring[i].northing - ring[j].northing));
+                }
+                xs.Sort();
+                for (int i = 0; i + 1 < xs.Count; i += 2)
+                {
+                    double len = xs[i + 1] - xs[i];
+                    // prefer pieces near the middle height
+                    double score = len * (1.0 - 0.3 * Math.Abs(k - 5) / 5.0);
+                    if (score > best) { best = score; le = (xs[i] + xs[i + 1]) / 2; ln = y; }
+                }
+            }
         }
 
         private SavedFieldOutline FieldAt(double e, double n)
@@ -485,8 +581,22 @@ namespace AgOpenGPS
             fbDownN = freeN;
         }
 
+        private SavedFieldOutline hoverField;
+
         private void FieldBrowser_MouseMove(object sender, MouseEventArgs e)
         {
+            if (!fbMouseDown && FieldBrowserActive)
+            {
+                SavedFieldOutline over = null;
+                if (!IsReservedScreenArea(e.Location)
+                    && ScreenToGround(InverseViewProjection(), e.Location, out double he, out double hn))
+                    over = FieldAt(he, hn);
+                if (over != hoverField)
+                {
+                    hoverField = over;
+                    oglMain.Invalidate();
+                }
+            }
             if (!fbMouseDown || !isFreeView || fbDownInverse == null) return;
             int dx = e.X - fbDownPoint.X, dy = e.Y - fbDownPoint.Y;
             if (!fbDragging && dx * dx + dy * dy < 100) return;
