@@ -1600,7 +1600,24 @@ namespace AgOpenGPS.AutoPlan
                 return list;
             }
             List<Pass> below = TopSide(minLane - 1, -1), above = TopSide(maxLane + 1, 1);
-            bool useBelow = below.Count >= above.Count;
+
+            // the top passes are on the side the slant leads up to: their end on that side lies
+            // furthest in the direction the slanted passes leave the field
+            double ux = 0, uy = 0;
+            foreach (Pass ps in slanted)
+            {
+                int n = ps.Pts.Count;
+                double h = upEnd[ps] ? HeadingOf(ps.Pts[n - 3], ps.B) : HeadingOf(ps.Pts[2], ps.A);
+                ux += Math.Sin(h); uy += Math.Cos(h);
+            }
+            double Reach(List<Pass> group)
+            {
+                if (group.Count == 0) return double.MinValue;
+                double sum = 0;
+                foreach (Pass ps in group) sum += Math.Max(ps.A.E * ux + ps.A.N * uy, ps.B.E * ux + ps.B.N * uy);
+                return sum / group.Count;
+            }
+            bool useBelow = Reach(below) >= Reach(above);
             List<Pass> tops = useBelow ? below : above;
             if (tops.Count == 0) return order;
 
@@ -1619,8 +1636,12 @@ namespace AgOpenGPS.AutoPlan
                 bool enterAtB = (tp.B - up).Length < (tp.A - up).Length;
                 block.Add(new Step { Pass = tp, Reverse = enterAtB });      // enter at its top end
             }
+            // slanted passes without a top pass: up and down in turn
             for (int k = pairs; k < slanted.Count; k++)
-                block.Add(new Step { Pass = slanted[k], Reverse = !upEnd[slanted[k]] });
+            {
+                bool goUp = (k - pairs) % 2 == 0;
+                block.Add(new Step { Pass = slanted[k], Reverse = goUp ? !upEnd[slanted[k]] : upEnd[slanted[k]] });
+            }
 
             var inBlock = new HashSet<Pass>();
             foreach (Step st in block) inBlock.Add(st.Pass);
