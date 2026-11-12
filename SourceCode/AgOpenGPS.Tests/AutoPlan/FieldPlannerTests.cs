@@ -354,6 +354,18 @@ namespace AgOpenGPS.Tests.AutoPlan
         }
 
         [Test]
+        public void SplitField_LShapeGetsTwoPartsWithOwnDirection()
+        {
+            var parts = FieldPlanner.SplitAtBends(LShape());
+            Assert.That(parts.Count, Is.EqualTo(2));
+
+            var res = FieldPlanner.Build(LShape(), new FieldPlanSettings { WorkWidth = 6, TurnRadius = 6, WorkHeadland = false, SplitField = true }, new V2(-10, -10), 0);
+            Assert.That(res.Ok, Is.True, res.Error);
+            Assert.That(res.PartCount, Is.EqualTo(2));
+            Assert.That(res.Passes, Is.GreaterThan(10));
+        }
+
+        [Test]
         public void TooSmallField_ReturnsError()
         {
             var res = FieldPlanner.Build(Rectangle(10, 10), new FieldPlanSettings { WorkWidth = 6, TurnRadius = 6 }, new V2(0, 0), 0);

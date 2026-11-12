@@ -83,6 +83,14 @@ namespace AgOpenGPS.AutoPlan
         public bool AvoidWorked = false;
 
         /// <summary>
+        /// Split the field at strong inside bends into parts; every part gets passes along its own
+        /// longest edge. The parts are joined by transfers.
+        /// </summary>
+        public bool SplitField = false;
+
+        public FieldPlanSettings Clone() => (FieldPlanSettings)MemberwiseClone();
+
+        /// <summary>
         /// Part of the boundary the passes follow (e.g. picked with 2 points on the map).
         /// null = the longest straight or gently curved edge is chosen automatically.
         /// </summary>
@@ -113,6 +121,9 @@ namespace AgOpenGPS.AutoPlan
 
         /// <summary>Centre line of the first pass across the whole field, for a guidance track.</summary>
         public List<V2> TrackLine = new List<V2>();
+
+        /// <summary>Number of field parts with their own pass direction (1 = not split).</summary>
+        public int PartCount = 1;
     }
 
     /// <summary>
@@ -131,7 +142,11 @@ namespace AgOpenGPS.AutoPlan
             var res = new FieldPlanResult();
             try
             {
-                BuildInternal(fence, set, startPos, startHeading, res);
+                List<List<V2>> parts = set.SplitField ? SplitAtBends(fence) : null;
+                if (parts != null && parts.Count > 1)
+                    BuildParts(parts, fence, set, startPos, startHeading, res);
+                else
+                    BuildInternal(fence, set, startPos, startHeading, res);
             }
             catch (Exception ex)
             {
@@ -139,6 +154,207 @@ namespace AgOpenGPS.AutoPlan
                 res.Error = ex.Message;
             }
             return res;
+        }
+
+        // =====================================================================
+        // Field split into parts
+        // =====================================================================
+
+        /// <summary>
+        /// Splits the boundary at strong inside bends with the shortest cut through the bend
+        /// (continuing one of the two edges at the bend). At most 3 parts; each part at least 12 %
+        /// of the area. Returns the boundary itself when there is no such bend.
+        /// </summary>
+        public static List<List<V2>> SplitAtBends(IList<V2> fenceIn)
+        {
+            var ring = new List<V2>(fenceIn);
+            if (SignedArea(ring) < 0) ring.Reverse();
+            double total = Math.Abs(SignedArea(ring));
+            var parts = new List<List<V2>> { ring };
+            for (int round = 0; round < 2; round++)
+            {
+                bool split = false;
+                for (int k = 0; k < parts.Count && !split; k++)
+                {
+                    if (TryCut(parts[k], total, out List<V2> a, out List<V2> b))
+                    {
+                        parts.RemoveAt(k);
+                        parts.Add(a);
+                        parts.Add(b);
+                        split = true;
+                    }
+                }
+                if (!split) break;
+            }
+            return parts;
+        }
+
+        private static bool TryCut(List<V2> poly, double totalArea, out List<V2> partA, out List<V2> partB)
+        {
+            partA = partB = null;
+            int n = poly.Count;
+            if (n < 6) return false;
+            List<int> corners = CornerIndices(poly);
+            int m = corners.Count;
+            if (m < 5) return false;
+
+            double bestLen = double.MaxValue;
+            for (int c = 0; c < m; c++)
+            {
+                V2 prev = poly[corners[(c - 1 + m) % m]], cur = poly[corners[c]], next = poly[corners[(c + 1) % m]];
+                V2 din = Dir(prev, cur), dout = Dir(cur, next);
+                double cross = din.E * dout.N - din.N * dout.E;
+                double turn = Math.Atan2(cross, din.E * dout.E + din.N * dout.N);
+                if (turn > -25.0 * Math.PI / 180.0) continue;   // not an inside (reflex) bend of a CCW boundary
+
+                foreach (V2 dir in new[] { din, dout * -1.0 })
+                {
+                    if (!RayHit(poly, corners[c], dir, out int edge, out V2 hit, out double len)) continue;
+                    if (len < 5.0 || len >= bestLen) continue;
+                    List<V2> a = new List<V2>(), b = new List<V2>();
+                    int ci = corners[c];
+                    // a: corner .. start of the hit edge, hit point;  b: hit point, end of the hit edge .. corner
+                    for (int i = ci; ; i = (i + 1) % n) { a.Add(poly[i]); if (i == edge) break; }
+                    a.Add(hit);
+                    b.Add(hit);
+                    for (int i = (edge + 1) % n; ; i = (i + 1) % n) { b.Add(poly[i]); if (i == ci) break; }
+                    double aa = Math.Abs(SignedArea(a)), ab = Math.Abs(SignedArea(b));
+                    if (aa < 0.12 * totalArea || ab < 0.12 * totalArea) continue;
+                    bestLen = len;
+                    partA = a;
+                    partB = b;
+                }
+            }
+            return partA != null;
+        }
+
+        // First crossing of a ray from poly[from] with the boundary (not the edges at the start point)
+        private static bool RayHit(List<V2> poly, int from, V2 dir, out int edge, out V2 hit, out double dist)
+        {
+            edge = -1; hit = default; dist = double.MaxValue;
+            int n = poly.Count;
+            V2 o = poly[from];
+            for (int i = 0; i < n; i++)
+            {
+                int j = (i + 1) % n;
+                if (i == from || j == from || i == (from - 1 + n) % n) continue;
+                V2 a = poly[i], b = poly[j];
+                V2 e = b - a;
+                double den = dir.E * e.N - dir.N * e.E;
+                if (Math.Abs(den) < 1e-12) continue;
+                V2 ao = a - o;
+                double t = (ao.E * e.N - ao.N * e.E) / den;     // along the ray
+                double u = (ao.E * dir.N - ao.N * dir.E) / den; // along the edge
+                if (t <= 0.5 || u < 0 || u > 1) continue;
+                if (t < dist) { dist = t; edge = i; hit = o + dir * t; }
+            }
+            return edge >= 0;
+        }
+
+        // Corners of the boundary (indices), found by simplifying it
+        private static List<int> CornerIndices(List<V2> pts)
+        {
+            double tol = Math.Max(1.5, LoopLength(pts) / 300.0);
+            int far = 0;
+            double farD = 0;
+            for (int i = 1; i < pts.Count; i++)
+            {
+                double d = (pts[i] - pts[0]).Length;
+                if (d > farD) { farD = d; far = i; }
+            }
+            var keep = new bool[pts.Count];
+            keep[0] = keep[far] = true;
+            Simplify(pts, 0, far, tol, keep);
+            var second = new List<V2>(pts.GetRange(far, pts.Count - far)) { pts[0] };
+            var keep2 = new bool[second.Count];
+            Simplify(second, 0, second.Count - 1, tol, keep2);
+            for (int i = 1; i < second.Count - 1; i++) if (keep2[i]) keep[far + i] = true;
+            var idx = new List<int>();
+            for (int i = 0; i < pts.Count; i++) if (keep[i]) idx.Add(i);
+            return idx;
+        }
+
+        /// <summary>Plans every part with its own direction and joins them, nearest part next.</summary>
+        private static void BuildParts(List<List<V2>> parts, IList<V2> fenceIn, FieldPlanSettings set, V2 startPos, double startHeading, FieldPlanResult res)
+        {
+            double W = set.WorkWidth, R = Math.Max(0.5, set.TurnRadius);
+            var full = new List<V2>(fenceIn);
+            if (SignedArea(full) < 0) full.Reverse();
+            double s = Math.Max(set.PointSpacing, LoopLength(full) / 6000.0);
+            full = ResampleLoop(full, s);
+            var fullGrid = new PolygonTester(full);
+            fullGrid.SetClearance(full, Math.Max(0.0, W * 0.5 - 0.3));
+            List<V2> loop = BuildTransferLoop(full, W, R, s, fullGrid);
+
+            V2 pos = startPos;
+            double heading = startHeading;
+            var left = new List<List<V2>>(parts);
+            var names = new List<string>();
+            bool first = true;
+            while (left.Count > 0)
+            {
+                // nearest part next
+                int bi = 0;
+                double bd = double.MaxValue;
+                for (int k = 0; k < left.Count; k++)
+                    foreach (V2 q in left[k]) { double d = (q - pos).Length; if (d < bd) { bd = d; bi = k; } }
+                List<V2> part = left[bi];
+                left.RemoveAt(bi);
+
+                FieldPlanSettings ps = set.Clone();
+                ps.ReferenceEdge = null;
+                ps.SplitField = false;
+                var r = new FieldPlanResult();
+                BuildInternal(part, ps, pos, heading, r);
+                if (!r.Ok || r.Points.Count < 2) continue;
+
+                if (!first)
+                {
+                    PlanPoint l = res.Points[res.Points.Count - 1];
+                    PlanPoint f = r.Points[0];
+                    var conn = Connect(new V2(l.E, l.N), l.Heading, new V2(f.E, f.N), f.Heading, R, W, s, fullGrid, loop);
+                    if (conn != null)
+                    {
+                        if (CountOutside(conn, fullGrid) > 0) res.TurnsLeavingField++;
+                        for (int i = 1; i < conn.Count - 1; i++)
+                        {
+                            V2 a = conn[i - 1], b = conn[i];
+                            res.Points.Add(new PlanPoint { E = b.E, N = b.N, Heading = HeadingOf(a, b), IsWork = false });
+                        }
+                        res.Turns++;
+                    }
+                }
+                else
+                {
+                    res.ReferenceEdge = r.ReferenceEdge;
+                    res.WorkArea = r.WorkArea;
+                    res.TrackLine = r.TrackLine;
+                    first = false;
+                }
+                res.Points.AddRange(r.Points);
+                res.Passes += r.Passes;
+                res.Turns += r.Turns;
+                res.TurnsLeavingField += r.TurnsLeavingField;
+                res.HeadlandLaps += r.HeadlandLaps;
+                res.SkippedPieces += r.SkippedPieces;
+                res.ExtraSidePass |= r.ExtraSidePass;
+                names.Add(r.OrderDescription);
+
+                PlanPoint last = r.Points[r.Points.Count - 1];
+                pos = new V2(last.E, last.N);
+                heading = last.Heading;
+            }
+            if (res.Points.Count < 2) { res.Error = "No passes fit inside the field"; return; }
+
+            res.OrderDescription = names.Count > 0 ? names[0] : "";
+            for (int i = 1; i < res.Points.Count; i++)
+            {
+                double seg = Math.Sqrt(Sq(res.Points[i].E - res.Points[i - 1].E) + Sq(res.Points[i].N - res.Points[i - 1].N));
+                res.TotalLength += seg;
+                if (res.Points[i].IsWork && res.Points[i - 1].IsWork) res.WorkLength += seg;
+            }
+            res.PartCount = parts.Count;
+            res.Ok = true;
         }
 
         private static void BuildInternal(IList<V2> fenceIn, FieldPlanSettings set, V2 startPos, double startHeading, FieldPlanResult res)
