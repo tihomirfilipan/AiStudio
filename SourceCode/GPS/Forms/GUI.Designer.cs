@@ -1233,6 +1233,9 @@ namespace AgOpenGPS
                 //0 at bottom for opengl, 0 at top for windows, so invert Y value
                 Point point = oglMain.PointToClient(Cursor.Position);
 
+                //free map view drag or click on a saved field (no field open)
+                if (!isJobStarted && FieldBrowserCapturesClick(point)) return;
+
                 if (isJobStarted)
                 {
                     if (isBtnAutoSteerOn || yt.isYouTurnBtnOn)

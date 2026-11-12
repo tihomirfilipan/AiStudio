@@ -334,6 +334,9 @@ namespace AgOpenGPS
             //plan mini map on/off in the file menu
             AddMiniMapMenu();
 
+            //saved fields, satellite map and free view while no field is open
+            AddFieldBrowserMenu();
+
             AppCore = new ApplicationCore(
                 new DirectoryInfo(RegistrySettings.baseDirectory),
                 null,

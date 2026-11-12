@@ -46,6 +46,7 @@ namespace AgOpenGPS.Properties
         public string setBottomPanel_hidden = "";
         public bool setDisplay_modernTheme = true;
         public bool setDisplay_planMiniMap = true;
+        public bool setDisplay_fieldBrowser = true;
         public int setDisplay_miniMapX = 95;   // mini map position on the map, pixels from left/top
         public int setDisplay_miniMapY = 70;
         public Point setWindow_QuickABLocation = new Point(100, 100);

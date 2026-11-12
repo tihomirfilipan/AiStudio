@@ -125,7 +125,7 @@ namespace AgOpenGPS
             Log.EventWriter($"Auto satellite map: saved {result.Bitmap.Width}x{result.Bitmap.Height} px, zoom {result.Zoom}");
         }
 
-        private class DownloadResult
+        internal class DownloadResult
         {
             public Bitmap Bitmap;
             public Wgs84 NorthWest;
@@ -134,7 +134,7 @@ namespace AgOpenGPS
         }
 
         // Runs on a background thread. Returns null if any tile could not be downloaded.
-        private static DownloadResult DownloadBitmap(Wgs84 northWest, Wgs84 southEast)
+        internal static DownloadResult DownloadBitmap(Wgs84 northWest, Wgs84 southEast)
         {
             // GMapControl normally sets this up; set it here in case the map form was never opened
             GMapImageProxy.Enable();

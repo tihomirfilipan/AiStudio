@@ -97,7 +97,7 @@ namespace AgOpenGPS
 
                     #region Camera
                     //position the camera
-                    camera.SetLookAt(pivotAxlePos.easting, pivotAxlePos.northing, camHeading);
+                    SetMainCameraLookAt();
 
                     //the bounding box of the camera for cullling.
                     CalcFrustum();
@@ -110,6 +110,9 @@ namespace AgOpenGPS
                     worldGrid.DrawFieldSurface(fieldColor, camera.ZoomValue, isTextureOn);
 
                     if (isGridOn) worldGrid.DrawWorldGrid(worldGridColor);
+
+                    //saved fields and satellite map while no field is open
+                    DrawFieldBrowser();
 
                     if (isDrawPolygons) GL.PolygonMode(MaterialFace.Front, PolygonMode.Line);
 
