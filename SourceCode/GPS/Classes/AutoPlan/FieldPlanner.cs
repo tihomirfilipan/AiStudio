@@ -1520,23 +1520,25 @@ namespace AgOpenGPS.AutoPlan
                 // that, the turn may run a little inside the arc
                 V2 q0 = q;
                 foreach (double tol in new[] { 1.0, 0.8 * R })
-                for (double back = 0; back <= reachLen && back <= 3.0 * R; back += 0.5 * R)
                 {
-                    q = q0 - d0 * back;
-                    for (double e = maxBack; e >= 0; e -= Math.Max(2.0, maxBack / 3.0))
+                    for (double back = 0; back <= reachLen && back <= 3.0 * R; back += 0.5 * R)
                     {
-                        V2 entry = p1 - d1 * e;
-                        List<V2> hug = LoopTransfer(q, h0, entry, h1, loop, R, s, fence, out int hugOut, out double hugCost, true, tol);
-                        if (hug == null || hugOut != 0 || hugCost >= 400.0) continue;
-                        var pts = new List<V2>();
-                        AddStraight(pts, p0, q, s);
-                        for (int k = 1; k < hug.Count; k++) pts.Add(hug[k]);
-                        AddStraight(pts, entry, p1, s);
-                        return pts;
+                        q = q0 - d0 * back;
+                        for (double e = maxBack; e >= 0; e -= Math.Max(2.0, maxBack / 3.0))
+                        {
+                            V2 entry = p1 - d1 * e;
+                            List<V2> hug = LoopTransfer(q, h0, entry, h1, loop, R, s, fence, out int hugOut, out double hugCost, true, tol);
+                            if (hug == null || hugOut != 0 || hugCost >= 400.0) continue;
+                            var pts = new List<V2>();
+                            AddStraight(pts, p0, q, s);
+                            for (int k = 1; k < hug.Count; k++) pts.Add(hug[k]);
+                            AddStraight(pts, entry, p1, s);
+                            return pts;
+                        }
                     }
                 }
             }
-            NoHug:
+        NoHug:
 
             if (wideTurn && near)
             {
