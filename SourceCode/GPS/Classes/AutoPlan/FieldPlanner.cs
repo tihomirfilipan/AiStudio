@@ -340,6 +340,18 @@ namespace AgOpenGPS.AutoPlan
                         // until the vehicle starts to turn), so only a narrow strip is left unworked
                         int k0 = StraightCount(turn, lastH, false), k1 = StraightCount(turn, entryH, true);
                         if (k0 + k1 >= turn.Count) { k0 = 0; k1 = 0; }
+
+                        // sections switch off and on always at the same distance from the boundary:
+                        // the room the turn needs (turning radius plus half the tool)
+                        // (and for both legs of a turn the same, the leg that must start turning
+                        // farther from the boundary sets it), so on one edge they line up
+                        double switchDist = R + W * 0.5;
+                        if (k0 > 1) switchDist = Math.Max(switchDist, fenceGrid.EdgeDistance(turn[k0 - 1], 100.0));
+                        if (k1 > 1) switchDist = Math.Max(switchDist, fenceGrid.EdgeDistance(turn[turn.Count - k1], 100.0));
+                        for (int j = 0; j < k0; j++)
+                            if (fenceGrid.EdgeDistance(turn[j], switchDist + 1.0) < switchDist) { k0 = j; break; }
+                        for (int j = 0; j < k1; j++)
+                            if (fenceGrid.EdgeDistance(turn[turn.Count - 1 - j], switchDist + 1.0) < switchDist) { k1 = j; break; }
                         if (k0 > 1) AppendPoints(path, turn.GetRange(0, k0), true, true);
                         AppendPoints(path, turn.GetRange(Math.Max(0, k0 - 1), turn.Count - Math.Max(0, k0 - 1) - Math.Max(0, k1 - 1)), false, true);
                         if (k1 > 1) AppendPoints(path, turn.GetRange(turn.Count - k1, k1), true, true);
