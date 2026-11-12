@@ -1092,6 +1092,13 @@ namespace AgOpenGPS.AutoPlan
                 if (wide != null) return wide;
             }
 
+            // a loop (figure-8) only if nothing else fits: try the longer way along the headland
+            if (near && direct != null && directOut == 0 && loop != null && TotalRotation(direct) > 1.3 * Math.PI)
+            {
+                List<V2> round = LoopTransfer(p0, h0, p1, h1, loop, R, s, fence, out int roundOut);
+                if (round != null && roundOut == 0) return round;
+            }
+
             // anything longer is a transfer
             bool isTransfer = directOut > 0 || (!near && directLen > Math.PI * R + 2.0 * R + 4.0 * W);
             if (!isTransfer || loop == null) return direct;
@@ -1111,11 +1118,12 @@ namespace AgOpenGPS.AutoPlan
         {
             V2 d0 = new V2(Math.Sin(h0), Math.Cos(h0));
             V2 d1 = new V2(Math.Sin(h1), Math.Cos(h1));
-            // a loop costs extra, so the order avoids loops where it can
-            double loopPenalty = 4.0 * R;
+            // loops (figure-8 turns) only when nothing else is possible: a very high cost
+            const double loopPenalty = 500.0;
             double dot = d0.E * d1.E + d0.N * d1.N;
-            if (dot > -0.7 || (p1 - p0).Length > 6.0 * R + 40.0)
-                return DubinsLength(p0, h0, p1, h1, R) + (dot > 0.0 ? loopPenalty : 0.0);
+            bool far = (p1 - p0).Length > 6.0 * R + 40.0;
+            if (dot > -0.7 || far)
+                return DubinsLength(p0, h0, p1, h1, R) + (dot > 0.0 && !far ? loopPenalty : 0.0);
 
             double l0 = p0.E * d0.E + p0.N * d0.N;
             double l1 = p1.E * d0.E + p1.N * d0.N;
@@ -1124,7 +1132,8 @@ namespace AgOpenGPS.AutoPlan
             V2 b = p1 - d1 * (level - l1);
             // sideways gap smaller than two radii: only a loop (omega) turn fits
             double gap = Math.Abs((p1 - p0).E * d0.N - (p1 - p0).N * d0.E);
-            return (level - l0) + (level - l1) + DubinsLength(a, h0, b, h1, R) + (gap < 1.9 * R ? loopPenalty : 0.0);
+            // a gap under two radii is turned without a loop at the boundary (two part turns), small extra cost
+            return (level - l0) + (level - l1) + DubinsLength(a, h0, b, h1, R) + (gap < 1.9 * R ? 4.0 * R : 0.0);
         }
 
         /// <summary>
@@ -1337,8 +1346,8 @@ namespace AgOpenGPS.AutoPlan
 
                         int o = CountOutside(pts, fence);
                         // loops when joining or leaving cost extra
-                        double loopCost = (TotalRotation(c1) > 1.3 * Math.PI ? 10.0 * R : 0.0)
-                            + (TotalRotation(c2) > 1.3 * Math.PI ? 10.0 * R : 0.0);
+                        double loopCost = (TotalRotation(c1) > 1.3 * Math.PI ? 500.0 : 0.0)
+                            + (TotalRotation(c2) > 1.3 * Math.PI ? 500.0 : 0.0);
                         double total = OpenLength(pts) + loopCost + 1000.0 * o;
                         if (total < bestCost) { bestCost = total; best = pts; outside = o; }
                     }
@@ -1354,16 +1363,23 @@ namespace AgOpenGPS.AutoPlan
         /// </summary>
         private static List<V2> ClearDubins(V2 p0, double h0, V2 p1, double h1, double R, double spacing, PolygonTester fence)
         {
-            List<V2> best = null;
+            // inside and without a loop first (shortest), then inside with a loop,
+            // else the one with the fewest points outside
+            List<V2> best = null, insideLoop = null;
             int bestOut = int.MaxValue;
             foreach (DubinsSolution sol in AllDubins(p0, h0, p1, h1, R))
             {
                 List<V2> pts = PathFromSolution(p0, h0, p1, sol, R, spacing);
                 int o = CountOutside(pts, fence);
-                if (o == 0) return pts;
+                if (o == 0)
+                {
+                    if (TotalRotation(pts) <= 1.3 * Math.PI) return pts;
+                    if (insideLoop == null) insideLoop = pts;
+                    continue;
+                }
                 if (o < bestOut) { bestOut = o; best = pts; }
             }
-            return best;
+            return insideLoop ?? best;
         }
 
         private static List<V2> PathFromSolution(V2 p0, double h0, V2 p1, DubinsSolution sol, double R, double spacing)
