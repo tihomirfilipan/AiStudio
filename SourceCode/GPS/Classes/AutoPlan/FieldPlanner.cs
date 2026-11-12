@@ -673,7 +673,7 @@ namespace AgOpenGPS.AutoPlan
                 if (t1.E * t2.E + t1.N * t2.N < 0.94) continue;
                 double cos = Math.Abs(t1.E * laneDir.E + t1.N * laneDir.N);
                 // end almost square to the passes, or an edge running along them (not an end)
-                if (cos < 0.2 || cos > 0.9) continue;
+                if (cos < 0.2 || cos > 0.985) continue;
                 width[i] = dist + Math.Min(dist, slantGap * cos * 0.4);
             }
 
@@ -1084,8 +1084,14 @@ namespace AgOpenGPS.AutoPlan
 
             int directOut = direct == null ? int.MaxValue : CountOutside(direct, fence);
             double directLen = direct == null ? double.MaxValue : OpenLength(direct);
-            // turn to a nearby pass (also skipping a few): out at the boundary, ends lined up
-            bool near = (p1 - p0).Length <= 2.0 * R + 5.0 * W;
+            // turn to a nearby pass (also skipping a few): out at the boundary, ends lined up.
+            // Nearby means the sideways gap between the passes; along a slanted edge the pass
+            // ends can be far apart lengthwise and it is still a turn, not a transfer
+            V2 dir0 = new V2(Math.Sin(h0), Math.Cos(h0));
+            V2 rel = p1 - p0;
+            double lateral = Math.Abs(rel.E * dir0.N - rel.N * dir0.E);
+            double lengthwise = Math.Abs(rel.E * dir0.E + rel.N * dir0.N);
+            bool near = lateral <= 2.0 * R + 5.0 * W && lengthwise <= 150.0;
             if (wideTurn && near)
             {
                 List<V2> wide = WideTurn(p0, h0, p1, h1, R, s, fence);
@@ -1246,7 +1252,7 @@ namespace AgOpenGPS.AutoPlan
         private static double FurthestCentre(V2 p, V2 dir, V2 n, double R, double target, PolygonTester fence)
         {
             double best = -1;
-            for (double e = 0; e <= 80.0; e += 0.25)
+            for (double e = 0; e <= 160.0; e += 0.25)
             {
                 V2 c = p + dir * e + n * R;
                 if (!fence.Inside(c) || fence.EdgeDistance(c, target + 1.0) < target) break;
