@@ -65,6 +65,7 @@ namespace AgOpenGPS
         {
             return new List<Tuple<Control, string>>
             {
+                Tuple.Create<Control, string>(btnAutoPlan, T("Auto field plan", "Automatski plan parcele")),
                 Tuple.Create<Control, string>(btnSnapToPivot, T("Snap to pivot - move the line to the vehicle", "Privuci liniju na traktor")),
                 Tuple.Create<Control, string>(btnAdjLeft, T("Move the line left", "Pomakni liniju lijevo")),
                 Tuple.Create<Control, string>(btnAdjRight, T("Move the line right", "Pomakni liniju desno")),
@@ -73,7 +74,6 @@ namespace AgOpenGPS
                 Tuple.Create<Control, string>(cboxIsSectionControlled, T("Sections switched by the headland", "Sekcije se gase na uvratini")),
                 Tuple.Create<Control, string>(btnHydLift, T("Hydraulic lift", "Hidraulično dizanje")),
                 Tuple.Create<Control, string>(btnTramDisplayMode, T("Tram lines display", "Prikaz tragova u polju (tramline)")),
-                Tuple.Create<Control, string>(btnResetToolHeading, T("Reset tool heading - straighten the tool behind the vehicle", "Poravnaj priključak iza traktora")),
                 Tuple.Create<Control, string>(btnChangeMappingColor, T("Coverage colour", "Boja obrađene površine")),
                 Tuple.Create<Control, string>(btnYouSkipEnable, T("Skip rows in U-turns on/off", "Preskakanje redova kod okretanja")),
                 Tuple.Create<Control, string>(cboxpRowWidth, T("Number of rows to skip", "Broj redova za preskakanje")),

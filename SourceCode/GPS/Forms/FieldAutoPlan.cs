@@ -42,6 +42,79 @@ namespace AgOpenGPS
 
             int idx = toolStripBtnFieldTools.DropDownItems.IndexOf(recordedPathStripMenu);
             toolStripBtnFieldTools.DropDownItems.Insert(idx + 1, autoPlanStripMenu);
+
+            AddAutoPlanBottomButton();
+            AddPlanCardMenu();
+        }
+
+        private Button btnAutoPlan;
+
+        /// <summary>Auto plan button in the bottom bar, next to the track button.</summary>
+        private void AddAutoPlanBottomButton()
+        {
+            btnAutoPlan = new Button
+            {
+                Name = "btnAutoPlan",
+                Anchor = AnchorStyles.None,
+                BackColor = Color.Transparent,
+                FlatStyle = FlatStyle.Flat,
+                Margin = new Padding(0),
+                Size = btnTrack.Size,
+                Image = AutoPlanIcon(48),
+                ImageAlign = ContentAlignment.MiddleCenter,
+                UseVisualStyleBackColor = false
+            };
+            btnAutoPlan.FlatAppearance.BorderSize = 0;
+            btnAutoPlan.Click += (s, e) => AutoPlanField(null);
+            panelBottom.Controls.Add(btnAutoPlan);
+            panelBottom.Controls.SetChildIndex(btnAutoPlan, panelBottom.Controls.GetChildIndex(btnTrack) + 1);
+        }
+
+        /// <summary>Icon: field with passes and a U-turn at the edge.</summary>
+        private static Bitmap AutoPlanIcon(int size)
+        {
+            var bmp = new Bitmap(size, size);
+            using (Graphics g = Graphics.FromImage(bmp))
+            {
+                g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+                float s = size / 48f;
+                var field = new[] { new PointF(4 * s, 44 * s), new PointF(4 * s, 8 * s), new PointF(32 * s, 4 * s), new PointF(44 * s, 44 * s) };
+                using (var b = new SolidBrush(Color.FromArgb(56, 142, 60))) g.FillPolygon(b, field);
+                using (var p = new Pen(Color.FromArgb(255, 112, 67), 2.5f * s)) g.DrawPolygon(p, field);
+                using (var p = new Pen(Color.FromArgb(255, 224, 102), 2.2f * s))
+                    for (int i = 0; i < 4; i++) g.DrawLine(p, (11 + i * 8) * s, 40 * s, (11 + i * 8) * s, (16 - i) * s);
+                using (var p = new Pen(Color.White, 2.6f * s))
+                {
+                    g.DrawArc(p, 11 * s, 9 * s, 8 * s, 10 * s, 180, 180);
+                    g.DrawArc(p, 27 * s, 7 * s, 8 * s, 10 * s, 180, 180);
+                }
+                using (var b = new SolidBrush(Color.FromArgb(21, 101, 192))) g.FillEllipse(b, 26 * s, 26 * s, 20 * s, 20 * s);
+                using (var f = new Font("Tahoma", 9f * s, FontStyle.Bold))
+                using (var fmt = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center })
+                    g.DrawString("A", f, Brushes.White, new RectangleF(26 * s, 26 * s, 20 * s, 20 * s), fmt);
+            }
+            return bmp;
+        }
+
+        private bool IsPlanCardShown => Properties.Settings.Default.setDisplay_planCard;
+
+        private void AddPlanCardMenu()
+        {
+            var item = new ToolStripMenuItem
+            {
+                Text = T("Plan progress card", "Kartica napretka plana"),
+                Font = menustripLanguage.Font,
+                Size = menustripLanguage.Size,
+                CheckOnClick = true,
+                Checked = Properties.Settings.Default.setDisplay_planCard
+            };
+            item.Click += (s, e) =>
+            {
+                Properties.Settings.Default.setDisplay_planCard = item.Checked;
+                Properties.Settings.Default.Save();
+            };
+            int i = fileToolStripMenuItem.DropDownItems.IndexOf(menustripLanguage);
+            fileToolStripMenuItem.DropDownItems.Insert(i + 1, item);
         }
 
         /// <summary>
@@ -306,6 +379,7 @@ namespace AgOpenGPS
         /// </summary>
         private void DrawAutoPlanCard()
         {
+            if (!IsPlanCardShown) return;
             if (!panelDrag.Visible && !recPath.isDrivingRecordedPath) return;
             if (!UpdateRecPathLabels()) return;
 

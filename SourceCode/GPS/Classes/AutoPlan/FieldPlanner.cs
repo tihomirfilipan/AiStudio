@@ -63,6 +63,15 @@ namespace AgOpenGPS.AutoPlan
         /// <summary>Add an overlapping pass when a strip is left after the last pass.</summary>
         public bool AddExtraPass = true;
 
+        /// <summary>Order of the passes: 0 = automatic (shortest), 1 = neighbour passes, 2 = skip passes.</summary>
+        public int OrderMode = 0;
+
+        /// <summary>
+        /// true (default): turns are made out at the boundary (straight on, turn, parallel to the
+        /// edge, turn back); false: shortest turn right at the pass end.
+        /// </summary>
+        public bool TurnsAtBoundary = true;
+
         /// <summary>
         /// Part of the boundary the passes follow (e.g. picked with 2 points on the map).
         /// null = the longest straight or gently curved edge is chosen automatically.
@@ -272,7 +281,7 @@ namespace AgOpenGPS.AutoPlan
             // drive line along the boundary (outer headland lap / first pass) for long transfers
             List<V2> transferLoop = BuildTransferLoop(fence, W, R, s, fenceGrid);
 
-            List<Step> order = ChooseOrder(passes, R, W, fenceGrid, startPos, startHeading, s, transferLoop, out string orderName);
+            List<Step> order = ChooseOrder(passes, R, W, fenceGrid, startPos, startHeading, s, transferLoop, set.OrderMode, out string orderName);
             res.OrderDescription = orderName;
 
             var path = new List<PlanPoint>();
@@ -285,7 +294,7 @@ namespace AgOpenGPS.AutoPlan
                 if (i > 0)
                 {
                     LastPose(path, s, out V2 lastP, out double lastH);
-                    var turn = Connect(lastP, lastH, pts[0], HeadingOf(pts[0], pts[Math.Min(3, pts.Count - 1)]), R, W, s, fenceGrid, transferLoop, true);
+                    var turn = Connect(lastP, lastH, pts[0], HeadingOf(pts[0], pts[Math.Min(3, pts.Count - 1)]), R, W, s, fenceGrid, transferLoop, set.TurnsAtBoundary);
                     if (turn == null) { res.Error = "Turn could not be built"; return; }
                     if (CountOutside(turn, fenceGrid) > 0) res.TurnsLeavingField++;
                     AppendPoints(path, turn, false, true);
@@ -729,9 +738,12 @@ namespace AgOpenGPS.AutoPlan
         /// length, plus a big penalty for turns leaving the boundary, wins.
         /// </summary>
         private static List<Step> ChooseOrder(List<Pass> passes, double R, double W, PolygonTester fence,
-            V2 startPos, double startHeading, double s, List<V2> transferLoop, out string name)
+            V2 startPos, double startHeading, double s, List<V2> transferLoop, int orderMode, out string name)
         {
-            double[] weights = { 0.0, 0.25, 0.5, 1.0, 2.0, 1e6 };
+            // weight of the lane penalty: 1e6 = strictly neighbour passes, small = skipping allowed
+            double[] weights = orderMode == 1 ? new[] { 1e6 }
+                : orderMode == 2 ? new[] { 0.25, 0.5, 1.0, 2.0 }
+                : new[] { 0.0, 0.25, 0.5, 1.0, 2.0, 1e6 };
             List<Step> bestPlan = null;
             double bestScore = double.MaxValue;
             name = "";

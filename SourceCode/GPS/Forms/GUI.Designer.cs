@@ -964,15 +964,8 @@ namespace AgOpenGPS
                 }
 
                 if (viz == 0) return;
-                if ((viz > 9 && Width < 1190) || IsBottomPanelHidden(btnResetToolHeading))
-                {
-                    btnResetToolHeading.Visible = false;
-                }
-                else
-                {
-                    btnResetToolHeading.Visible = true;
-                    viz++;
-                }
+                // the reset tool heading button is not used any more
+                btnResetToolHeading.Visible = false;
 
                 sizer = (Width - 185) / (viz);
                 if (sizer > 150) { sizer = 150; }

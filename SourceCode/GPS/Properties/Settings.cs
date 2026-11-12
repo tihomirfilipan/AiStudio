@@ -40,6 +40,9 @@ namespace AgOpenGPS.Properties
         public bool setAutoPlan_extraPass = true;
         public bool setAutoPlan_addTrack = true;
         public bool setAutoPlan_guidanceMode = false;
+        public int setAutoPlan_orderMode = 0;
+        public bool setAutoPlan_turnsAtBoundary = true;
+        public bool setDisplay_planCard = false;
 
         // Buttons hidden by the user in the track flyout panel (control names, comma separated)
         public string setTrackPanel_hidden = "";
