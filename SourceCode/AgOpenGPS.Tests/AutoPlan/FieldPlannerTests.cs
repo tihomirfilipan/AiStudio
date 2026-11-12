@@ -366,6 +366,46 @@ namespace AgOpenGPS.Tests.AutoPlan
         }
 
         [Test]
+        public void SideLaps_OneLapAlongSidesThreeAtEnds()
+        {
+            // 300 m long passes (east-west): ends west and east, long sides south and north
+            var fence = Rectangle(300, 200);
+            var set = new FieldPlanSettings { WorkWidth = 4, TurnRadius = 5, HeadlandLaps = 3, SideLaps = 1, WorkHeadland = true };
+            var res = FieldPlanner.Build(fence, set, new V2(-10, -10), 0);
+            Assert.That(res.Ok, Is.True, res.Error);
+
+            // 1 lap all around plus 2 strips at each of the 2 ends
+            Assert.That(res.HeadlandLaps, Is.EqualTo(5));
+
+            // work area: 1 width in from the long sides, 3 widths in from the ends
+            double minN = double.MaxValue, maxN = double.MinValue, minE = double.MaxValue, maxE = double.MinValue;
+            foreach (V2 p in res.WorkArea)
+            {
+                minN = Math.Min(minN, p.N); maxN = Math.Max(maxN, p.N);
+                minE = Math.Min(minE, p.E); maxE = Math.Max(maxE, p.E);
+            }
+            Assert.That(minN, Is.EqualTo(4).Within(0.6));
+            Assert.That(200 - maxN, Is.EqualTo(4).Within(0.6));
+            Assert.That(minE, Is.EqualTo(12).Within(1.0));
+            Assert.That(300 - maxE, Is.EqualTo(12).Within(1.0));
+
+            // no reversing, everything inside the boundary
+            foreach (PlanPoint p in res.Points)
+            {
+                Assert.That(p.IsReverse, Is.False);
+                Assert.That(FieldPlanner.PointInPolygon(fence, new V2(p.E, p.N)), Is.True);
+            }
+        }
+
+        [Test]
+        public void SideLaps_AsManyAsEndLapsIsHeadlandAllAround()
+        {
+            var res = FieldPlanner.Build(Rectangle(300, 200), new FieldPlanSettings { WorkWidth = 4, TurnRadius = 5, HeadlandLaps = 2, SideLaps = 2, WorkHeadland = true }, new V2(-10, -10), 0);
+            Assert.That(res.Ok, Is.True, res.Error);
+            Assert.That(res.HeadlandLaps, Is.EqualTo(2));
+        }
+
+        [Test]
         public void TooSmallField_ReturnsError()
         {
             var res = FieldPlanner.Build(Rectangle(10, 10), new FieldPlanSettings { WorkWidth = 6, TurnRadius = 6 }, new V2(0, 0), 0);

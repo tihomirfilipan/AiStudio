@@ -61,6 +61,14 @@ namespace AgOpenGPS.AutoPlan
         /// </summary>
         public bool HeadlandOnLongSides = false;
 
+        /// <summary>
+        /// Headland only at the ends (HeadlandOnLongSides = false): number of headland laps along
+        /// the long sides too (0 = none, the first and last pass run along the boundary). These laps
+        /// go all around the field; the ends get HeadlandLaps passes in total (the rest as strips
+        /// at the ends only). E.g. HeadlandLaps 3, SideLaps 1: 1 lap all around + 2 strips per end.
+        /// </summary>
+        public int SideLaps = 0;
+
         /// <summary>Add an overlapping pass when a strip is left after the last pass.</summary>
         public bool AddExtraPass = true;
 
@@ -386,7 +394,20 @@ namespace AgOpenGPS.AutoPlan
             int laps = set.HeadlandLaps;
             // the turn reaches R past the pass end and the tool sticks out half a width more
             if (laps <= 0) laps = Math.Max(1, (int)Math.Ceiling((R + Math.Max(set.TurnMargin, W * 0.5 + 1.0)) / W));
+
+            // Laps along the long sides (headland at the ends only): they run all around the field,
+            // the ends get the remaining laps as strips. As many or more side laps than end laps
+            // is simply a headland all around.
+            bool endsOnly = !set.HeadlandOnLongSides;
+            int sideLaps = endsOnly ? Math.Max(0, set.SideLaps) : 0;
+            if (sideLaps >= laps)
+            {
+                laps = sideLaps;
+                sideLaps = 0;
+                endsOnly = false;
+            }
             double headWidth = laps * W;
+            double sideWidth = sideLaps * W;
 
             // --- Reference edge: longest smooth part of the boundary ---
             List<V2> refEdge = set.ReferenceEdge != null && set.ReferenceEdge.Count >= 2
@@ -409,24 +430,42 @@ namespace AgOpenGPS.AutoPlan
             // rounded to a minimum radius, so bends of the edge straighten out towards the inside
             // of the field instead of folding into sharp kinks
             double minRadius = Math.Max(1.5 * R, 10.0);
-            var lanesEnds = new LaneLines(refExt, side, W, W * 0.5, minRadius, s);
+            var lanesEnds = new LaneLines(refExt, side, W, sideWidth + W * 0.5, minRadius, s);
 
             // --- Work area: headland only at the pass ends, or all around ---
-            bool endsOnly = !set.HeadlandOnLongSides;
+            // With side laps the ends are found and inset on the boundary moved in by the side laps
+            // (endFence); the side laps themselves are driven all around the real boundary at the end.
+            List<V2> endFence = fence;
+            if (endsOnly && sideLaps > 0)
+            {
+                endFence = InsetLoop(fence, sideWidth, s);
+                if (endFence.Count < 10 || Math.Abs(SignedArea(endFence)) < W * W * 4)
+                {
+                    res.Error = "Field too small for headland";
+                    return;
+                }
+                if (SignedArea(endFence) < 0) endFence.Reverse();
+            }
             int[] endRunId = null;
             List<V2> work = null;
             if (endsOnly)
             {
-                endRunId = ClassifyEnds(fence, lanesEnds, W, diag, s);
+                endRunId = ClassifyEnds(endFence, lanesEnds, W, diag, s);
                 bool anyEnd = false, anySide = false;
                 foreach (int id in endRunId) { if (id >= 0) anyEnd = true; else anySide = true; }
                 if (anyEnd && anySide)
                     // slanted ends get a wider headland, so turns between passes fit without loops
-                    work = InsetEnds(fence, endRunId, headWidth, s, midDir, set.WorkHeadland || set.HeadlandReverseTurns ? 0.0 : Math.Max(2.0 * R, W));
+                    work = InsetEnds(endFence, endRunId, headWidth - sideWidth, s, midDir, set.WorkHeadland || set.HeadlandReverseTurns ? 0.0 : Math.Max(2.0 * R, W));
                 else
                     endsOnly = false; // no clear long sides (round field): headland all around
             }
-            if (!endsOnly) work = InsetLoop(fence, headWidth, s);
+            if (!endsOnly)
+            {
+                sideLaps = 0;
+                sideWidth = 0.0;
+                endFence = fence;
+                work = InsetLoop(fence, headWidth, s);
+            }
 
             if (work == null || work.Count < 10 || Math.Abs(SignedArea(work)) < W * W * 4)
             {
@@ -441,7 +480,7 @@ namespace AgOpenGPS.AutoPlan
             int emptyInRow = 0;
             for (int lane = 0; lane < 10000; lane++)
             {
-                double d = (endsOnly ? 0.0 : headWidth) + W * (lane + 0.5);
+                double d = (endsOnly ? sideWidth : headWidth) + W * (lane + 0.5);
                 if (d > diag + headWidth) break;
 
                 List<V2> off = lanes.Get(lane);
@@ -515,7 +554,7 @@ namespace AgOpenGPS.AutoPlan
             Step slantFirst = null;
             if (endsOnly && set.SlantEdgePass)
             {
-                List<Pass> slant = SlantEdgePasses(fence, endRunId, midDir, W, R, s, passes);
+                List<Pass> slant = SlantEdgePasses(endFence, endRunId, midDir, W, R, s, passes);
                 Pass firstSlant = null;
                 double fd = double.MaxValue;
                 foreach (Pass sp in slant)
@@ -613,45 +652,13 @@ namespace AgOpenGPS.AutoPlan
             // --- Headland: strips at the pass ends, or laps all around ---
             if (set.WorkHeadland && endsOnly)
             {
-                BuildEndStrips(fence, endRunId, laps, W, R, s, fenceGrid, path, res, transferLoop, set.HeadlandReverseTurns);
+                BuildEndStrips(endFence, endRunId, laps - sideLaps, W, R, s, fenceGrid, path, res, transferLoop, set.HeadlandReverseTurns);
+                // then the laps along the long sides, all around the field (inner one first)
+                if (sideLaps > 0) BuildFullLaps(fence, sideLaps, W, R, s, fenceGrid, path, res, transferLoop);
             }
             else if (set.WorkHeadland)
             {
-                for (int j = 0; j < laps; j++)
-                {
-                    double d = headWidth - W * (j + 0.5);
-                    List<V2> lap = InsetLoop(fence, d, s);
-                    if (lap.Count < 10) continue;
-                    List<V2> sharp = lap;
-                    lap = RoundLoop(lap, R, s);
-                    // Rounding must never push the path over the boundary
-                    for (int k = 0; k < lap.Count; k++)
-                        if (!fenceGrid.Inside(lap[k])) lap[k] = sharp[NearestIndex(sharp, lap[k])];
-
-                    LastPose(path, s, out V2 cur, out double curH);
-
-                    // Nearest point, then go a bit ahead so the approach is a smooth S-curve
-                    int idx = NearestIndex(lap, cur);
-                    double hAtIdx = HeadingOf(lap[idx], lap[(idx + 1) % lap.Count]);
-                    bool forward = Math.Abs(AngleDiff(hAtIdx, curH)) < Math.PI / 2;
-                    if (!forward) lap.Reverse();
-                    idx = NearestIndex(lap, cur);
-                    double ahead = 2.0 * Math.Sqrt(R * W) + 2.0 * R;
-                    int shift = (int)Math.Ceiling(ahead / s);
-                    idx = (idx + shift) % lap.Count;
-
-                    var loop = new List<V2>(lap.Count + 1);
-                    for (int k = 0; k <= lap.Count; k++) loop.Add(lap[(idx + k) % lap.Count]);
-
-                    var conn = Connect(cur, curH, loop[0], HeadingOf(loop[0], loop[Math.Min(3, loop.Count - 1)]), R, W, s, fenceGrid, transferLoop);
-                    if (conn != null)
-                    {
-                        if (CountOutside(conn, fenceGrid) > 0) res.TurnsLeavingField++;
-                        AppendPoints(path, conn, false, true);
-                    }
-                    AppendPoints(path, loop, true, true, true);
-                    res.HeadlandLaps++;
-                }
+                BuildFullLaps(fence, laps, W, R, s, fenceGrid, path, res, transferLoop);
             }
 
             // --- Final resampling and headings ---
@@ -663,6 +670,51 @@ namespace AgOpenGPS.AutoPlan
                 if (res.Points[i].IsWork && res.Points[i - 1].IsWork) res.WorkLength += seg;
             }
             res.Ok = true;
+        }
+
+        /// <summary>
+        /// Headland laps all around the boundary, inner lap first, each joined to the path with a
+        /// smooth approach.
+        /// </summary>
+        private static void BuildFullLaps(List<V2> fence, int laps, double W, double R, double s,
+            PolygonTester fenceGrid, List<PlanPoint> path, FieldPlanResult res, List<V2> transferLoop)
+        {
+            double headWidth = laps * W;
+            for (int j = 0; j < laps; j++)
+            {
+                double d = headWidth - W * (j + 0.5);
+                List<V2> lap = InsetLoop(fence, d, s);
+                if (lap.Count < 10) continue;
+                List<V2> sharp = lap;
+                lap = RoundLoop(lap, R, s);
+                // Rounding must never push the path over the boundary
+                for (int k = 0; k < lap.Count; k++)
+                    if (!fenceGrid.Inside(lap[k])) lap[k] = sharp[NearestIndex(sharp, lap[k])];
+
+                LastPose(path, s, out V2 cur, out double curH);
+
+                // Nearest point, then go a bit ahead so the approach is a smooth S-curve
+                int idx = NearestIndex(lap, cur);
+                double hAtIdx = HeadingOf(lap[idx], lap[(idx + 1) % lap.Count]);
+                bool forward = Math.Abs(AngleDiff(hAtIdx, curH)) < Math.PI / 2;
+                if (!forward) lap.Reverse();
+                idx = NearestIndex(lap, cur);
+                double ahead = 2.0 * Math.Sqrt(R * W) + 2.0 * R;
+                int shift = (int)Math.Ceiling(ahead / s);
+                idx = (idx + shift) % lap.Count;
+
+                var loop = new List<V2>(lap.Count + 1);
+                for (int k = 0; k <= lap.Count; k++) loop.Add(lap[(idx + k) % lap.Count]);
+
+                var conn = Connect(cur, curH, loop[0], HeadingOf(loop[0], loop[Math.Min(3, loop.Count - 1)]), R, W, s, fenceGrid, transferLoop);
+                if (conn != null)
+                {
+                    if (CountOutside(conn, fenceGrid) > 0) res.TurnsLeavingField++;
+                    AppendPoints(path, conn, false, true);
+                }
+                AppendPoints(path, loop, true, true, true);
+                res.HeadlandLaps++;
+            }
         }
 
         /// <summary>

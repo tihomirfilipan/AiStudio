@@ -17,7 +17,7 @@ namespace AgOpenGPS.Forms.Field
     /// </summary>
     public class FormAutoPlanOptions : Form
     {
-        private readonly NudlessNumericUpDown nudWidth, nudRadius, nudLaps;
+        private readonly NudlessNumericUpDown nudWidth, nudRadius, nudLaps, nudSideLaps;
         private readonly Label lblAutoLaps;
 
         private readonly PictureTile tilePath, tileGuidance;
@@ -159,7 +159,8 @@ namespace AgOpenGPS.Forms.Field
             var numbers = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = new Padding(0, 0, 0, 4) };
             nudWidth = AddNumber(numbers, T("Work width (m)", "Radna širina (m)"), 0.5m, 60m, 2, (decimal)appWidth);
             nudRadius = AddNumber(numbers, T("Turning radius (m)", "Radijus okretanja (m)"), 1m, 60m, 1, (decimal)appRadius);
-            nudLaps = AddNumber(numbers, T("Headland passes (0 = auto)", "Uvratina u prohodima (0 = auto)"), 0m, 10m, 0, Properties.Settings.Default.setAutoPlan_headlandLaps);
+            nudLaps = AddNumber(numbers, T("Headland at ends, passes (0 = auto)", "Uvratina na krajevima, prohoda (0 = auto)"), 0m, 10m, 0, Properties.Settings.Default.setAutoPlan_headlandLaps);
+            nudSideLaps = AddNumber(numbers, T("Laps along long sides", "Krugova uz duže stranice"), 0m, 10m, 0, Properties.Settings.Default.setAutoPlan_sideLaps);
             root.Controls.Add(numbers);
             lblAutoLaps = new Label { AutoSize = true, ForeColor = Color.Silver, Font = new Font("Tahoma", 10F), Margin = new Padding(3, 0, 3, 8) };
             root.Controls.Add(lblAutoLaps);
@@ -216,6 +217,7 @@ namespace AgOpenGPS.Forms.Field
             nudWidth.ValueChanged += (s, e) => OptionsChanged();
             nudRadius.ValueChanged += (s, e) => OptionsChanged();
             nudLaps.ValueChanged += (s, e) => OptionsChanged();
+            nudSideLaps.ValueChanged += (s, e) => OptionsChanged();
             preview.Resize += (s, e) => { if (Plan != null) ShowPlan(Plan); };
             Shown += (s, e) => OptionsChanged();
             FormClosed += (s, e) => previewTimer.Dispose();
@@ -297,8 +299,17 @@ namespace AgOpenGPS.Forms.Field
         {
             int laps = nudLaps.Value > 0 ? (int)nudLaps.Value : AutoLaps();
             double w = laps * (double)nudWidth.Value;
-            lblAutoLaps.Text = (nudLaps.Value > 0 ? T("Headland: ", "Uvratina: ") : T("Automatic headland: ", "Automatska uvratina: ")) +
-                laps + " x " + Fmt((double)nudWidth.Value) + " m = " + Fmt(w) + " m" +
+            int side = (int)nudSideLaps.Value;
+            // side laps only count with the headland at the ends; as many as the end laps = all around
+            nudSideLaps.Enabled = !tileAllAround.Selected;
+            string sideText = "";
+            if (!tileAllAround.Selected && side > 0)
+                sideText = side >= laps
+                    ? T("; along the sides too: headland all around (", "; i uz stranice: uvratina svuda okolo (") + side + T(" laps)", " kruga)")
+                    : T("; along long sides ", "; uz duže stranice ") + side + " x " + Fmt((double)nudWidth.Value) + " m" +
+                      T(" (laps all around, ends get ", " (krugovi okolo, krajevi još ") + (laps - side) + T(" more strips)", " trake)");
+            lblAutoLaps.Text = (nudLaps.Value > 0 ? T("Headland at ends: ", "Uvratina na krajevima: ") : T("Automatic headland at ends: ", "Automatska uvratina na krajevima: ")) +
+                laps + " x " + Fmt((double)nudWidth.Value) + " m = " + Fmt(w) + " m" + sideText +
                 (laps < AutoLaps() ? T("  (narrow: turns may leave the field)", "  (uska: okreti mogu izaći iz parcele)") : "");
         }
 
@@ -323,6 +334,7 @@ namespace AgOpenGPS.Forms.Field
                 TurnRadius = (double)nudRadius.Value,
                 HeadlandLaps = (int)nudLaps.Value,
                 HeadlandOnLongSides = tileAllAround.Selected,
+                SideLaps = (int)nudSideLaps.Value,
                 WorkHeadland = tileWorkHeadland.Selected,
                 AddExtraPass = tileExtraPass.Selected,
                 OrderMode = order,
@@ -341,6 +353,7 @@ namespace AgOpenGPS.Forms.Field
             nudWidth.Value = (decimal)appWidth;
             nudRadius.Value = (decimal)appRadius;
             nudLaps.Value = 0;
+            nudSideLaps.Value = 0;
             tilePath.Selected = true; tileGuidance.Selected = false;
             tileEnds.Selected = true; tileAllAround.Selected = false;
             tileTurnsEdge.Selected = true; tileTurnsShort.Selected = false; tileTurnsReverse.Selected = false;
@@ -408,6 +421,7 @@ namespace AgOpenGPS.Forms.Field
 
             var set = Properties.Settings.Default;
             set.setAutoPlan_headlandLaps = (int)nudLaps.Value;
+            set.setAutoPlan_sideLaps = (int)nudSideLaps.Value;
             set.setAutoPlan_headlandAllAround = tileAllAround.Selected;
             set.setAutoPlan_workHeadland = tileWorkHeadland.Selected;
             set.setAutoPlan_extraPass = tileExtraPass.Selected;
