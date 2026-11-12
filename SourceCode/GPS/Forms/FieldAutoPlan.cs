@@ -219,9 +219,8 @@ namespace AgOpenGPS
                 if (addTrack && plan.TrackLine.Count > 2)
                     msg += "\r\n" + T("A new curve track of the first pass will be added (dashed line).", "Bit će dodan novi trag - krivulja prvog prohoda (isprekidana linija).");
 
-                if (settings.WorkHeadland)
-                    msg += "\r\n" + T("'Sections controlled by headland' will be switched off so the headland strips are worked.",
-                        "'Sekcije kontrolira uvratina' će se isključiti da se trake uvratine obrade.");
+                msg += "\r\n" + T("'Sections controlled by headland' will be switched off: the plan switches the sections.",
+                    "'Sekcije kontrolira uvratina' će se isključiti: sekcije uključuje i isključuje plan.");
 
                 msg += "\r\n\r\n" + T("Save: the plan becomes the recorded path. Start it with Play in the recorded path panel or with the autosteer button - steering switches on by itself.",
                     "Spremi: plan postaje snimljena putanja. Pokrenite je gumbom Play u panelu snimljene putanje ili gumbom autopilota - upravljanje se uključuje samo.");
@@ -253,7 +252,9 @@ namespace AgOpenGPS
 
             // The plan drives the headland itself: section control by headland would switch the
             // sections off there and leave unworked stripes between the headland strips
-            if (plan.HeadlandLaps > 0 && cboxIsSectionControlled.Checked)
+            // the plan switches the sections (also in the straight part of turns out to the
+            // boundary): the app's headland must not switch them off
+            if (cboxIsSectionControlled.Checked)
             {
                 cboxIsSectionControlled.Checked = false;
                 cboxIsSectionControlled_Click(cboxIsSectionControlled, EventArgs.Empty);
