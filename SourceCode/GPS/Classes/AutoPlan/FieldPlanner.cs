@@ -1276,7 +1276,7 @@ namespace AgOpenGPS.AutoPlan
                         for (int r = 0; r < 2; r++)
                         {
                             EntryPose(ps, r == 1, out V2 p, out double h);
-                            double len = TurnLength(ep, eh, p, h, R);
+                            double len = TurnLength(ep, eh, p, h, R, orderMode != 1);
                             cands.Add(new KeyValuePair<double, Step>(len + lanePenalty, new Step { Pass = ps, Reverse = r == 1 }));
                         }
                     }
@@ -1372,7 +1372,7 @@ namespace AgOpenGPS.AutoPlan
                         }
                     }
                     if (turn == null) { score += 1e6; continue; }
-                    score += TurnLength(ep, eh, p, h, R) + 1000.0 * outside;
+                    score += TurnLength(ep, eh, p, h, R, orderMode != 1) + 1000.0 * outside;
                 }
                 return score;
             }
@@ -1516,14 +1516,17 @@ namespace AgOpenGPS.AutoPlan
                     maxBack = e;
                 }
                 // where the boundary runs across the pass the turn onto the line starts earlier
+                // corners on the line's arc; only where the pass ends too close to a corner for
+                // that, the turn may run a little inside the arc
                 V2 q0 = q;
-                for (double back = 0; back <= reachLen && back <= 1.5 * R; back += 0.5 * R)
+                foreach (double tol in new[] { 1.0, 0.8 * R })
+                for (double back = 0; back <= reachLen && back <= 3.0 * R; back += 0.5 * R)
                 {
                     q = q0 - d0 * back;
                     for (double e = maxBack; e >= 0; e -= Math.Max(2.0, maxBack / 3.0))
                     {
                         V2 entry = p1 - d1 * e;
-                        List<V2> hug = LoopTransfer(q, h0, entry, h1, loop, R, s, fence, out int hugOut, out double hugCost, true);
+                        List<V2> hug = LoopTransfer(q, h0, entry, h1, loop, R, s, fence, out int hugOut, out double hugCost, true, tol);
                         if (hug == null || hugOut != 0 || hugCost >= 400.0) continue;
                         var pts = new List<V2>();
                         AddStraight(pts, p0, q, s);
@@ -1563,7 +1566,7 @@ namespace AgOpenGPS.AutoPlan
         /// Length of a turn as it will be driven: back into a parallel pass the two ends are
         /// lined up first (see WideTurn), so a staggered end costs its straight part, not a loop.
         /// </summary>
-        private static double TurnLength(V2 p0, double h0, V2 p1, double h1, double R)
+        private static double TurnLength(V2 p0, double h0, V2 p1, double h1, double R, bool skipClose = true)
         {
             V2 d0 = new V2(Math.Sin(h0), Math.Cos(h0));
             V2 d1 = new V2(Math.Sin(h1), Math.Cos(h1));
@@ -1584,7 +1587,7 @@ namespace AgOpenGPS.AutoPlan
             // a gap under two radii is turned without a loop at the boundary (two part turns), small extra cost
             // turns go out along the boundary (part turn, along it, part turn into the pass): that
             // needs two turning radii sideways, so closer passes are skipped (smart skipping)
-            return (level - l0) + (level - l1) + DubinsLength(a, h0, b, h1, R) + (gap < 1.9 * R ? 300.0 : 0.0);
+            return (level - l0) + (level - l1) + DubinsLength(a, h0, b, h1, R) + (skipClose && gap < 1.9 * R ? 300.0 : 0.0);
         }
 
         /// <summary>
@@ -1874,12 +1877,14 @@ namespace AgOpenGPS.AutoPlan
         }
 
         private static List<V2> LoopTransfer(V2 p0, double h0, V2 p1, double h1, List<V2> loop, double R, double s,
-            PolygonTester fence, out int outside, out double cost, bool shortJoins = false)
+            PolygonTester fence, out int outside, out double cost, bool shortJoins = false, double cornerTol = -1.0)
         {
             List<V2> best = null;
             double bestCost = double.MaxValue;
             outside = int.MaxValue;
             cost = double.MaxValue;
+            // transfers: joins may run a little inside a corner arc of the line
+            if (cornerTol < 0) cornerTol = 0.8 * R;
             for (int dir = 0; dir < 2; dir++)
             {
                 List<V2> lp = loop;
@@ -1917,7 +1922,7 @@ namespace AgOpenGPS.AutoPlan
                     if (c1 == null) continue;
                     // never cut a corner of the line short: where the skipped part of the line
                     // turns, the join must run close along it (corners are driven on the arc)
-                    if (TurnAlong(lp, ia, a) > 0.6 && FarestFrom(lp, ia, a, c1) > 0.8 * R) continue;
+                    if (TurnAlong(lp, ia, a) > 0.6 && FarestFrom(lp, ia, a, c1) > cornerTol) continue;
                     // join the line with a short turn, not diagonally across
                     if (shortJoins && OpenLength(c1) > Math.PI * R + 2.0 * R) continue;
                     joins.Add((a, c1, CountOutside(c1, fence), OpenLength(c1) + (TotalRotation(c1) > 1.3 * Math.PI ? 500.0 : 0.0)));
@@ -1929,7 +1934,7 @@ namespace AgOpenGPS.AutoPlan
                     if (Math.Abs(AngleDiff(h1, hb)) > 3.05) continue;
                     List<V2> c2 = ClearDubins(lp[b], hb, p1, h1, R, s, fence);
                     if (c2 == null) continue;
-                    if (TurnAlong(lp, b, ib) > 0.6 && FarestFrom(lp, b, ib, c2) > 0.8 * R) continue;
+                    if (TurnAlong(lp, b, ib) > 0.6 && FarestFrom(lp, b, ib, c2) > cornerTol) continue;
                     // leave the line with a short turn into the pass, not diagonally across
                     if (shortJoins && OpenLength(c2) > Math.PI * R + 2.0 * R) continue;
                     leaves.Add((b, c2, CountOutside(c2, fence), OpenLength(c2) + (TotalRotation(c2) > 1.3 * Math.PI ? 500.0 : 0.0)));
