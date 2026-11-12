@@ -180,7 +180,8 @@ namespace AgOpenGPS.AutoPlan
                 bool anyEnd = false, anySide = false;
                 foreach (int id in endRunId) { if (id >= 0) anyEnd = true; else anySide = true; }
                 if (anyEnd && anySide)
-                    work = InsetEnds(fence, endRunId, headWidth, s);
+                    // slanted ends get a wider headland, so turns between passes fit without loops
+                    work = InsetEnds(fence, endRunId, headWidth, s, midDir, set.WorkHeadland ? 0.0 : Math.Max(2.0 * R, W));
                 else
                     endsOnly = false; // no clear long sides (round field): headland all around
             }
@@ -268,11 +269,11 @@ namespace AgOpenGPS.AutoPlan
             var fenceGrid = new PolygonTester(fence);
             // turns and transfers must keep the tool inside: half a width from the boundary
             fenceGrid.SetClearance(fence, Math.Max(0.0, W * 0.5 - 0.3));
-            List<Step> order = ChooseOrder(passes, R, W, fenceGrid, startPos, startHeading, s, out string orderName);
-            res.OrderDescription = orderName;
-
             // drive line along the boundary (outer headland lap / first pass) for long transfers
             List<V2> transferLoop = BuildTransferLoop(fence, W, R, s, fenceGrid);
+
+            List<Step> order = ChooseOrder(passes, R, W, fenceGrid, startPos, startHeading, s, transferLoop, out string orderName);
+            res.OrderDescription = orderName;
 
             var path = new List<PlanPoint>();
             for (int i = 0; i < order.Count; i++)
@@ -284,7 +285,7 @@ namespace AgOpenGPS.AutoPlan
                 if (i > 0)
                 {
                     LastPose(path, s, out V2 lastP, out double lastH);
-                    var turn = Connect(lastP, lastH, pts[0], HeadingOf(pts[0], pts[Math.Min(3, pts.Count - 1)]), R, W, s, fenceGrid, transferLoop);
+                    var turn = Connect(lastP, lastH, pts[0], HeadingOf(pts[0], pts[Math.Min(3, pts.Count - 1)]), R, W, s, fenceGrid, transferLoop, true);
                     if (turn == null) { res.Error = "Turn could not be built"; return; }
                     if (CountOutside(turn, fenceGrid) > 0) res.TurnsLeavingField++;
                     AppendPoints(path, turn, false, true);
@@ -520,9 +521,27 @@ namespace AgOpenGPS.AutoPlan
         /// Work area with the headland only at the ends: end points are moved inwards by the
         /// headland width, long side points stay on the boundary.
         /// </summary>
-        private static List<V2> InsetEnds(List<V2> loop, int[] endRunId, double dist, double s)
+        private static List<V2> InsetEnds(List<V2> loop, int[] endRunId, double dist, double s,
+            V2 laneDir = default, double slantGap = 0.0)
         {
             int n = loop.Count;
+
+            // headland width per point: on an end that is slanted against the passes, neighbouring
+            // pass ends are staggered; extra width (gap * cos of the angle) gives room to turn
+            var width = new double[n];
+            for (int i = 0; i < n; i++)
+            {
+                width[i] = dist;
+                if (slantGap <= 0 || endRunId[i] < 0) continue;
+                V2 t1 = Dir(loop[(i - 1 + n) % n], loop[i]);
+                V2 t2 = Dir(loop[i], loop[(i + 1) % n]);
+                // corners keep the normal width, only straight slanted parts get more
+                if (t1.E * t2.E + t1.N * t2.N < 0.94) continue;
+                double cos = Math.Abs(t1.E * laneDir.E + t1.N * laneDir.N);
+                // end almost square to the passes, or an edge running along them (not an end)
+                if (cos < 0.2 || cos > 0.9) continue;
+                width[i] = dist + Math.Min(dist, slantGap * cos * 0.4);
+            }
 
             // Side points inside the headland band of an end belong to the end
             var endPts = new List<V2>();
@@ -543,8 +562,9 @@ namespace AgOpenGPS.AutoPlan
             {
                 if (!isEnd[i]) { r.Add(loop[i]); continue; }
                 V2 d = Dir(loop[(i - 1 + n) % n], loop[(i + 1) % n]);
-                V2 p = loop[i] + new V2(-d.N, d.E) * dist;
-                if (grid.MinDistance(p, dist) < dist * 0.98) continue;
+                double wi = width[i];
+                V2 p = loop[i] + new V2(-d.N, d.E) * wi;
+                if (grid.MinDistance(p, wi) < dist * 0.98) continue;
                 if (!tester.Inside(p)) continue;
                 r.Add(p);
             }
@@ -709,7 +729,7 @@ namespace AgOpenGPS.AutoPlan
         /// length, plus a big penalty for turns leaving the boundary, wins.
         /// </summary>
         private static List<Step> ChooseOrder(List<Pass> passes, double R, double W, PolygonTester fence,
-            V2 startPos, double startHeading, double s, out string name)
+            V2 startPos, double startHeading, double s, List<V2> transferLoop, out string name)
         {
             double[] weights = { 0.0, 0.25, 0.5, 1.0, 2.0, 1e6 };
             List<Step> bestPlan = null;
@@ -761,7 +781,7 @@ namespace AgOpenGPS.AutoPlan
                         for (int r = 0; r < 2; r++)
                         {
                             EntryPose(ps, r == 1, out V2 p, out double h);
-                            double len = DubinsLength(ep, eh, p, h, R);
+                            double len = TurnLength(ep, eh, p, h, R);
                             cands.Add(new KeyValuePair<double, Step>(len + lanePenalty, new Step { Pass = ps, Reverse = r == 1 }));
                         }
                     }
@@ -791,8 +811,19 @@ namespace AgOpenGPS.AutoPlan
                     ExitPose(plan[i - 1], out V2 ep, out double eh);
                     EntryPose(plan[i].Pass, plan[i].Reverse, out V2 p, out double h);
                     var turn = ClearDubins(ep, eh, p, h, R, Math.Max(2.0, s), fence);
+                    int outside = turn == null ? 1000 : CountOutside(turn, fence);
+                    if (outside > 0 && transferLoop != null)
+                    {
+                        // such a transfer will drive along the boundary line instead
+                        var along = LoopTransfer(ep, eh, p, h, transferLoop, R, Math.Max(2.0, s), fence, out int alongOut, out double alongCost);
+                        if (along != null && alongOut < outside)
+                        {
+                            score += alongCost;
+                            continue;
+                        }
+                    }
                     if (turn == null) { score += 1e6; continue; }
-                    score += OpenLength(turn) + 1000.0 * CountOutside(turn, fence);
+                    score += TurnLength(ep, eh, p, h, R) + 1000.0 * outside;
                 }
 
                 if (score < bestScore)
@@ -863,7 +894,7 @@ namespace AgOpenGPS.AutoPlan
             List<V2> sharp = lap;
             lap = RoundLoop(lap, R, s);
             for (int k = 0; k < lap.Count; k++)
-                if (!fenceGrid.Inside(lap[k])) lap[k] = sharp[NearestIndex(sharp, lap[k])];
+                if (!fenceGrid.Clear(lap[k])) lap[k] = sharp[NearestIndex(sharp, lap[k])];
             return lap;
         }
 
@@ -873,16 +904,23 @@ namespace AgOpenGPS.AutoPlan
         /// line instead of cutting straight across the field.
         /// </summary>
         private static List<V2> Connect(V2 p0, double h0, V2 p1, double h1, double R, double W, double s,
-            PolygonTester fence, List<V2> loop)
+            PolygonTester fence, List<V2> loop, bool wideTurn = false)
         {
             List<V2> direct = ClearDubins(p0, h0, p1, h1, R, s, fence);
-            if (loop == null) return direct;
 
             int directOut = direct == null ? int.MaxValue : CountOutside(direct, fence);
             double directLen = direct == null ? double.MaxValue : OpenLength(direct);
-            // a turn to a nearby pass (also skipping a few) is short; anything longer is a transfer
-            bool isTransfer = directOut > 0 || directLen > Math.PI * R + 2.0 * R + 4.0 * W;
-            if (!isTransfer) return direct;
+            // turn to a nearby pass (also skipping a few): out at the boundary, ends lined up
+            bool near = (p1 - p0).Length <= 2.0 * R + 5.0 * W;
+            if (wideTurn && near)
+            {
+                List<V2> wide = WideTurn(p0, h0, p1, h1, R, s, fence);
+                if (wide != null) return wide;
+            }
+
+            // anything longer is a transfer
+            bool isTransfer = directOut > 0 || (!near && directLen > Math.PI * R + 2.0 * R + 4.0 * W);
+            if (!isTransfer || loop == null) return direct;
 
             List<V2> along = LoopTransfer(p0, h0, p1, h1, loop, R, s, fence, out int alongOut);
             if (along == null) return direct;
@@ -892,12 +930,189 @@ namespace AgOpenGPS.AutoPlan
             return direct;
         }
 
+        /// <summary>
+        /// Length of a turn as it will be driven: back into a parallel pass the two ends are
+        /// lined up first (see WideTurn), so a staggered end costs its straight part, not a loop.
+        /// </summary>
+        private static double TurnLength(V2 p0, double h0, V2 p1, double h1, double R)
+        {
+            V2 d0 = new V2(Math.Sin(h0), Math.Cos(h0));
+            V2 d1 = new V2(Math.Sin(h1), Math.Cos(h1));
+            // a loop costs extra, so the order avoids loops where it can
+            double loopPenalty = 4.0 * R;
+            double dot = d0.E * d1.E + d0.N * d1.N;
+            if (dot > -0.7 || (p1 - p0).Length > 6.0 * R + 40.0)
+                return DubinsLength(p0, h0, p1, h1, R) + (dot > 0.0 ? loopPenalty : 0.0);
+
+            double l0 = p0.E * d0.E + p0.N * d0.N;
+            double l1 = p1.E * d0.E + p1.N * d0.N;
+            double level = Math.Max(l0, l1);
+            V2 a = p0 + d0 * (level - l0);
+            V2 b = p1 - d1 * (level - l1);
+            // sideways gap smaller than two radii: only a loop (omega) turn fits
+            double gap = Math.Abs((p1 - p0).E * d0.N - (p1 - p0).N * d0.E);
+            return (level - l0) + (level - l1) + DubinsLength(a, h0, b, h1, R) + (gap < 1.9 * R ? loopPenalty : 0.0);
+        }
+
+        /// <summary>
+        /// Turn between passes made out at the boundary. Both pass ends may go straight on
+        /// first (each by its own length); of all turns that keep the tool inside and do not
+        /// loop (about half a circle in total) the one that follows the boundary most closely
+        /// wins. On a slanted end of the field this gives: part turn, straight parallel to the
+        /// boundary, part turn.
+        /// Null when no such turn fits.
+        /// </summary>
+        private static List<V2> WideTurn(V2 p0, double h0, V2 p1, double h1, double R, double s, PolygonTester fence)
+        {
+            V2 d0 = new V2(Math.Sin(h0), Math.Cos(h0));   // out of the field
+            V2 d1 = new V2(Math.Sin(h1), Math.Cos(h1));   // into the field
+            // only for turning back into a (roughly) parallel pass
+            if (d0.E * d1.E + d0.N * d1.N > -0.7) return null;
+
+            // the turn as driven: straight on until the turn circle is R (plus half the tool)
+            // from the boundary, part turn, straight parallel to the boundary, part turn
+            List<V2> exact = BoundaryTurn(p0, h0, p1, h1, R, s, fence);
+            if (exact != null) return exact;
+
+            double step = Math.Max(2.0, s);
+            const double maxExt = 40.0;
+            double maxRotation = Math.PI * 1.2;
+
+            List<V2> best = null;
+            double bestHug = double.MaxValue, bestLen = double.MaxValue;
+            for (double e0 = 0; e0 <= maxExt; e0 += step)
+            {
+                V2 a = p0 + d0 * e0;     // turn starts here
+                if (!fence.Inside(a)) break;
+                for (double e1 = 0; e1 <= maxExt; e1 += step)
+                {
+                    V2 b = p1 - d1 * e1; // and ends here, on the next pass line
+                    if (!fence.Inside(b)) break;
+
+                    // every Dubins word, not only the shortest: the shortest may loop where a
+                    // part turn - straight - part turn fits
+                    foreach (DubinsSolution sol in AllDubins(a, h0, b, h1, R))
+                    {
+                        List<V2> arc = PathFromSolution(a, h0, b, sol, R, s);
+                        if (arc == null || arc.Count < 2) continue;
+                        if (TotalRotation(arc) > maxRotation) continue;
+                        var pts = new List<V2>();
+                        AddStraight(pts, p0, a, s);
+                        for (int k = 1; k < arc.Count; k++) pts.Add(arc[k]);
+                        AddStraight(pts, b, p1, s);
+                        if (CountOutside(pts, fence) > 0) continue;
+
+                        // how close the turn itself runs along the boundary (mean distance)
+                        double hug = 0;
+                        foreach (V2 q in arc) hug += fence.EdgeDistance(q, 40.0);
+                        hug /= arc.Count;
+                        double len = OpenLength(pts);
+                        // closest to the boundary first (within 0.3 m), then the shorter one
+                        if (hug < bestHug - 0.3 || (hug < bestHug + 0.3 && len < bestLen))
+                        {
+                            bestHug = Math.Min(hug, bestHug);
+                            bestLen = len;
+                            best = pts;
+                        }
+                    }
+                }
+            }
+            return best;
+        }
+
+        /// <summary>
+        /// Straight on from the pass end until the centre of the turn circle is R plus the
+        /// clearance from the boundary, the same before the next pass; the two circles are then
+        /// joined by a straight line that runs parallel to the boundary. Null if it does not fit.
+        /// </summary>
+        private static List<V2> BoundaryTurn(V2 p0, double h0, V2 p1, double h1, double R, double s, PolygonTester fence)
+        {
+            V2 d0 = new V2(Math.Sin(h0), Math.Cos(h0));
+            V2 d1 = new V2(Math.Sin(h1), Math.Cos(h1));
+            V2 left0 = new V2(-d0.N, d0.E), left1 = new V2(-d1.N, d1.E);
+            V2 rel = p1 - p0;
+            bool turnLeft = rel.E * left0.E + rel.N * left0.N > 0;
+            V2 n0 = turnLeft ? left0 : left0 * -1.0;
+            V2 n1 = turnLeft ? left1 : left1 * -1.0;
+            double target = fence.Clearance + 0.3 + R;   // centre distance from the boundary
+
+            double e0 = FurthestCentre(p0, d0, n0, R, target, fence);
+            double e1 = FurthestCentre(p1, d1 * -1.0, n1, R, target, fence);
+            if (e0 < 0 || e1 < 0) return null;
+
+            V2 a = p0 + d0 * e0, b = p1 - d1 * e1;
+            List<V2> best = null;
+            double bestLen = double.MaxValue;
+            foreach (DubinsSolution sol in AllDubins(a, h0, b, h1, R))
+            {
+                List<V2> arc = PathFromSolution(a, h0, b, sol, R, s);
+                if (arc == null || arc.Count < 2 || TotalRotation(arc) > Math.PI * 1.2) continue;
+                double len = OpenLength(arc);
+                if (len < bestLen) { bestLen = len; best = arc; }
+            }
+            if (best == null) return null;
+
+            var pts = new List<V2>();
+            AddStraight(pts, p0, a, s);
+            for (int k = 1; k < best.Count; k++) pts.Add(best[k]);
+            AddStraight(pts, b, p1, s);
+            return CountOutside(pts, fence) > 0 ? null : pts;
+        }
+
+        // Longest straight run from p along dir with the turn centre (p + n * R) still at least
+        // target from the boundary; -1 if not even at the start.
+        private static double FurthestCentre(V2 p, V2 dir, V2 n, double R, double target, PolygonTester fence)
+        {
+            double best = -1;
+            for (double e = 0; e <= 80.0; e += 0.25)
+            {
+                V2 c = p + dir * e + n * R;
+                if (!fence.Inside(c) || fence.EdgeDistance(c, target + 1.0) < target) break;
+                best = e;
+            }
+            return best;
+        }
+
+        private static double TotalRotation(List<V2> pts)
+        {
+            double total = 0;
+            for (int i = 2; i < pts.Count; i++)
+            {
+                if ((pts[i] - pts[i - 1]).Length < 1e-6 || (pts[i - 1] - pts[i - 2]).Length < 1e-6) continue;
+                total += Math.Abs(AngleDiff(HeadingOf(pts[i - 1], pts[i]), HeadingOf(pts[i - 2], pts[i - 1])));
+            }
+            return total;
+        }
+
+        private static void AddStraight(List<V2> pts, V2 from, V2 to, double s)
+        {
+            double len = (to - from).Length;
+            if (len < 0.01)
+            {
+                if (pts.Count == 0) pts.Add(from);
+                return;
+            }
+            int n = Math.Max(1, (int)Math.Ceiling(len / s));
+            for (int i = 0; i <= n; i++)
+            {
+                if (pts.Count > 0 && i == 0) continue;
+                pts.Add(from + (to - from) * (i / (double)n));
+            }
+        }
+
         private static List<V2> LoopTransfer(V2 p0, double h0, V2 p1, double h1, List<V2> loop, double R, double s,
             PolygonTester fence, out int outside)
+        {
+            return LoopTransfer(p0, h0, p1, h1, loop, R, s, fence, out outside, out _);
+        }
+
+        private static List<V2> LoopTransfer(V2 p0, double h0, V2 p1, double h1, List<V2> loop, double R, double s,
+            PolygonTester fence, out int outside, out double cost)
         {
             List<V2> best = null;
             double bestCost = double.MaxValue;
             outside = int.MaxValue;
+            cost = double.MaxValue;
             for (int dir = 0; dir < 2; dir++)
             {
                 List<V2> lp = loop;
@@ -906,27 +1121,38 @@ namespace AgOpenGPS.AutoPlan
 
                 int ia = NearestIndex(lp, p0), ib = NearestIndex(lp, p1);
                 double da = Math.Max(1.0, (lp[ia] - p0).Length), db = Math.Max(1.0, (lp[ib] - p1).Length);
-                // join and leave the line a bit ahead / before, so both are smooth S-curves
-                int shA = (int)Math.Ceiling((2.0 * Math.Sqrt(R * da) + 2.0 * R) / s);
-                int shB = (int)Math.Ceiling((2.0 * Math.Sqrt(R * db) + 2.0 * R) / s);
-                int a = (ia + shA) % m;
-                int b = ((ib - shB) % m + m) % m;
-                int steps = ((b - a) % m + m) % m;
-                if (steps < 2 || steps > m * 0.95) continue;
+                // join and leave the line a bit ahead / before, so both are smooth S-curves;
+                // a few distances are tried, near inner corners the shortest may not fit
+                int shA0 = (int)Math.Ceiling((2.0 * Math.Sqrt(R * da) + 2.0 * R) / s);
+                int shB0 = (int)Math.Ceiling((2.0 * Math.Sqrt(R * db) + 2.0 * R) / s);
+                foreach (double fa in new[] { 0.4, 0.7, 1.0, 1.6, 2.5 })
+                {
+                    foreach (double fb in new[] { 0.4, 0.7, 1.0, 1.6, 2.5 })
+                    {
+                        int a = (ia + (int)(shA0 * fa)) % m;
+                        int b = ((ib - (int)(shB0 * fb)) % m + m) % m;
+                        int steps = ((b - a) % m + m) % m;
+                        if (steps < 2 || steps > m * 0.95) continue;
 
-                List<V2> c1 = ClearDubins(p0, h0, lp[a], HeadingOf(lp[a], lp[(a + 1) % m]), R, s, fence);
-                List<V2> c2 = ClearDubins(lp[b], HeadingOf(lp[b], lp[(b + 1) % m]), p1, h1, R, s, fence);
-                if (c1 == null || c2 == null) continue;
+                        List<V2> c1 = ClearDubins(p0, h0, lp[a], HeadingOf(lp[a], lp[(a + 1) % m]), R, s, fence);
+                        List<V2> c2 = ClearDubins(lp[b], HeadingOf(lp[b], lp[(b + 1) % m]), p1, h1, R, s, fence);
+                        if (c1 == null || c2 == null) continue;
 
-                var pts = new List<V2>(c1.Count + steps + c2.Count);
-                pts.AddRange(c1);
-                for (int k = 1; k < steps; k++) pts.Add(lp[(a + k) % m]);
-                pts.AddRange(c2);
+                        var pts = new List<V2>(c1.Count + steps + c2.Count);
+                        pts.AddRange(c1);
+                        for (int k = 1; k < steps; k++) pts.Add(lp[(a + k) % m]);
+                        pts.AddRange(c2);
 
-                int o = CountOutside(pts, fence);
-                double cost = OpenLength(pts) + 1000.0 * o;
-                if (cost < bestCost) { bestCost = cost; best = pts; outside = o; }
+                        int o = CountOutside(pts, fence);
+                        // loops when joining or leaving cost extra
+                        double loopCost = (TotalRotation(c1) > 1.3 * Math.PI ? 10.0 * R : 0.0)
+                            + (TotalRotation(c2) > 1.3 * Math.PI ? 10.0 * R : 0.0);
+                        double total = OpenLength(pts) + loopCost + 1000.0 * o;
+                        if (total < bestCost) { bestCost = total; best = pts; outside = o; }
+                    }
+                }
             }
+            cost = bestCost;
             return best;
         }
 
@@ -1586,11 +1812,20 @@ namespace AgOpenGPS.AutoPlan
             private SegmentGrid clearGrid;
             private double clearance;
 
+            public double Clearance => clearance;
+
             /// <summary>Points must also be this far from the polygon edge to count as clear.</summary>
             public void SetClearance(List<V2> polygon, double distance)
             {
                 clearance = distance;
                 clearGrid = distance > 0 ? new SegmentGrid(polygon, true, Math.Max(5.0, distance * 2)) : null;
+            }
+
+            /// <summary>Distance to the polygon edge, searched within radius (radius+ if farther).</summary>
+            public double EdgeDistance(V2 p, double radius)
+            {
+                if (clearGrid == null) clearGrid = new SegmentGrid(poly, true, 5.0);
+                return Math.Min(radius, clearGrid.MinDistance(p, radius));
             }
 
             /// <summary>Inside and at least the clearance distance from the edge.</summary>

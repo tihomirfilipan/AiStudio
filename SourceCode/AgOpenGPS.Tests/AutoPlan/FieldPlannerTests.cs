@@ -276,8 +276,8 @@ namespace AgOpenGPS.Tests.AutoPlan
             var res = FieldPlanner.Build(fence, new FieldPlanSettings { WorkWidth = 6, TurnRadius = 6, WorkHeadland = true }, new V2(-10, -10), 0);
             Assert.That(res.Ok, Is.True, res.Error);
 
-            // driving along a pass line is fine, crossing the worked passes of the bottom strip is
-            // not: a transfer may only cross a few pass lines while joining or leaving a pass
+            // driving along a pass line is fine, crossing the worked passes of the bottom strip on
+            // the way is not (joining and leaving a pass at both ends of a transfer is allowed)
             var pts = res.Points;
             int worst = 0;
             for (int i = 0; i < pts.Count;)
@@ -291,6 +291,9 @@ namespace AgOpenGPS.Tests.AutoPlan
                     {
                         PlanPoint a = pts[k - 1], b = pts[k];
                         if (a.E < 30 || a.E > 300) continue;   // headland at the strip ends
+                        double fromStart = Math.Sqrt(Math.Pow(a.E - pts[i].E, 2) + Math.Pow(a.N - pts[i].N, 2));
+                        double toEnd = Math.Sqrt(Math.Pow(a.E - pts[j - 1].E, 2) + Math.Pow(a.N - pts[j - 1].N, 2));
+                        if (fromStart < 20 || toEnd < 20) continue;
                         for (int lane = 0; lane <= 6; lane++)
                         {
                             double y = 3 + 6 * lane;
@@ -301,7 +304,32 @@ namespace AgOpenGPS.Tests.AutoPlan
                 }
                 i = j;
             }
-            Assert.That(worst, Is.LessThanOrEqualTo(3), "a transfer cuts across the worked bottom strip");
+            Assert.That(worst, Is.LessThanOrEqualTo(1), "a transfer cuts across the worked bottom strip");
+        }
+
+        [Test]
+        public void SlantedEnds_TurnsWithoutLoops()
+        {
+            // both ends slanted (39 and 63 degrees): every turn between passes is about half a
+            // circle (part turn, straight along the slant, part turn), never a loop
+            var fence = new List<V2> { new V2(0, 0), new V2(400, 0), new V2(250, 120), new V2(60, 120) };
+            var res = FieldPlanner.Build(fence, new FieldPlanSettings { WorkWidth = 6, TurnRadius = 6, WorkHeadland = false }, new V2(-10, -10), 0);
+            Assert.That(res.Ok, Is.True, res.Error);
+            Assert.That(res.TurnsLeavingField, Is.EqualTo(0));
+
+            var pts = res.Points;
+            for (int i = 1; i < pts.Count;)
+            {
+                int j = i;
+                while (j < pts.Count && pts[j].IsWork == pts[i].IsWork) j++;
+                if (!pts[i].IsWork)
+                {
+                    double rotation = 0;
+                    for (int k = i + 1; k < j; k++) rotation += Math.Abs(FieldPlanner.AngleDiff(pts[k].Heading, pts[k - 1].Heading));
+                    Assert.That(rotation, Is.LessThan(1.3 * Math.PI), $"loop turn at ({pts[i].E:F0},{pts[i].N:F0})");
+                }
+                i = j;
+            }
         }
 
         [Test]
