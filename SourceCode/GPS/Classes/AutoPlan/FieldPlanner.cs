@@ -1271,6 +1271,8 @@ namespace AgOpenGPS.AutoPlan
                     {
                         if (used.Contains(ps)) continue;
                         double lanePenalty = w * W * Math.Abs(ps.Lane - edgeLane);
+                        // skipping 0 to 5 passes; more only when nothing else is left
+                        if (Math.Abs(ps.Lane - plan[plan.Count - 1].Pass.Lane) > 6) lanePenalty += 500.0;
                         for (int r = 0; r < 2; r++)
                         {
                             EntryPose(ps, r == 1, out V2 p, out double h);
@@ -1298,7 +1300,61 @@ namespace AgOpenGPS.AutoPlan
                     used.Add(pick.Pass);
                 }
 
-                // Score: real turn lengths plus penalty for leaving the field
+                score = ScoreOrder(plan);
+                if (score < bestScore)
+                {
+                    bestScore = score;
+                    bestPlan = plan;
+                    name = w >= 1e5 ? "neighbour passes" : (w == 0 ? "shortest turns" : "skip passes, weight " + w.ToString(System.Globalization.CultureInfo.InvariantCulture));
+                }
+            }
+
+            // Skip optimizer: fixed patterns skipping 0 to 5 passes, from either end and in
+            // either direction; the best of everything wins
+            if (orderMode != 1 && passes.Count >= 3)
+            {
+                var sorted = new List<Pass>(passes);
+                sorted.Sort((x, y) => x.Lane.CompareTo(y.Lane));
+                for (int skip = 0; skip <= 5; skip++)
+                {
+                    List<int> idx = SkipPattern(sorted.Count, skip + 1);
+                    for (int flip = 0; flip < 2; flip++)
+                    {
+                        for (int firstRev = 0; firstRev < 2; firstRev++)
+                        {
+                            var plan = new List<Step>(idx.Count);
+                            for (int k = 0; k < idx.Count; k++)
+                            {
+                                int i = flip == 0 ? idx[k] : sorted.Count - 1 - idx[k];
+                                plan.Add(new Step { Pass = sorted[i], Reverse = (k % 2 == 1) ^ (firstRev == 1) });
+                            }
+                            // passes of one lane may not all be parallel: fix each direction to
+                            // continue from the previous end
+                            for (int k = 1; k < plan.Count; k++)
+                            {
+                                ExitPose(plan[k - 1], out V2 ep, out double _);
+                                EntryPose(plan[k].Pass, false, out V2 pa, out double _);
+                                EntryPose(plan[k].Pass, true, out V2 pb, out double _);
+                                plan[k].Reverse = (pb - ep).Length < (pa - ep).Length;
+                            }
+                            EntryPose(plan[0].Pass, plan[0].Reverse, out V2 sp, out double sh);
+                            double sc = ScoreOrder(plan) + DubinsLength(startPos, startHeading, sp, sh, R);
+                            if (sc < bestScore)
+                            {
+                                bestScore = sc;
+                                bestPlan = plan;
+                                name = "skip passes, " + skip;
+                            }
+                        }
+                    }
+                }
+            }
+            return bestPlan;
+
+            double ScoreOrder(List<Step> plan)
+            {
+                double score = 0;
+                // real turn lengths plus penalty for leaving the field
                 for (int i = 1; i < plan.Count; i++)
                 {
                     ExitPose(plan[i - 1], out V2 ep, out double eh);
@@ -1318,15 +1374,32 @@ namespace AgOpenGPS.AutoPlan
                     if (turn == null) { score += 1e6; continue; }
                     score += TurnLength(ep, eh, p, h, R) + 1000.0 * outside;
                 }
+                return score;
+            }
+        }
 
-                if (score < bestScore)
+        /// <summary>
+        /// Order of n lanes going out with a step and filling the skipped ones on the way back
+        /// (step 1 = neighbours): blocks of 2*step lanes, 0, step, 1, step+1, ... so passes in a
+        /// row are step or step-1 lanes apart.
+        /// </summary>
+        private static List<int> SkipPattern(int n, int step)
+        {
+            var r = new List<int>(n);
+            if (step <= 1)
+            {
+                for (int i = 0; i < n; i++) r.Add(i);
+                return r;
+            }
+            for (int b = 0; b < n; b += 2 * step)
+            {
+                for (int i = 0; i < step; i++)
                 {
-                    bestScore = score;
-                    bestPlan = plan;
-                    name = w >= 1e5 ? "neighbour passes" : (w == 0 ? "shortest turns" : "skip passes, weight " + w.ToString(System.Globalization.CultureInfo.InvariantCulture));
+                    if (b + i < n) r.Add(b + i);
+                    if (b + i + step < n) r.Add(b + i + step);
                 }
             }
-            return bestPlan;
+            return r;
         }
 
         // =====================================================================
@@ -1441,7 +1514,7 @@ namespace AgOpenGPS.AutoPlan
                     if (!fence.Clear(c) || fence.EdgeDistance(c, keep + 1.0) < keep) break;
                     maxBack = e;
                 }
-                for (double e = maxBack; e >= 0; e -= 1.0)
+                for (double e = maxBack; e >= 0; e -= Math.Max(2.0, maxBack / 3.0))
                 {
                     V2 entry = p1 - d1 * e;
                     List<V2> hug = LoopTransfer(q, h0, entry, h1, loop, R, s, fence, out int hugOut, out double hugCost);
@@ -1825,8 +1898,12 @@ namespace AgOpenGPS.AutoPlan
                         int steps = ((b - a) % m + m) % m;
                         if (steps < 2 || steps > m * 0.95) continue;
 
-                        List<V2> c1 = ClearDubins(p0, h0, lp[a], HeadingOf(lp[a], lp[(a + 1) % m]), R, s, fence);
-                        List<V2> c2 = ClearDubins(lp[b], HeadingOf(lp[b], lp[(b + 1) % m]), p1, h1, R, s, fence);
+                        double ha = HeadingOf(lp[a], lp[(a + 1) % m]), hb = HeadingOf(lp[b], lp[(b + 1) % m]);
+                        // join and leave the boundary line only where it runs at most about 120
+                        // degrees from the pass: corners are always driven on the line's arc
+                        if (Math.Abs(AngleDiff(ha, h0)) > 2.1 || Math.Abs(AngleDiff(h1, hb)) > 2.1) continue;
+                        List<V2> c1 = ClearDubins(p0, h0, lp[a], ha, R, s, fence);
+                        List<V2> c2 = ClearDubins(lp[b], hb, p1, h1, R, s, fence);
                         if (c1 == null || c2 == null) continue;
 
                         var pts = new List<V2>(c1.Count + steps + c2.Count);
