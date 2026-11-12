@@ -17,6 +17,9 @@ Kompletna putanja za cijelu parcelu bez intervencije vozača.
 - **Opcije prije izrade:** prikaz širine priključka i radijusa okretanja iz aplikacije (mogu se promijeniti
   samo za plan), širina uvratine (automatski), uvratine samo na krajevima ili svuda, obrada uvratina na kraju
   (zadano isključeno), dodatni prohod uz zadnji rub, novi trag.
+- **Uvratina: krajevi i stranice posebno:** uz *Uvratina samo na krajevima* može se zadati i broj
+  krugova uz duže stranice (npr. 1), a na krajevima ukupan broj prohoda (npr. 3). Krugovi uz stranice idu
+  oko cijele parcele na kraju, krajevi dobiju ostatak kao trake (1 krug + 2 trake po kraju).
 - **Prohodi:** krivi, paralelni s odabranim rubom; na kutovima ruba blagi luk (bez lomova).
   Uvratine samo tamo gdje prohodi završavaju; uz duge rubove prvi i zadnji prohod idu do same međe.
 - **Pametni okreti:** Dubins okreti (U ili omega) uz radijus okretanja, redoslijed prohoda s preskakanjem

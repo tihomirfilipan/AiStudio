@@ -37,6 +37,7 @@ namespace AgOpenGPS.Properties
         public bool setAutoPlan_workHeadland = false;
         public bool setAutoPlan_headlandAllAround = false;
         public int setAutoPlan_headlandLaps = 0;
+        public int setAutoPlan_sideLaps = 0;   // headland laps along the long sides (headland at the ends only)
         public bool setAutoPlan_extraPass = true;
         public bool setAutoPlan_addTrack = true;
         public bool setAutoPlan_guidanceMode = false;
