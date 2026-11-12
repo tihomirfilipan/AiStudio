@@ -262,6 +262,49 @@ namespace AgOpenGPS.Tests.AutoPlan
         }
 
         [Test]
+        public void LongTransfers_DriveAlongTheBoundaryNotAcrossTheField()
+        {
+            // strip along the bottom with two legs going up (like a real field): moving from the
+            // bottom strip to a leg must use the boundary drive line, not a straight line across
+            // worked passes
+            var fence = new List<V2>
+            {
+                new V2(0, 0), new V2(330, 0), new V2(330, 40), new V2(190, 40), new V2(190, 200),
+                new V2(110, 200), new V2(110, 40), new V2(95, 40), new V2(95, 200), new V2(70, 200),
+                new V2(70, 40), new V2(0, 40)
+            };
+            var res = FieldPlanner.Build(fence, new FieldPlanSettings { WorkWidth = 6, TurnRadius = 6, WorkHeadland = true }, new V2(-10, -10), 0);
+            Assert.That(res.Ok, Is.True, res.Error);
+
+            // driving along a pass line is fine, crossing the worked passes of the bottom strip is
+            // not: a transfer may only cross a few pass lines while joining or leaving a pass
+            var pts = res.Points;
+            int worst = 0;
+            for (int i = 0; i < pts.Count;)
+            {
+                int j = i;
+                while (j < pts.Count && pts[j].IsWork == pts[i].IsWork) j++;
+                if (!pts[i].IsWork)
+                {
+                    int crossings = 0;
+                    for (int k = i + 1; k < j; k++)
+                    {
+                        PlanPoint a = pts[k - 1], b = pts[k];
+                        if (a.E < 30 || a.E > 300) continue;   // headland at the strip ends
+                        for (int lane = 0; lane <= 6; lane++)
+                        {
+                            double y = 3 + 6 * lane;
+                            if ((a.N - y) * (b.N - y) < 0) crossings++;
+                        }
+                    }
+                    worst = Math.Max(worst, crossings);
+                }
+                i = j;
+            }
+            Assert.That(worst, Is.LessThanOrEqualTo(3), "a transfer cuts across the worked bottom strip");
+        }
+
+        [Test]
         public void TooSmallField_ReturnsError()
         {
             var res = FieldPlanner.Build(Rectangle(10, 10), new FieldPlanSettings { WorkWidth = 6, TurnRadius = 6 }, new V2(0, 0), 0);

@@ -271,6 +271,9 @@ namespace AgOpenGPS.AutoPlan
             List<Step> order = ChooseOrder(passes, R, W, fenceGrid, startPos, startHeading, s, out string orderName);
             res.OrderDescription = orderName;
 
+            // drive line along the boundary (outer headland lap / first pass) for long transfers
+            List<V2> transferLoop = BuildTransferLoop(fence, W, R, s, fenceGrid);
+
             var path = new List<PlanPoint>();
             for (int i = 0; i < order.Count; i++)
             {
@@ -281,7 +284,7 @@ namespace AgOpenGPS.AutoPlan
                 if (i > 0)
                 {
                     LastPose(path, s, out V2 lastP, out double lastH);
-                    var turn = ClearDubins(lastP, lastH, pts[0], HeadingOf(pts[0], pts[Math.Min(3, pts.Count - 1)]), R, s, fenceGrid);
+                    var turn = Connect(lastP, lastH, pts[0], HeadingOf(pts[0], pts[Math.Min(3, pts.Count - 1)]), R, W, s, fenceGrid, transferLoop);
                     if (turn == null) { res.Error = "Turn could not be built"; return; }
                     if (CountOutside(turn, fenceGrid) > 0) res.TurnsLeavingField++;
                     AppendPoints(path, turn, false, true);
@@ -294,7 +297,7 @@ namespace AgOpenGPS.AutoPlan
             // --- Headland: strips at the pass ends, or laps all around ---
             if (set.WorkHeadland && endsOnly)
             {
-                BuildEndStrips(fence, endRunId, laps, W, R, s, fenceGrid, path, res);
+                BuildEndStrips(fence, endRunId, laps, W, R, s, fenceGrid, path, res, transferLoop);
             }
             else if (set.WorkHeadland)
             {
@@ -324,7 +327,7 @@ namespace AgOpenGPS.AutoPlan
                     var loop = new List<V2>(lap.Count + 1);
                     for (int k = 0; k <= lap.Count; k++) loop.Add(lap[(idx + k) % lap.Count]);
 
-                    var conn = ClearDubins(cur, curH, loop[0], HeadingOf(loop[0], loop[Math.Min(3, loop.Count - 1)]), R, s, fenceGrid);
+                    var conn = Connect(cur, curH, loop[0], HeadingOf(loop[0], loop[Math.Min(3, loop.Count - 1)]), R, W, s, fenceGrid, transferLoop);
                     if (conn != null)
                     {
                         if (CountOutside(conn, fenceGrid) > 0) res.TurnsLeavingField++;
@@ -554,7 +557,7 @@ namespace AgOpenGPS.AutoPlan
         /// The direction of every strip is chosen so that the connecting turn is short and inside.
         /// </summary>
         private static void BuildEndStrips(List<V2> fence, int[] endRunId, int laps, double W, double R, double s,
-            PolygonTester fenceGrid, List<PlanPoint> path, FieldPlanResult res)
+            PolygonTester fenceGrid, List<PlanPoint> path, FieldPlanResult res, List<V2> transferLoop)
         {
             var groups = new Dictionary<int, List<List<V2>>>(); // end id -> strips, inner first
             for (int j = laps - 1; j >= 0; j--)
@@ -611,7 +614,7 @@ namespace AgOpenGPS.AutoPlan
                     {
                         var pts = new List<V2>(strip);
                         if (r == 1) pts.Reverse();
-                        var conn = ClearDubins(cp, ch, pts[0], HeadingOf(pts[0], pts[Math.Min(3, pts.Count - 1)]), R, s, fenceGrid);
+                        var conn = Connect(cp, ch, pts[0], HeadingOf(pts[0], pts[Math.Min(3, pts.Count - 1)]), R, W, s, fenceGrid, transferLoop);
                         if (conn == null) continue;
                         double cost = OpenLength(conn) + 1000.0 * CountOutside(conn, fenceGrid);
                         if (cost < bestCost) { bestCost = cost; best = pts; bestConn = conn; }
@@ -847,6 +850,84 @@ namespace AgOpenGPS.AutoPlan
             }
             list.Sort((x, y) => x.Length.CompareTo(y.Length));
             return list;
+        }
+
+        /// <summary>
+        /// Closed drive line half a work width inside the boundary (outer headland lap, and the
+        /// first pass along the long sides), rounded to the turning radius.
+        /// </summary>
+        private static List<V2> BuildTransferLoop(List<V2> fence, double W, double R, double s, PolygonTester fenceGrid)
+        {
+            List<V2> lap = InsetLoop(fence, W * 0.5, s);
+            if (lap.Count < 10) return null;
+            List<V2> sharp = lap;
+            lap = RoundLoop(lap, R, s);
+            for (int k = 0; k < lap.Count; k++)
+                if (!fenceGrid.Inside(lap[k])) lap[k] = sharp[NearestIndex(sharp, lap[k])];
+            return lap;
+        }
+
+        /// <summary>
+        /// Connection from the end of one run to the start of the next. A normal turn is a Dubins
+        /// path; a long transfer (or one that would leave the field) drives along the boundary
+        /// line instead of cutting straight across the field.
+        /// </summary>
+        private static List<V2> Connect(V2 p0, double h0, V2 p1, double h1, double R, double W, double s,
+            PolygonTester fence, List<V2> loop)
+        {
+            List<V2> direct = ClearDubins(p0, h0, p1, h1, R, s, fence);
+            if (loop == null) return direct;
+
+            int directOut = direct == null ? int.MaxValue : CountOutside(direct, fence);
+            double directLen = direct == null ? double.MaxValue : OpenLength(direct);
+            // a turn to a nearby pass (also skipping a few) is short; anything longer is a transfer
+            bool isTransfer = directOut > 0 || directLen > Math.PI * R + 2.0 * R + 4.0 * W;
+            if (!isTransfer) return direct;
+
+            List<V2> along = LoopTransfer(p0, h0, p1, h1, loop, R, s, fence, out int alongOut);
+            if (along == null) return direct;
+            if (alongOut < directOut) return along;
+            // along the boundary unless it is a very long way round
+            if (alongOut == directOut && OpenLength(along) <= 3.0 * directLen + 150.0) return along;
+            return direct;
+        }
+
+        private static List<V2> LoopTransfer(V2 p0, double h0, V2 p1, double h1, List<V2> loop, double R, double s,
+            PolygonTester fence, out int outside)
+        {
+            List<V2> best = null;
+            double bestCost = double.MaxValue;
+            outside = int.MaxValue;
+            for (int dir = 0; dir < 2; dir++)
+            {
+                List<V2> lp = loop;
+                if (dir == 1) { lp = new List<V2>(loop); lp.Reverse(); }
+                int m = lp.Count;
+
+                int ia = NearestIndex(lp, p0), ib = NearestIndex(lp, p1);
+                double da = Math.Max(1.0, (lp[ia] - p0).Length), db = Math.Max(1.0, (lp[ib] - p1).Length);
+                // join and leave the line a bit ahead / before, so both are smooth S-curves
+                int shA = (int)Math.Ceiling((2.0 * Math.Sqrt(R * da) + 2.0 * R) / s);
+                int shB = (int)Math.Ceiling((2.0 * Math.Sqrt(R * db) + 2.0 * R) / s);
+                int a = (ia + shA) % m;
+                int b = ((ib - shB) % m + m) % m;
+                int steps = ((b - a) % m + m) % m;
+                if (steps < 2 || steps > m * 0.95) continue;
+
+                List<V2> c1 = ClearDubins(p0, h0, lp[a], HeadingOf(lp[a], lp[(a + 1) % m]), R, s, fence);
+                List<V2> c2 = ClearDubins(lp[b], HeadingOf(lp[b], lp[(b + 1) % m]), p1, h1, R, s, fence);
+                if (c1 == null || c2 == null) continue;
+
+                var pts = new List<V2>(c1.Count + steps + c2.Count);
+                pts.AddRange(c1);
+                for (int k = 1; k < steps; k++) pts.Add(lp[(a + k) % m]);
+                pts.AddRange(c2);
+
+                int o = CountOutside(pts, fence);
+                double cost = OpenLength(pts) + 1000.0 * o;
+                if (cost < bestCost) { bestCost = cost; best = pts; outside = o; }
+            }
+            return best;
         }
 
         /// <summary>
