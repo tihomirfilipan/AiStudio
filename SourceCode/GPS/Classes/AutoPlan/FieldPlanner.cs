@@ -540,6 +540,8 @@ namespace AgOpenGPS.AutoPlan
 
             // with reverse turns the neighbour pass is next (no skipping needed)
             int orderMode = set.HeadlandReverseTurns && set.OrderMode == 0 ? 1 : set.OrderMode;
+            // after the pass along the slanted edge the other passes are done with skipping
+            if (slantFirst != null && set.OrderMode == 0 && !set.HeadlandReverseTurns) orderMode = 2;
             V2 orderStart = startPos;
             double orderHeading = startHeading;
             if (slantFirst != null) ExitPose(slantFirst, out orderStart, out orderHeading);
@@ -2348,6 +2350,25 @@ namespace AgOpenGPS.AutoPlan
             private double clearance;
 
             public double Clearance => clearance;
+
+            /// <summary>Unit direction of the boundary segment nearest to p (polygon order).</summary>
+            public V2 EdgeDirection(V2 p)
+            {
+                double best = double.MaxValue;
+                int bi = 0;
+                for (int i = 0; i < poly.Count; i++)
+                {
+                    V2 a = poly[i], b = poly[(i + 1) % poly.Count];
+                    V2 ab = b - a;
+                    double l2 = ab.E * ab.E + ab.N * ab.N;
+                    double t = l2 > 1e-12 ? Math.Max(0, Math.Min(1, ((p.E - a.E) * ab.E + (p.N - a.N) * ab.N) / l2)) : 0;
+                    double d = (p - (a + ab * t)).Length;
+                    if (d < best) { best = d; bi = i; }
+                }
+                // a few segments around for a steady direction
+                int n = poly.Count;
+                return Dir(poly[(bi - 2 + n) % n], poly[(bi + 3) % n]);
+            }
 
             /// <summary>Points must also be this far from the polygon edge to count as clear.</summary>
             public void SetClearance(List<V2> polygon, double distance)
