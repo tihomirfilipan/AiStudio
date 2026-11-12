@@ -581,7 +581,9 @@ namespace AgOpenGPS
             GL.MatrixMode(MatrixMode.Modelview);
             GL.PushMatrix();
             GL.LoadIdentity();
-            GL.Rotate(glm.toDegrees(pivotAxlePos.heading), 0, 0, 1);
+            // rotating with the vehicle (vehicle heading up) or north up
+            if (Properties.Settings.Default.setDisplay_miniMapRotate)
+                GL.Rotate(glm.toDegrees(pivotAxlePos.heading), 0, 0, 1);
             GL.Translate(-cx, -cy, 0);
 
             // worked area, like the main map (first entry of each patch holds the colour)
@@ -637,7 +639,65 @@ namespace AgOpenGPS
             GL.PopMatrix();
             GL.MatrixMode(MatrixMode.Modelview);
             GL.Viewport(0, 0, oglMain.Width, oglMain.Height);
+
+            DrawMiniMapRotateButton(left, y);
         }
+
+        private const int MiniMapButton = 40;
+
+        private Rectangle MiniMapRotateButtonRect =>
+            new Rectangle(MiniMapX + MiniMapWidth - MiniMapButton - 4, MiniMapY + 4, MiniMapButton, MiniMapButton);
+
+        /// <summary>
+        /// Compass button in the corner of the mini map: the arrow shows north; green = map locked
+        /// north up, dark = map turns with the vehicle. Tap to switch.
+        /// </summary>
+        private void DrawMiniMapRotateButton(double mapLeft, int mapTop)
+        {
+            bool rotate = Properties.Settings.Default.setDisplay_miniMapRotate;
+            double bx = mapLeft + MiniMapWidth - MiniMapButton - 4, by = mapTop + 4;
+            if (rotate) GL.Color4(0.20, 0.24, 0.28, 0.95); else GL.Color4(0.18, 0.49, 0.20, 0.95);
+            GL.Begin(PrimitiveType.Quads);
+            GL.Vertex2(bx, by);
+            GL.Vertex2(bx + MiniMapButton, by);
+            GL.Vertex2(bx + MiniMapButton, by + MiniMapButton);
+            GL.Vertex2(bx, by + MiniMapButton);
+            GL.End();
+
+            // north arrow (screen y grows downwards)
+            double cxs = bx + MiniMapButton / 2.0, cys = by + MiniMapButton / 2.0;
+            double a = rotate ? pivotAxlePos.heading : 0.0;   // north turns with the map
+            double sa = Math.Sin(a), ca = Math.Cos(a);
+            Vector2Point(cxs, cys, sa, ca, 0, -15, out double tx, out double ty);
+            Vector2Point(cxs, cys, sa, ca, -7, 8, out double lx, out double ly);
+            Vector2Point(cxs, cys, sa, ca, 7, 8, out double rx, out double ry);
+            GL.Color3(1.0f, 0.32f, 0.32f);
+            GL.Begin(PrimitiveType.Triangles);
+            GL.Vertex2(tx, ty); GL.Vertex2(lx, ly); GL.Vertex2(cxs, cys);
+            GL.End();
+            GL.Color3(0.92f, 0.92f, 0.92f);
+            GL.Begin(PrimitiveType.Triangles);
+            GL.Vertex2(tx, ty); GL.Vertex2(cxs, cys); GL.Vertex2(rx, ry);
+            GL.End();
+        }
+
+        // point (dx, dy) around the centre, rotated by the angle (screen coordinates)
+        private static void Vector2Point(double cx, double cy, double sa, double ca, double dx, double dy, out double x, out double y)
+        {
+            // map rotation is clockwise by the heading on screen, so north turns anticlockwise
+            x = cx + dx * ca + dy * sa;
+            y = cy - dx * sa + dy * ca;
+        }
+
+        private void ToggleMiniMapRotate()
+        {
+            Properties.Settings.Default.setDisplay_miniMapRotate = !Properties.Settings.Default.setDisplay_miniMapRotate;
+            Properties.Settings.Default.Save();
+            if (miniMapRotateItem != null) miniMapRotateItem.Checked = Properties.Settings.Default.setDisplay_miniMapRotate;
+            oglMain.Invalidate();
+        }
+
+        private ToolStripMenuItem miniMapRotateItem;
 
         // Dragging the mini map (left button / finger inside it)
         private void HookMiniMapDrag()
@@ -645,6 +705,11 @@ namespace AgOpenGPS
             oglMain.MouseDown += (s, e) =>
             {
                 if (e.Button != MouseButtons.Left || !IsMiniMapShown) return;
+                if (MiniMapRotateButtonRect.Contains(e.Location))
+                {
+                    ToggleMiniMapRotate();
+                    return;
+                }
                 if (e.X >= MiniMapX && e.X <= MiniMapX + MiniMapWidth && e.Y >= MiniMapY && e.Y <= MiniMapY + MiniMapHeight)
                 {
                     miniMapDragging = true;
@@ -685,6 +750,16 @@ namespace AgOpenGPS
             };
             int i = fileToolStripMenuItem.DropDownItems.IndexOf(menustripLanguage);
             fileToolStripMenuItem.DropDownItems.Insert(i + 1, item);
+
+            miniMapRotateItem = new ToolStripMenuItem
+            {
+                Text = T("Mini map: turn with the vehicle", "Mala karta: okretanje s vozilom"),
+                Font = menustripLanguage.Font,
+                Size = menustripLanguage.Size,
+                Checked = Properties.Settings.Default.setDisplay_miniMapRotate
+            };
+            miniMapRotateItem.Click += (s, e) => ToggleMiniMapRotate();
+            fileToolStripMenuItem.DropDownItems.Insert(i + 2, miniMapRotateItem);
 
             HookMiniMapDrag();
         }
