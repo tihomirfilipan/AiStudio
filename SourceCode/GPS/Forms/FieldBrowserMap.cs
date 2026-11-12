@@ -41,17 +41,6 @@ namespace AgOpenGPS
         private double freeE, freeN, freeHeadingDeg;
         private bool freeViewSavedFollow;
 
-        // ---- satellite background without a field ----
-        private const double BrowserSatHalfSize = 1500.0;   // meters around the view center
-        private GeoTexture2D browserSatTexture;
-        private Bitmap browserSatBitmap;   // must live as long as the texture (it is uploaded on first draw)
-        private Bitmap browserSatPendingBitmap;
-        private Wgs84 browserSatNW, browserSatSE;
-        private GeoBoundingBox browserSatBox;
-        private LocalPlane browserSatPlane;
-        private bool browserSatBusy;
-        private DateTime browserSatNextTry = DateTime.MinValue;
-
         // ---- picking ----
         private readonly double[] fbModel = new double[16];
         private readonly double[] fbProj = new double[16];
@@ -223,11 +212,7 @@ namespace AgOpenGPS
             {
                 // never break the main view because of the field map
                 Log.EventWriter("Field browser: draw failed " + ex.Message);
-                browserSatTexture?.Dispose();
-                browserSatTexture = null;
-                browserSatBitmap?.Dispose();
-                browserSatBitmap = null;
-                browserSatNextTry = DateTime.Now.AddSeconds(30);
+                FreeAllSatChunks();
                 GL.Disable(EnableCap.Texture2D);
                 GL.LineWidth(1);
             }
@@ -288,77 +273,69 @@ namespace AgOpenGPS
                 }
             }
 
-            foreach (SavedFieldOutline f in savedFields)
-            {
-                if (f.Rings.Count == 0) continue;
-                GL.Color3(1.0f, 1.0f, 1.0f);
-                font.DrawText3D((f.MinE + f.MaxE) / 2, (f.MinN + f.MaxN) / 2, f.Name, heading, 1.6, true);
-            }
+            DrawSavedFieldLabels(heading);
             GL.LineWidth(1);
         }
 
-        private void DrawBrowserSatellite(LocalPlane plane)
-        {
-            if (!Properties.Settings.Default.setMap_isAutoSatellite) return;
-
-            // the download finished: make the texture here, where the GL context is current
-            if (browserSatPendingBitmap != null)
-            {
-                browserSatTexture?.Dispose();
-                browserSatBitmap?.Dispose();
-                browserSatBitmap = browserSatPendingBitmap;
-                browserSatTexture = new GeoTexture2D(browserSatBitmap);
-                browserSatPendingBitmap = null;
-                browserSatPlane = null;
-            }
-
-            if (browserSatTexture != null)
-            {
-                if (!ReferenceEquals(browserSatPlane, plane))
-                {
-                    browserSatBox = GeoBoundingBox.CreateEmpty();
-                    browserSatBox.Include(plane.ConvertWgs84ToGeoCoord(browserSatNW));
-                    browserSatBox.Include(plane.ConvertWgs84ToGeoCoord(browserSatSE));
-                    browserSatPlane = plane;
-                }
-                GLW.SetColor(Colors.BingMapBackgroundColor);
-                browserSatTexture.DrawZ(
-                    new GeoCoord(browserSatBox.MinEasting, browserSatBox.MaxNorthing),
-                    new GeoCoord(browserSatBox.MaxEasting, browserSatBox.MinNorthing), -0.05);
-            }
-
-            // download a new image when the view gets close to the edge of the current one
-            double cE = isFreeView ? freeE : pivotAxlePos.easting;
-            double cN = isFreeView ? freeN : pivotAxlePos.northing;
-            bool needed = browserSatTexture == null || browserSatPlane == null
-                || cE < browserSatBox.MinEasting + 800 || cE > browserSatBox.MaxEasting - 800
-                || cN < browserSatBox.MinNorthing + 800 || cN > browserSatBox.MaxNorthing - 800;
-            if (!needed || browserSatBusy || DateTime.Now < browserSatNextTry) return;
-
-            Wgs84 nw = plane.ConvertGeoCoordToWgs84(new GeoCoord(cN + BrowserSatHalfSize, cE - BrowserSatHalfSize));
-            Wgs84 se = plane.ConvertGeoCoordToWgs84(new GeoCoord(cN - BrowserSatHalfSize, cE + BrowserSatHalfSize));
-            browserSatBusy = true;
-            browserSatNextTry = DateTime.Now.AddSeconds(20);
-
-            Task.Run(() => CAutoSatelliteMap.DownloadBitmap(nw, se))
-                .ContinueWith(task =>
-                {
-                    browserSatBusy = false;
-                    if (task.IsFaulted || task.Result == null)
-                    {
-                        Log.EventWriter("Field browser satellite: download failed "
-                            + (task.Exception?.GetBaseException().Message ?? ""));
-                        return;
-                    }
-                    browserSatPendingBitmap?.Dispose();
-                    browserSatPendingBitmap = task.Result.Bitmap;
-                    browserSatNW = task.Result.NorthWest;
-                    browserSatSE = task.Result.SouthEast;
-                    oglMain.Invalidate();
-                }, TaskScheduler.FromCurrentSynchronizationContext());
-        }
 
         #endregion
+
+        /// <summary>
+        /// Field names, small, only where the field is big enough on screen and the
+        /// name does not overlap another one (bigger fields first).
+        /// </summary>
+        private void DrawSavedFieldLabels(double heading)
+        {
+            int w = oglMain.Width, h = oglMain.Height;
+            var order = new List<SavedFieldOutline>(savedFields);
+            order.Sort((a, b) => ((b.MaxE - b.MinE) * (b.MaxN - b.MinN)).CompareTo((a.MaxE - a.MinE) * (a.MaxN - a.MinN)));
+
+            const double charPx = 9.0, linePx = 22.0;
+            var shown = new List<RectangleF>();
+            GL.Color3(1.0f, 1.0f, 1.0f);
+            foreach (SavedFieldOutline f in order)
+            {
+                if (f.Rings.Count == 0) continue;
+                if (!ProjectToScreen(f.MinE, f.MinN, out double x0, out double y0)
+                    || !ProjectToScreen(f.MaxE, f.MaxN, out double x1, out double y1)
+                    || !ProjectToScreen((f.MinE + f.MaxE) / 2, (f.MinN + f.MaxN) / 2, out double cx, out double cy))
+                    continue;
+                if (cx < -50 || cx > w + 50 || cy < -20 || cy > h + 20) continue;
+
+                // too small on screen: outline only
+                double diag = Math.Sqrt((x1 - x0) * (x1 - x0) + (y1 - y0) * (y1 - y0));
+                if (diag < 45) continue;
+
+                double tw = f.Name.Length * charPx + 8;
+                var r = new RectangleF((float)(cx - tw / 2), (float)(cy - linePx / 2), (float)tw, (float)linePx);
+                bool free = true;
+                foreach (RectangleF o in shown)
+                    if (o.IntersectsWith(r)) { free = false; break; }
+                if (!free) continue;
+                shown.Add(r);
+
+                font.DrawText3D((f.MinE + f.MaxE) / 2, (f.MinN + f.MaxN) / 2, f.Name, heading, 0.75, true);
+            }
+        }
+
+        // World point (z = 0) to window pixels, using the matrices of this frame
+        private bool ProjectToScreen(double e, double n, out double sx, out double sy)
+        {
+            sx = sy = 0;
+            double cx = 0, cy = 0, cw = 0;
+            for (int k = 0; k < 4; k++)
+            {
+                // eye = model * (e, n, 0, 1)
+                double eye = fbModel[k] * e + fbModel[4 + k] * n + fbModel[12 + k];
+                cx += fbProj[k * 4 + 0] * eye;
+                cy += fbProj[k * 4 + 1] * eye;
+                cw += fbProj[k * 4 + 3] * eye;
+            }
+            if (cw <= 1e-9) return false;
+            sx = (cx / cw + 1) / 2 * oglMain.Width;
+            sy = (1 - cy / cw) / 2 * oglMain.Height;
+            return true;
+        }
 
         #region Saved fields
 

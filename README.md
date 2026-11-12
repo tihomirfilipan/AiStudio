@@ -32,9 +32,11 @@ Kompletna putanja za cijelu parcelu bez intervencije vozača.
   (trenutni i sljedeći prohod, napredak, preostali km).
 
 ### Karta polja (bez otvorenog polja)
-- Kad nijedno polje nije otvoreno, glavni ekran prikazuje **satelitsku snimku** oko trenutnog prikaza
-  (preuzima se automatski, ~3 x 3 km, osvježava se kad se prikaz pomakne prema rubu).
-- Ucrtani su **obrisi svih spremljenih polja** s nazivima; **klik na polje ga odmah otvara**.
+- Kad nijedno polje nije otvoreno, glavni ekran prikazuje **satelitsku snimku** složenu iz više dijelova
+  za cijeli vidljivi dio karte (blizu detaljnije, odzumirano grublje; dijelovi se učitavaju u pozadini,
+  najbliži prvi).
+- Ucrtani su **obrisi svih spremljenih polja** s nazivima (mala slova; nazivi se ne preklapaju, a kod premalih
+  polja na ekranu prikazuje se samo obris); **klik na polje ga odmah otvara**.
 - Tipke na vrhu karte: **Pomicanje** (povlačenjem prstom/mišem pomičete kartu), **↺ / ↻** rotacija
   po 15°, **N** sjever gore, **Vozilo** vraća prikaz na vozilo. Zumiranje kao i inače.
 - Uključuje/isključuje se u izborniku *Datoteka → Polja na karti (bez otvorenog polja)*.
