@@ -36,7 +36,9 @@ Kompletna putanja za cijelu parcelu bez intervencije vozača.
   za cijeli vidljivi dio karte (blizu detaljnije, odzumirano grublje; dijelovi se učitavaju u pozadini,
   najbliži prvi).
 - Ucrtani su **obrisi svih spremljenih polja** s nazivima (mala slova; nazivi se ne preklapaju, a kod premalih
-  polja na ekranu prikazuje se samo obris); **klik na polje ga odmah otvara**.
+  polja na ekranu prikazuje se samo obris); **klik na polje** nudi *Početna točka* / *Otvori* / *Odustani*.
+- **Početna točka:** nakon odabira kliknite na karti mjesto ulaska u polje (može i izvan međe). Polje se otvori,
+  u simulatoru vozilo stoji na toj točki okrenuto prema polju, a automatski plan parcele kreće od te točke.
 - Tipke na vrhu karte: **Pomicanje** (povlačenjem prstom/mišem pomičete kartu), **↺ / ↻** rotacija
   po 15°, **N** sjever gore, **Vozilo** vraća prikaz na vozilo. Zumiranje kao i inače.
 - Uključuje/isključuje se u izborniku *Datoteka → Polja na karti (bez otvorenog polja)*.

@@ -94,7 +94,8 @@ namespace AgOpenGPS
             try
             {
                 Cursor.Current = Cursors.WaitCursor;
-                plan = FieldPlanner.Build(fence, settings, new V2(pivotAxlePos.easting, pivotAxlePos.northing), pivotAxlePos.heading);
+                GetPlanStart(out V2Start start);
+                plan = FieldPlanner.Build(fence, settings, new V2(start.E, start.N), start.Heading);
             }
             finally
             {

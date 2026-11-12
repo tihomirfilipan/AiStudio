@@ -227,6 +227,7 @@ namespace AgOpenGPS
             if (isJobStarted || !IsFieldBrowserOn)
             {
                 if (isFreeView) SetFreeView(false);
+                if (pickStartField != null) EndPickStart();
                 UpdateFieldBrowserPanel(false);
                 fieldBrowserWasJobStarted = isJobStarted;
                 return;
@@ -266,7 +267,8 @@ namespace AgOpenGPS
                     GL.End();
 
                     GL.LineWidth(3);
-                    GL.Color3(1.0f, 0.84f, 0.2f);
+                    if (f == pickStartField) GL.Color3(0.0f, 0.9f, 1.0f);
+                    else GL.Color3(1.0f, 0.84f, 0.2f);
                     GL.Begin(PrimitiveType.LineLoop);
                     foreach (vec2 p in ring) GL.Vertex3(p.easting, p.northing, 0);
                     GL.End();
@@ -468,7 +470,7 @@ namespace AgOpenGPS
         private bool FieldBrowserCapturesClick(Point p)
         {
             if (!FieldBrowserActive || IsReservedScreenArea(p)) return false;
-            if (isFreeView) return true;
+            if (isFreeView || pickStartField != null) return true;
             return ScreenToGround(InverseViewProjection(), p, out double e, out double n) && FieldAt(e, n) != null;
         }
 
@@ -507,22 +509,176 @@ namespace AgOpenGPS
             if (fbDragging || !FieldBrowserActive) return;
 
             if (!ScreenToGround(InverseViewProjection(), e.Location, out double ge, out double gn)) return;
+
+            // waiting for the start point of a chosen field
+            if (pickStartField != null)
+            {
+                SavedFieldOutline pf = pickStartField;
+                double cE = (pf.MinE + pf.MaxE) / 2, cN = (pf.MinN + pf.MaxN) / 2;
+                double heading = Math.Atan2(cE - ge, cN - gn);   // facing the middle of the field
+                if (heading < 0) heading += glm.twoPI;
+                Wgs84 start = AppModel.LocalPlane.ConvertGeoCoordToWgs84(new GeoCoord(gn, ge));
+                EndPickStart();
+                OpenBrowserField(pf, true, start, heading);
+                return;
+            }
+
             SavedFieldOutline f = FieldAt(ge, gn);
             if (f == null) return;
 
-            Log.EventWriter("Field browser: open " + f.Name);
+            switch (AskFieldOpenMode(f.Name))
+            {
+                case DialogResult.Yes:
+                    BeginPickStart(f);
+                    break;
+                case DialogResult.No:
+                    OpenBrowserField(f, false, default, 0);
+                    break;
+            }
+        }
+
+        #endregion
+
+        #region Start point
+
+        private SavedFieldOutline pickStartField;
+        private Label lblPickStart;
+        private Button btnPickCancel;
+
+        // Start point chosen on the field map, used by the auto field plan of that field
+        private bool hasPlanStart;
+        private string planStartField;
+        private Wgs84 planStartWgs;
+        private double planStartHeading;
+
+        /// <summary>Yes = choose start point, No = open without, Cancel = nothing.</summary>
+        private DialogResult AskFieldOpenMode(string name)
+        {
+            using (var form = new Form
+            {
+                Text = name,
+                FormBorderStyle = FormBorderStyle.FixedDialog,
+                StartPosition = FormStartPosition.CenterParent,
+                MinimizeBox = false,
+                MaximizeBox = false,
+                ShowInTaskbar = false,
+                ClientSize = new Size(560, 190),
+                Font = new System.Drawing.Font("Tahoma", 13F)
+            })
+            {
+                var lbl = new Label
+                {
+                    Text = T("Open field", "Otvori polje") + " \"" + name + "\"\r\n"
+                        + T("Choose the start point on the map?", "Odabrati početnu točku na karti?"),
+                    Location = new Point(16, 14),
+                    Size = new Size(530, 70)
+                };
+                Button MakeBtn(string text, DialogResult r, int x, Color back)
+                {
+                    var b = new Button
+                    {
+                        Text = text,
+                        DialogResult = r,
+                        Location = new Point(x, 110),
+                        Size = new Size(170, 64),
+                        FlatStyle = FlatStyle.Flat,
+                        BackColor = back,
+                        ForeColor = Color.White
+                    };
+                    form.Controls.Add(b);
+                    return b;
+                }
+                Button pick = MakeBtn(T("Start point", "Početna točka"), DialogResult.Yes, 12, Color.FromArgb(31, 122, 58));
+                MakeBtn(T("Open", "Otvori"), DialogResult.No, 194, Color.FromArgb(21, 101, 192));
+                Button cancel = MakeBtn(T("Cancel", "Odustani"), DialogResult.Cancel, 376, Color.FromArgb(97, 97, 97));
+                form.Controls.Add(lbl);
+                form.AcceptButton = pick;
+                form.CancelButton = cancel;
+                return form.ShowDialog(this);
+            }
+        }
+
+        private void BeginPickStart(SavedFieldOutline f)
+        {
+            pickStartField = f;
+            if (lblPickStart == null)
+            {
+                lblPickStart = new Label
+                {
+                    AutoSize = true,
+                    ForeColor = Color.FromArgb(0, 229, 255),
+                    BackColor = Color.Transparent,
+                    Font = new System.Drawing.Font("Segoe UI", 14F, FontStyle.Bold),
+                    Margin = new Padding(10, 14, 6, 6),
+                    Tag = "modern-themed"
+                };
+                btnPickCancel = MakeFbButton("✕", 60, "Segoe UI");
+                btnPickCancel.Click += (s, e) => EndPickStart();
+                panelFieldBrowser.Controls.Add(lblPickStart);
+                panelFieldBrowser.Controls.Add(btnPickCancel);
+            }
+            lblPickStart.Text = T("Tap the start point", "Kliknite početnu točku") + ": " + f.Name;
+            lblPickStart.Visible = btnPickCancel.Visible = true;
+            oglMain.Invalidate();
+        }
+
+        private void EndPickStart()
+        {
+            pickStartField = null;
+            if (lblPickStart != null) lblPickStart.Visible = btnPickCancel.Visible = false;
+            oglMain.Invalidate();
+        }
+
+        private void OpenBrowserField(SavedFieldOutline f, bool withStart, Wgs84 start, double heading)
+        {
+            Log.EventWriter("Field browser: open " + f.Name + (withStart ? " with start point" : ""));
             SetFreeView(false);
             BeginInvoke((Action)(async () =>
             {
                 try
                 {
                     await FileOpenField(f.FieldFile);
+                    if (!isJobStarted || !withStart) return;
+
+                    hasPlanStart = true;
+                    planStartField = currentFieldDirectory;
+                    planStartWgs = start;
+                    planStartHeading = heading;
+
+                    // simulator: put the vehicle on the start point, facing the field
+                    if (timerSim.Enabled)
+                    {
+                        sim.CurrentLatLon = start;
+                        AppModel.CurrentLatLon = start;
+                        sim.headingTrue = heading;
+                    }
                 }
                 catch (Exception ex)
                 {
                     Log.EventWriter("Field browser: open failed " + ex.Message);
                 }
             }));
+        }
+
+        /// <summary>
+        /// Where the auto field plan starts: the start point chosen on the field map
+        /// for this field, otherwise the vehicle.
+        /// </summary>
+        private void GetPlanStart(out V2Start pos)
+        {
+            if (hasPlanStart && isJobStarted && planStartField == currentFieldDirectory)
+            {
+                GeoCoord g = AppModel.LocalPlane.ConvertWgs84ToGeoCoord(planStartWgs);
+                pos = new V2Start(g.Easting, g.Northing, planStartHeading);
+                return;
+            }
+            pos = new V2Start(pivotAxlePos.easting, pivotAxlePos.northing, pivotAxlePos.heading);
+        }
+
+        private struct V2Start
+        {
+            public double E, N, Heading;
+            public V2Start(double e, double n, double h) { E = e; N = n; Heading = h; }
         }
 
         // Inverse of (projection * modelview) of the last drawn frame, column-major
