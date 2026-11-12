@@ -547,7 +547,7 @@ namespace AgOpenGPS.AutoPlan
             if (slantFirst != null) ExitPose(slantFirst, out orderStart, out orderHeading);
             List<Step> order = ChooseOrder(passes, R, W, fenceGrid, orderStart, orderHeading, s, transferLoop, orderMode, out string orderName);
             if (slantFirst != null) order.Insert(0, slantFirst);
-            else order = AlternateSlant(order, passes, fenceGrid, R);
+            else if (!set.HeadlandReverseTurns) order = AlternateSlant(order, passes, fenceGrid, R);
             res.OrderDescription = orderName;
 
             var path = new List<PlanPoint>();
@@ -1501,7 +1501,8 @@ namespace AgOpenGPS.AutoPlan
                 // not up to the boundary and back over the own track
                 double reachLen = (q - p0).Length;
                 double targetLen = (p1 - p0).E * d0.E + (p1 - p0).N * d0.N;
-                if (targetLen < reachLen - 2.0 * R) goto NoHug;
+                // (a pass further aside is still reached along the boundary: no own track there)
+                if (targetLen < reachLen - 2.0 * R && lateral < 2.0 * R + 1.0) goto NoHug;
 
                 // the next pass starts as close to its edge as the turn into it allows
                 V2 d1 = new V2(Math.Sin(h1), Math.Cos(h1));
@@ -1514,16 +1515,22 @@ namespace AgOpenGPS.AutoPlan
                     if (!fence.Clear(c) || fence.EdgeDistance(c, keep + 1.0) < keep) break;
                     maxBack = e;
                 }
-                for (double e = maxBack; e >= 0; e -= Math.Max(2.0, maxBack / 3.0))
+                // where the boundary runs across the pass the turn onto the line starts earlier
+                V2 q0 = q;
+                for (double back = 0; back <= reachLen && back <= 1.5 * R; back += 0.5 * R)
                 {
-                    V2 entry = p1 - d1 * e;
-                    List<V2> hug = LoopTransfer(q, h0, entry, h1, loop, R, s, fence, out int hugOut, out double hugCost);
-                    if (hug == null || hugOut != 0 || hugCost >= 400.0) continue;
-                    var pts = new List<V2>();
-                    AddStraight(pts, p0, q, s);
-                    for (int k = 1; k < hug.Count; k++) pts.Add(hug[k]);
-                    AddStraight(pts, entry, p1, s);
-                    return pts;
+                    q = q0 - d0 * back;
+                    for (double e = maxBack; e >= 0; e -= Math.Max(2.0, maxBack / 3.0))
+                    {
+                        V2 entry = p1 - d1 * e;
+                        List<V2> hug = LoopTransfer(q, h0, entry, h1, loop, R, s, fence, out int hugOut, out double hugCost, true);
+                        if (hug == null || hugOut != 0 || hugCost >= 400.0) continue;
+                        var pts = new List<V2>();
+                        AddStraight(pts, p0, q, s);
+                        for (int k = 1; k < hug.Count; k++) pts.Add(hug[k]);
+                        AddStraight(pts, entry, p1, s);
+                        return pts;
+                    }
                 }
             }
             NoHug:
@@ -1709,27 +1716,23 @@ namespace AgOpenGPS.AutoPlan
             // slanted passes starting next to the top ones
             slanted.Sort((x, y) => useBelow ? x.Lane.CompareTo(y.Lane) : y.Lane.CompareTo(x.Lane));
 
+            // the lines up to the slant counted from the far side (1 = the top pass furthest
+            // from the slant, the last one = the last slanted pass): up 1, turn along the top
+            // into 5, down 5, into 2, up 2, into 6, down 6, into 3, ...
+            var lines = new List<Pass>(tops);
+            lines.Reverse();
+            var slantOrder = new List<Pass>(slanted);
+            lines.AddRange(slantOrder);
+            bool UpIsB(Pass p) => p.B.E * ux + p.B.N * uy > p.A.E * ux + p.A.N * uy;
             var block = new List<Step>();
-            int pairs = Math.Min(slanted.Count, tops.Count);
-            for (int k = 0; k < pairs; k++)
+            int[] seq = { 1, 5, 2, 6, 3, 7, 4, 9 };
+            for (int k = 0; k < seq.Length; k++)
             {
-                Pass sp = slanted[k];
-                bool sUpIsB = upEnd[sp];
-                block.Add(new Step { Pass = sp, Reverse = !sUpIsB });       // drive towards the slant
-                V2 up = sUpIsB ? sp.B : sp.A;
-                Pass tp = tops[k];
-                bool enterAtB = (tp.B - up).Length < (tp.A - up).Length;
-                block.Add(new Step { Pass = tp, Reverse = enterAtB });      // enter at its top end
+                if (seq[k] > lines.Count) break;
+                Pass p = lines[seq[k] - 1];
+                bool up = k % 2 == 0;
+                block.Add(new Step { Pass = p, Reverse = up ? !UpIsB(p) : UpIsB(p) });
             }
-            // slanted passes without a top pass: the lowest one first going up, along the boundary
-            // up the slant into the next higher one going down, and so on (always forward along
-            // the boundary)
-            for (int k = slanted.Count - 1, c = 0; k >= pairs; k--, c++)
-            {
-                bool goUp = c % 2 == 0;
-                block.Add(new Step { Pass = slanted[k], Reverse = goUp ? !upEnd[slanted[k]] : upEnd[slanted[k]] });
-            }
-
             var inBlock = new HashSet<Pass>();
             foreach (Step st in block) inBlock.Add(st.Pass);
             var rest = new List<Step>();
@@ -1871,7 +1874,7 @@ namespace AgOpenGPS.AutoPlan
         }
 
         private static List<V2> LoopTransfer(V2 p0, double h0, V2 p1, double h1, List<V2> loop, double R, double s,
-            PolygonTester fence, out int outside, out double cost)
+            PolygonTester fence, out int outside, out double cost, bool shortJoins = false)
         {
             List<V2> best = null;
             double bestCost = double.MaxValue;
@@ -1883,45 +1886,125 @@ namespace AgOpenGPS.AutoPlan
                 if (dir == 1) { lp = new List<V2>(loop); lp.Reverse(); }
                 int m = lp.Count;
 
-                int ia = NearestIndex(lp, p0), ib = NearestIndex(lp, p1);
+                // where the line is met: straight ahead of the pass end when that is close,
+                // else the nearest point (the same backwards from the next pass)
+                int ia = RayIndex(lp, p0, h0, 2.5 * R), ib = RayIndex(lp, p1, h1 + Math.PI, 2.5 * R);
                 double da = Math.Max(1.0, (lp[ia] - p0).Length), db = Math.Max(1.0, (lp[ib] - p1).Length);
                 // join and leave the line a bit ahead / before, so both are smooth S-curves;
                 // a few distances are tried, near inner corners the shortest may not fit
                 int shA0 = (int)Math.Ceiling((2.0 * Math.Sqrt(R * da) + 2.0 * R) / s);
                 int shB0 = (int)Math.Ceiling((2.0 * Math.Sqrt(R * db) + 2.0 * R) / s);
-                foreach (double fa in new[] { 0.4, 0.7, 1.0, 1.6, 2.5 })
+
+                // points of the line outside (forbidden area), summed for quick counts
+                var outSum = new int[m + 1];
+                for (int k = 0; k < m; k++) outSum[k + 1] = outSum[k] + (fence.Clear(lp[k]) ? 0 : 1);
+                int OutAlong(int from, int count)
                 {
-                    foreach (double fb in new[] { 0.4, 0.7, 1.0, 1.6, 2.5 })
+                    if (from + count <= m) return outSum[from + count] - outSum[from];
+                    return outSum[m] - outSum[from] + outSum[from + count - m];
+                }
+
+                double[] fs = { 0.1, 0.2, 0.4, 0.7, 1.0, 1.6, 2.5 };
+                var joins = new List<(int idx, List<V2> path, int o, double cost)>();
+                var leaves = new List<(int idx, List<V2> path, int o, double cost)>();
+                foreach (double fa in fs)
+                {
+                    int a = (ia + (int)(shA0 * fa)) % m;
+                    double ha = HeadingOf(lp[a], lp[(a + 1) % m]);
+                    // join the boundary line only where it runs at most about 175 degrees from the pass
+                    if (Math.Abs(AngleDiff(ha, h0)) > 3.05) continue;
+                    List<V2> c1 = ClearDubins(p0, h0, lp[a], ha, R, s, fence);
+                    if (c1 == null) continue;
+                    // never cut a corner of the line short: where the skipped part of the line
+                    // turns, the join must run close along it (corners are driven on the arc)
+                    if (TurnAlong(lp, ia, a) > 0.6 && FarestFrom(lp, ia, a, c1) > 0.8 * R) continue;
+                    // join the line with a short turn, not diagonally across
+                    if (shortJoins && OpenLength(c1) > Math.PI * R + 2.0 * R) continue;
+                    joins.Add((a, c1, CountOutside(c1, fence), OpenLength(c1) + (TotalRotation(c1) > 1.3 * Math.PI ? 500.0 : 0.0)));
+                }
+                foreach (double fb in fs)
+                {
+                    int b = ((ib - (int)(shB0 * fb)) % m + m) % m;
+                    double hb = HeadingOf(lp[b], lp[(b + 1) % m]);
+                    if (Math.Abs(AngleDiff(h1, hb)) > 3.05) continue;
+                    List<V2> c2 = ClearDubins(lp[b], hb, p1, h1, R, s, fence);
+                    if (c2 == null) continue;
+                    if (TurnAlong(lp, b, ib) > 0.6 && FarestFrom(lp, b, ib, c2) > 0.8 * R) continue;
+                    // leave the line with a short turn into the pass, not diagonally across
+                    if (shortJoins && OpenLength(c2) > Math.PI * R + 2.0 * R) continue;
+                    leaves.Add((b, c2, CountOutside(c2, fence), OpenLength(c2) + (TotalRotation(c2) > 1.3 * Math.PI ? 500.0 : 0.0)));
+                }
+
+                foreach (var j in joins)
+                {
+                    foreach (var l in leaves)
                     {
-                        int a = (ia + (int)(shA0 * fa)) % m;
-                        int b = ((ib - (int)(shB0 * fb)) % m + m) % m;
-                        int steps = ((b - a) % m + m) % m;
+                        int steps = ((l.idx - j.idx) % m + m) % m;
                         if (steps < 2 || steps > m * 0.95) continue;
-
-                        double ha = HeadingOf(lp[a], lp[(a + 1) % m]), hb = HeadingOf(lp[b], lp[(b + 1) % m]);
-                        // join and leave the boundary line only where it runs at most about 120
-                        // degrees from the pass: corners are always driven on the line's arc
-                        if (Math.Abs(AngleDiff(ha, h0)) > 2.1 || Math.Abs(AngleDiff(h1, hb)) > 2.1) continue;
-                        List<V2> c1 = ClearDubins(p0, h0, lp[a], ha, R, s, fence);
-                        List<V2> c2 = ClearDubins(lp[b], hb, p1, h1, R, s, fence);
-                        if (c1 == null || c2 == null) continue;
-
-                        var pts = new List<V2>(c1.Count + steps + c2.Count);
-                        pts.AddRange(c1);
-                        for (int k = 1; k < steps; k++) pts.Add(lp[(a + k) % m]);
-                        pts.AddRange(c2);
-
-                        int o = CountOutside(pts, fence);
-                        // loops when joining or leaving cost extra
-                        double loopCost = (TotalRotation(c1) > 1.3 * Math.PI ? 500.0 : 0.0)
-                            + (TotalRotation(c2) > 1.3 * Math.PI ? 500.0 : 0.0);
-                        double total = OpenLength(pts) + loopCost + 1000.0 * o;
-                        if (total < bestCost) { bestCost = total; best = pts; outside = o; }
+                        int o = j.o + l.o + OutAlong((j.idx + 1) % m, steps - 1);
+                        double total = j.cost + l.cost + steps * s + 1000.0 * o;
+                        if (total >= bestCost) continue;
+                        var pts = new List<V2>(j.path.Count + steps + l.path.Count);
+                        pts.AddRange(j.path);
+                        for (int k = 1; k < steps; k++) pts.Add(lp[(j.idx + k) % m]);
+                        pts.AddRange(l.path);
+                        bestCost = total; best = pts; outside = o;
                     }
                 }
             }
             cost = bestCost;
             return best;
+        }
+
+        /// <summary>
+        /// Index of the line point met straight ahead of p (heading h) within maxDist,
+        /// else the nearest point of the line.
+        /// </summary>
+        private static int RayIndex(List<V2> lp, V2 p, double h, double maxDist)
+        {
+            V2 d = new V2(Math.Sin(h), Math.Cos(h));
+            for (double t = 0; t <= maxDist; t += 0.5)
+            {
+                int i = NearestIndex(lp, p + d * t);
+                if ((lp[i] - (p + d * t)).Length < 0.6) return i;
+            }
+            return NearestIndex(lp, p);
+        }
+
+        /// <summary>
+        /// Largest distance of the line's points from index i forward to index j from the path.
+        /// </summary>
+        private static double FarestFrom(List<V2> lp, int i, int j, List<V2> path)
+        {
+            int m = lp.Count;
+            int steps = ((j - i) % m + m) % m;
+            double worst = 0;
+            for (int k = 0; k <= steps; k++)
+            {
+                V2 p = lp[(i + k) % m];
+                double best = double.MaxValue;
+                foreach (V2 q in path) best = Math.Min(best, (q - p).Length);
+                worst = Math.Max(worst, best);
+            }
+            return worst;
+        }
+
+        /// <summary>
+        /// Total heading change along a closed line from index i forward to index j.
+        /// </summary>
+        private static double TurnAlong(List<V2> lp, int i, int j)
+        {
+            int m = lp.Count;
+            int steps = ((j - i) % m + m) % m;
+            double sum = 0;
+            for (int k = 0; k + 1 < steps; k++)
+            {
+                int u = (i + k) % m;
+                double h = HeadingOf(lp[u], lp[(u + 1) % m]);
+                double hn = HeadingOf(lp[(u + 1) % m], lp[(u + 2) % m]);
+                sum += Math.Abs(AngleDiff(hn, h));
+            }
+            return sum;
         }
 
         /// <summary>
