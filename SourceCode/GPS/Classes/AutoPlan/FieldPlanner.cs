@@ -79,6 +79,9 @@ namespace AgOpenGPS.AutoPlan
         /// </summary>
         public bool HeadlandReverseTurns = false;
 
+        /// <summary>Turns and transfers never drive over worked passes (only headland and the outer pass tracks).</summary>
+        public bool AvoidWorked = false;
+
         /// <summary>
         /// Part of the boundary the passes follow (e.g. picked with 2 points on the map).
         /// null = the longest straight or gently curved edge is chosen automatically.
@@ -285,6 +288,13 @@ namespace AgOpenGPS.AutoPlan
             var fenceGrid = new PolygonTester(fence);
             // turns and transfers must keep the tool inside: half a width from the boundary
             fenceGrid.SetClearance(fence, Math.Max(0.0, W * 0.5 - 0.3));
+            // no driving over worked passes: the work area without its outer pass strip is off limits
+            if (set.AvoidWorked)
+            {
+                List<V2> core = InsetLoop(work, W, s);
+                if (core.Count >= 10) fenceGrid.SetForbidden(core);
+            }
+
             // drive line along the boundary (outer headland lap / first pass) for long transfers
             List<V2> transferLoop = BuildTransferLoop(fence, W, R, s, fenceGrid);
 
@@ -320,10 +330,21 @@ namespace AgOpenGPS.AutoPlan
                 if (i > 0)
                 {
                     LastPose(path, s, out V2 lastP, out double lastH);
-                    var turn = Connect(lastP, lastH, pts[0], HeadingOf(pts[0], pts[Math.Min(3, pts.Count - 1)]), R, W, s, fenceGrid, transferLoop, set.TurnsAtBoundary);
+                    double entryH = HeadingOf(pts[0], pts[Math.Min(3, pts.Count - 1)]);
+                    var turn = Connect(lastP, lastH, pts[0], entryH, R, W, s, fenceGrid, transferLoop, set.TurnsAtBoundary);
                     if (turn == null) { res.Error = "Turn could not be built"; return; }
                     if (CountOutside(turn, fenceGrid) > 0) res.TurnsLeavingField++;
-                    AppendPoints(path, turn, false, true);
+                    if (set.TurnsAtBoundary)
+                    {
+                        // the straight run on to the edge and back is worked too (sections stay on
+                        // until the vehicle starts to turn), so only a narrow strip is left unworked
+                        int k0 = StraightCount(turn, lastH, false), k1 = StraightCount(turn, entryH, true);
+                        if (k0 + k1 >= turn.Count) { k0 = 0; k1 = 0; }
+                        if (k0 > 1) AppendPoints(path, turn.GetRange(0, k0), true, true);
+                        AppendPoints(path, turn.GetRange(Math.Max(0, k0 - 1), turn.Count - Math.Max(0, k0 - 1) - Math.Max(0, k1 - 1)), false, true);
+                        if (k1 > 1) AppendPoints(path, turn.GetRange(turn.Count - k1, k1), true, true);
+                    }
+                    else AppendPoints(path, turn, false, true);
                     res.Turns++;
                 }
                 AppendPoints(path, pts, true, i > 0);
@@ -391,6 +412,72 @@ namespace AgOpenGPS.AutoPlan
         /// without this the sections switch off when the vehicle, not the tool, reaches the end
         /// of a pass, leaving an unworked gap of that length at every pass end and start.
         /// </summary>
+        /// <summary>
+        /// Straight edges of the boundary (corners found by simplifying it), longest first, as
+        /// two point lines: choices for the edge the passes follow.
+        /// </summary>
+        public static List<List<V2>> EdgeCandidates(IList<V2> fenceIn, int max)
+        {
+            var result = new List<List<V2>>();
+            if (fenceIn == null || fenceIn.Count < 3) return result;
+            var pts = new List<V2>(fenceIn);
+            double tol = Math.Max(1.5, LoopLength(pts) / 300.0);
+
+            // corners: Douglas-Peucker on the ring opened at point 0 and at the farthest point
+            int far = 0;
+            double farD = 0;
+            for (int i = 1; i < pts.Count; i++)
+            {
+                double d = (pts[i] - pts[0]).Length;
+                if (d > farD) { farD = d; far = i; }
+            }
+            var keep = new bool[pts.Count];
+            keep[0] = keep[far] = true;
+            Simplify(pts, 0, far, tol, keep);
+            var second = new List<V2>(pts.GetRange(far, pts.Count - far)) { pts[0] };
+            var keep2 = new bool[second.Count];
+            Simplify(second, 0, second.Count - 1, tol, keep2);
+            for (int i = 1; i < second.Count - 1; i++) if (keep2[i]) keep[far + i] = true;
+
+            var corners = new List<V2>();
+            for (int i = 0; i < pts.Count; i++) if (keep[i]) corners.Add(pts[i]);
+            for (int i = 0; i < corners.Count; i++)
+            {
+                V2 a = corners[i], b = corners[(i + 1) % corners.Count];
+                if ((b - a).Length > 10.0) result.Add(new List<V2> { a, b });
+            }
+            result.Sort((x, y) => (y[1] - y[0]).Length.CompareTo((x[1] - x[0]).Length));
+            if (result.Count > max) result.RemoveRange(max, result.Count - max);
+            return result;
+        }
+
+        private static void Simplify(List<V2> pts, int i0, int i1, double tol, bool[] keep)
+        {
+            if (i1 <= i0 + 1) return;
+            V2 a = pts[i0], b = pts[i1];
+            double best = -1;
+            int idx = -1;
+            for (int i = i0 + 1; i < i1; i++)
+            {
+                double d = SegDistance(pts[i], a, b);
+                if (d > best) { best = d; idx = i; }
+            }
+            if (best > tol)
+            {
+                keep[idx] = true;
+                Simplify(pts, i0, idx, tol, keep);
+                Simplify(pts, idx, i1, tol, keep);
+            }
+        }
+
+        private static double SegDistance(V2 p, V2 a, V2 b)
+        {
+            V2 ab = b - a;
+            double l2 = ab.E * ab.E + ab.N * ab.N;
+            double t = l2 > 1e-12 ? Math.Max(0, Math.Min(1, ((p.E - a.E) * ab.E + (p.N - a.N) * ab.N) / l2)) : 0;
+            return (p - (a + ab * t)).Length;
+        }
+
         public static List<PlanPoint> ShiftWorkFlags(IList<PlanPoint> pts, double toolBehind)
         {
             var r = new List<PlanPoint>(pts);
@@ -1159,6 +1246,25 @@ namespace AgOpenGPS.AutoPlan
             return total;
         }
 
+        /// <summary>
+        /// Number of points at the start (or end) of a turn that still run straight on in the pass
+        /// direction (within 3 degrees).
+        /// </summary>
+        private static int StraightCount(List<V2> turn, double heading, bool fromEnd)
+        {
+            int n = turn.Count, k = 1;
+            const double tol = 3.0 * Math.PI / 180.0;
+            while (k < n)
+            {
+                V2 a = fromEnd ? turn[n - k - 1] : turn[k - 1];
+                V2 b = fromEnd ? turn[n - k] : turn[k];
+                if ((b - a).Length < 1e-6) { k++; continue; }
+                if (Math.Abs(AngleDiff(HeadingOf(a, b), heading)) > tol) break;
+                k++;
+            }
+            return k;
+        }
+
         private static void AddStraight(List<V2> pts, V2 from, V2 to, double s)
         {
             double len = (to - from).Length;
@@ -1908,10 +2014,16 @@ namespace AgOpenGPS.AutoPlan
                 return Math.Min(radius, clearGrid.MinDistance(p, radius));
             }
 
-            /// <summary>Inside and at least the clearance distance from the edge.</summary>
+            private PolygonTester forbidden;
+
+            /// <summary>Area the vehicle must not drive through in turns and transfers.</summary>
+            public void SetForbidden(List<V2> polygon) => forbidden = new PolygonTester(polygon);
+
+            /// <summary>Inside, at least the clearance distance from the edge, and not in the forbidden area.</summary>
             public bool Clear(V2 p)
             {
                 if (!Inside(p)) return false;
+                if (forbidden != null && forbidden.Inside(p)) return false;
                 return clearGrid == null || clearGrid.MinDistance(p, clearance) >= clearance;
             }
 

@@ -39,23 +39,35 @@ namespace AgOpenGPS.Forms.Field
             Text = T("Auto Field Plan - Preview", "Automatski plan parcele - predpregled");
             Font = new Font("Tahoma", 13F);
             StartPosition = FormStartPosition.CenterParent;
-            Size = new Size(1180, 760);
-            MinimumSize = new Size(900, 600);
+            Rectangle wa = Screen.FromPoint(Cursor.Position).WorkingArea;
+            Size = new Size(Math.Min(1180, wa.Width - 20), Math.Min(760, wa.Height - 20));
+            MinimumSize = new Size(Math.Min(900, wa.Width - 20), Math.Min(560, wa.Height - 20));
             BackColor = Color.WhiteSmoke;
 
-            var right = new Panel { Dock = DockStyle.Right, Width = 330, Padding = new Padding(12) };
-            var lbl = new Label { Dock = DockStyle.Fill, Text = summary, AutoSize = false };
-            var buttons = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 80, FlowDirection = FlowDirection.RightToLeft };
+            var right = new Panel { Dock = DockStyle.Right, Width = 360, Padding = new Padding(12) };
+            var lbl = new Label { Dock = DockStyle.Fill, Text = summary, AutoSize = false, Font = new Font("Tahoma", 11F) };
+            // both buttons side by side, always visible at the bottom
+            var buttons = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 76, FlowDirection = FlowDirection.RightToLeft, WrapContents = false };
             var btnSave = new Button
             {
                 Text = T("Save plan", "Spremi plan"),
-                Size = new Size(160, 64),
+                Size = new Size(170, 64),
+                Margin = new Padding(3),
                 BackColor = Color.FromArgb(31, 122, 58),
                 ForeColor = Color.White,
                 FlatStyle = FlatStyle.Flat,
                 DialogResult = DialogResult.OK
             };
-            var btnCancel = new Button { Text = T("Cancel", "Odustani"), Size = new Size(140, 64), FlatStyle = FlatStyle.Flat, DialogResult = DialogResult.Cancel };
+            var btnCancel = new Button
+            {
+                Text = T("Cancel", "Odustani"),
+                Size = new Size(140, 64),
+                Margin = new Padding(3),
+                FlatStyle = FlatStyle.Flat,
+                BackColor = Color.FromArgb(97, 97, 97),
+                ForeColor = Color.White,
+                DialogResult = DialogResult.Cancel
+            };
             buttons.Controls.Add(btnSave);
             buttons.Controls.Add(btnCancel);
             right.Controls.Add(lbl);
@@ -79,7 +91,10 @@ namespace AgOpenGPS.Forms.Field
             old?.Dispose();
         }
 
-        private Bitmap Render(int w, int h)
+        private Bitmap Render(int w, int h) => RenderPlan(plan, fence, vehiclePos, vehicleHeading, showTrack, w, h);
+
+        /// <summary>Picture of a plan: boundary, passes with numbers, turns, headland, vehicle.</summary>
+        public static Bitmap RenderPlan(FieldPlanResult plan, List<V2> fence, V2 vehiclePos, double vehicleHeading, bool showTrack, int w, int h)
         {
             var bmp = new Bitmap(w, h);
             using (Graphics g = Graphics.FromImage(bmp))
@@ -105,6 +120,15 @@ namespace AgOpenGPS.Forms.Field
                 for (int i = 0; i < fence.Count; i++) poly[i] = P(fence[i].E, fence[i].N);
                 using (var fill = new SolidBrush(Color.FromArgb(36, 69, 44))) g.FillPolygon(fill, poly);
                 using (var pen = new Pen(Color.WhiteSmoke, 2.5f)) g.DrawPolygon(pen, poly);
+
+                // the edge the passes follow
+                if (plan.ReferenceEdge != null && plan.ReferenceEdge.Count > 1)
+                {
+                    var re = new PointF[plan.ReferenceEdge.Count];
+                    for (int k = 0; k < re.Length; k++) re[k] = P(plan.ReferenceEdge[k].E, plan.ReferenceEdge[k].N);
+                    using (var pen = new Pen(Color.FromArgb(200, 224, 64, 251), 7f) { StartCap = LineCap.Round, EndCap = LineCap.Round })
+                        g.DrawLines(pen, re);
+                }
 
                 // path, run by run
                 var pts = plan.Points;

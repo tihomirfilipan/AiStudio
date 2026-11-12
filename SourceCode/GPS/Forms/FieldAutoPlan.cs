@@ -149,32 +149,36 @@ namespace AgOpenGPS
                 return;
             }
 
-            // Options dialog, prefilled with the tool width and turning radius from the app
+            var fence = new List<V2>(bnd.bndList[0].fenceLine.Count);
+            foreach (vec3 pt in bnd.bndList[0].fenceLine) fence.Add(new V2(pt.easting, pt.northing));
+            GetPlanStart(out V2Start start);
+
+            // Options dialog with live preview, prefilled with the tool width and turning radius from the app
             FieldPlanSettings settings;
+            FieldPlanResult plan;
             bool addTrack, guidanceMode;
-            using (var form = new Forms.Field.FormAutoPlanOptions(tool.width, tool.overlap, yt.youTurnRadius, refEdge != null))
+            using (var form = new Forms.Field.FormAutoPlanOptions(tool.width, tool.overlap, yt.youTurnRadius,
+                fence, new V2(start.E, start.N), start.Heading, refEdge))
             {
                 if (form.ShowDialog(this) != DialogResult.OK) return;
                 settings = form.Settings;
+                plan = form.Plan;
                 addTrack = form.AddTrack;
                 guidanceMode = form.GuidanceMode;
             }
-            settings.ReferenceEdge = refEdge;
 
-            var fence = new List<V2>(bnd.bndList[0].fenceLine.Count);
-            foreach (vec3 pt in bnd.bndList[0].fenceLine) fence.Add(new V2(pt.easting, pt.northing));
-
-            FieldPlanResult plan;
-            Cursor old = Cursor.Current;
-            try
+            if (plan == null)
             {
-                Cursor.Current = Cursors.WaitCursor;
-                GetPlanStart(out V2Start start);
-                plan = FieldPlanner.Build(fence, settings, new V2(start.E, start.N), start.Heading);
-            }
-            finally
-            {
-                Cursor.Current = old;
+                Cursor old = Cursor.Current;
+                try
+                {
+                    Cursor.Current = Cursors.WaitCursor;
+                    plan = FieldPlanner.Build(fence, settings, new V2(start.E, start.N), start.Heading);
+                }
+                finally
+                {
+                    Cursor.Current = old;
+                }
             }
 
             if (!plan.Ok)
