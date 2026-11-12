@@ -24,7 +24,7 @@ namespace AgOpenGPS.Forms.Field
         private readonly PictureTile tileEnds, tileAllAround;
         private readonly PictureTile tileTurnsEdge, tileTurnsShort, tileTurnsReverse;
         private readonly PictureTile tileOrderAuto, tileOrderNeighbour, tileOrderSkip;
-        private readonly PictureTile tileWorkHeadland, tileExtraPass, tileAddTrack, tileAvoidWorked, tileSplit;
+        private readonly PictureTile tileWorkHeadland, tileExtraPass, tileAddTrack, tileAvoidWorked, tileSplit, tileSlant;
 
         // live preview
         private readonly List<V2> fence;
@@ -201,15 +201,17 @@ namespace AgOpenGPS.Forms.Field
             tileAvoidWorked.Selected = set.setAutoPlan_avoidWorked;
             tileSplit = new PictureTile(T("Split field (own direction per part)", "Podijeli parcelu (svaki dio svoj smjer)"), DrawSplit);
             tileSplit.Selected = set.setAutoPlan_splitField;
+            tileSlant = new PictureTile(T("Pass along a gently slanted edge", "Prohod uz kosu među"), DrawSlantPass);
+            tileSlant.Selected = set.setAutoPlan_slantPass;
             AddGroup(extras, T("Extras (tap to switch on/off)", "Dodatno (dodir uključi/isključi)"), false, -1,
-                tileWorkHeadland, tileExtraPass, tileAddTrack, tileAvoidWorked, tileSplit);
+                tileWorkHeadland, tileExtraPass, tileAddTrack, tileAvoidWorked, tileSplit, tileSlant);
             root.Controls.Add(extras);
 
             // every change redraws the preview (after a short pause)
             previewTimer = new Timer { Interval = 450 };
             previewTimer.Tick += (s, e) => { previewTimer.Stop(); StartPreview(); };
             foreach (PictureTile t in new[] { tilePath, tileGuidance, tileEnds, tileAllAround, tileTurnsEdge, tileTurnsShort, tileTurnsReverse,
-                tileOrderAuto, tileOrderNeighbour, tileOrderSkip, tileWorkHeadland, tileExtraPass, tileAddTrack, tileAvoidWorked, tileSplit })
+                tileOrderAuto, tileOrderNeighbour, tileOrderSkip, tileWorkHeadland, tileExtraPass, tileAddTrack, tileAvoidWorked, tileSplit, tileSlant })
                 t.Click += (s, e) => OptionsChanged();
             nudWidth.ValueChanged += (s, e) => OptionsChanged();
             nudRadius.ValueChanged += (s, e) => OptionsChanged();
@@ -328,6 +330,7 @@ namespace AgOpenGPS.Forms.Field
                 HeadlandReverseTurns = tileTurnsReverse.Selected,
                 AvoidWorked = tileAvoidWorked.Selected,
                 SplitField = tileSplit.Selected,
+                SlantEdgePass = tileSlant.Selected,
                 ReferenceEdge = edgeIndex >= 0 ? new List<V2>(edges[edgeIndex]) : pickedEdge
             };
         }
@@ -347,6 +350,7 @@ namespace AgOpenGPS.Forms.Field
             tileAddTrack.Selected = true;
             tileAvoidWorked.Selected = false;
             tileSplit.Selected = false;
+            tileSlant.Selected = true;
             edgeIndex = -1;
             OptionsChanged();
         }
@@ -414,6 +418,7 @@ namespace AgOpenGPS.Forms.Field
             set.setAutoPlan_reverseTurns = tileTurnsReverse.Selected;
             set.setAutoPlan_avoidWorked = tileAvoidWorked.Selected;
             set.setAutoPlan_splitField = tileSplit.Selected;
+            set.setAutoPlan_slantPass = tileSlant.Selected;
             set.Save();
 
             DialogResult = DialogResult.OK;
@@ -586,6 +591,21 @@ namespace AgOpenGPS.Forms.Field
             }
             using (var p = new Pen(Color.White, 2f) { DashStyle = DashStyle.Dash })
                 g.DrawLine(p, r.Left + 4, r.Top + 52, r.Left + 52, r.Top + 52);
+        }
+
+        private static void DrawSlantPass(Graphics g, Rectangle r)
+        {
+            // gently slanted edge: one pass along it from the bottom up, then the passes
+            var poly = new[] { new Point(r.Left + 4, r.Bottom - 4), new Point(r.Left + 4, r.Top + 4), new Point(r.Left + 40, r.Top + 4), new Point(r.Right - 4, r.Bottom - 4) };
+            using (var b = new SolidBrush(CField)) g.FillPolygon(b, poly);
+            using (var p = new Pen(CEdge, 2f)) g.DrawPolygon(p, poly);
+            using (Pen p = P(Color.FromArgb(150, CPass), 1.3f))
+                for (int i = 0; i < 4; i++) g.DrawLine(p, r.Left + 14 + i * 10, r.Bottom - 8, r.Left + 14 + i * 10, r.Top + 16 + i * 14);
+            using (Pen p = P(Color.FromArgb(255, 105, 180), 3f))
+            {
+                p.CustomEndCap = new AdjustableArrowCap(4, 4);
+                g.DrawLine(p, r.Right - 22, r.Bottom - 10, r.Left + 44, r.Top + 12);
+            }
         }
 
         private static void DrawAvoidWorked(Graphics g, Rectangle r)

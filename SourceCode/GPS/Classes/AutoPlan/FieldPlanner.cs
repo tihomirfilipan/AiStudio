@@ -88,6 +88,12 @@ namespace AgOpenGPS.AutoPlan
         /// </summary>
         public bool SplitField = false;
 
+        /// <summary>
+        /// Along a gently slanted end of the field drive one pass parallel to the boundary
+        /// (from one end of the slant to the other) instead of many short turns.
+        /// </summary>
+        public bool SlantEdgePass = false;
+
         public FieldPlanSettings Clone() => (FieldPlanSettings)MemberwiseClone();
 
         /// <summary>
@@ -504,6 +510,24 @@ namespace AgOpenGPS.AutoPlan
             var fenceGrid = new PolygonTester(fence);
             // turns and transfers must keep the tool inside: half a width from the boundary
             fenceGrid.SetClearance(fence, Math.Max(0.0, W * 0.5 - 0.3));
+            // pass along gently slanted ends, parallel to the boundary: driven first, from its end
+            // nearest to the start, then the other passes from its far end
+            Step slantFirst = null;
+            if (endsOnly && set.SlantEdgePass)
+            {
+                List<Pass> slant = SlantEdgePasses(fence, endRunId, midDir, W, R, s, passes);
+                Pass firstSlant = null;
+                double fd = double.MaxValue;
+                foreach (Pass sp in slant)
+                {
+                    double d = Math.Min((sp.A - startPos).Length, (sp.B - startPos).Length);
+                    if (d < fd) { fd = d; firstSlant = sp; }
+                }
+                foreach (Pass sp in slant) if (sp != firstSlant) passes.Add(sp);
+                if (firstSlant != null)
+                    slantFirst = new Step { Pass = firstSlant, Reverse = (firstSlant.B - startPos).Length < (firstSlant.A - startPos).Length };
+            }
+
             // no driving over worked passes: the work area without its outer pass strip is off limits
             if (set.AvoidWorked)
             {
@@ -516,7 +540,11 @@ namespace AgOpenGPS.AutoPlan
 
             // with reverse turns the neighbour pass is next (no skipping needed)
             int orderMode = set.HeadlandReverseTurns && set.OrderMode == 0 ? 1 : set.OrderMode;
-            List<Step> order = ChooseOrder(passes, R, W, fenceGrid, startPos, startHeading, s, transferLoop, orderMode, out string orderName);
+            V2 orderStart = startPos;
+            double orderHeading = startHeading;
+            if (slantFirst != null) ExitPose(slantFirst, out orderStart, out orderHeading);
+            List<Step> order = ChooseOrder(passes, R, W, fenceGrid, orderStart, orderHeading, s, transferLoop, orderMode, out string orderName);
+            if (slantFirst != null) order.Insert(0, slantFirst);
             res.OrderDescription = orderName;
 
             var path = new List<PlanPoint>();
@@ -1011,6 +1039,78 @@ namespace AgOpenGPS.AutoPlan
         /// Joins the next headland strip (either direction) with the shortest forward/reverse
         /// manoeuvre and appends it; stripDir is the strip in the chosen direction.
         /// </summary>
+        /// <summary>
+        /// One pass half a work width inside every gently slanted end (angle to the passes
+        /// under about 50 degrees), parallel to the boundary. It gets the lane of the pass whose
+        /// end is nearest, so the order takes it on the way.
+        /// </summary>
+        private static List<Pass> SlantEdgePasses(List<V2> fence, int[] endRunId, V2 laneDir, double W, double R, double s, List<Pass> passes)
+        {
+            var result = new List<Pass>();
+            int n = fence.Count;
+
+            // how slanted is every end run
+            var sum = new Dictionary<int, double>();
+            var cnt = new Dictionary<int, int>();
+            for (int i = 0; i < n; i++)
+            {
+                int id = endRunId[i];
+                if (id < 0) continue;
+                V2 t = Dir(fence[(i - 1 + n) % n], fence[(i + 1) % n]);
+                double c = Math.Abs(t.E * laneDir.E + t.N * laneDir.N);
+                sum[id] = (sum.TryGetValue(id, out double v) ? v : 0) + c;
+                cnt[id] = (cnt.TryGetValue(id, out int k) ? k : 0) + 1;
+            }
+
+            List<V2> lap = InsetLoop(fence, W * 0.5, s);
+            if (lap.Count < 10) return result;
+            int m = lap.Count;
+            var ids = new int[m];
+            for (int i = 0; i < m; i++)
+            {
+                int f = NearestIndex(fence, lap[i]);
+                // only where the boundary itself runs at a gentle angle to the passes
+                V2 t = Dir(fence[(f - 3 + n) % n], fence[(f + 3) % n]);
+                double c = Math.Abs(t.E * laneDir.E + t.N * laneDir.N);
+                ids[i] = c >= 0.85 ? endRunId[f] : -1;
+            }
+
+            foreach (int id in sum.Keys)
+            {
+                double meanCos = sum[id] / cnt[id];
+                if (meanCos < 0.6) continue;   // steep end: normal turns
+
+                // longest contiguous piece of the lap along this end
+                List<V2> best = null, cur = null;
+                int start = Array.IndexOf(ids, -1);
+                if (start < 0) start = 0;
+                for (int c = 1; c <= m; c++)
+                {
+                    int i = (start + c) % m;
+                    if (ids[i] == id) { if (cur == null) cur = new List<V2>(); cur.Add(lap[i]); }
+                    else if (cur != null) { if (best == null || cur.Count > best.Count) best = cur; cur = null; }
+                }
+                if (cur != null && (best == null || cur.Count > best.Count)) best = cur;
+                if (best == null || OpenLength(best) < 4.0 * W) continue;
+
+                // round the line to the turning radius so it can be driven
+                List<V2> line = RoundOpen(ResampleOpen(best, s), R, s);
+                if (line.Count < 4) continue;
+
+                // lane of the pass with the nearest end, so the order picks it up on the way
+                int lane = 0;
+                double bd = double.MaxValue;
+                foreach (Pass ps in passes)
+                {
+                    double d = Math.Min(Math.Min((ps.A - line[0]).Length, (ps.B - line[0]).Length),
+                        Math.Min((ps.A - line[line.Count - 1]).Length, (ps.B - line[line.Count - 1]).Length));
+                    if (d < bd) { bd = d; lane = ps.Lane; }
+                }
+                result.Add(new Pass { Lane = lane, Pts = line });
+            }
+            return result;
+        }
+
         private static bool TryReverseManeuver(List<PlanPoint> path, V2 cp, double ch, List<V2> strip, double R, double s,
             PolygonTester fence, out List<V2> stripDir)
         {

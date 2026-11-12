@@ -45,6 +45,7 @@ namespace AgOpenGPS.Properties
         public bool setAutoPlan_reverseTurns = false;
         public bool setAutoPlan_avoidWorked = false;
         public bool setAutoPlan_splitField = false;
+        public bool setAutoPlan_slantPass = true;
         public bool setDisplay_planCard = false;
 
         // Buttons hidden by the user in the track flyout panel (control names, comma separated)
