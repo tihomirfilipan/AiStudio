@@ -54,7 +54,9 @@ namespace AgOpenGPS.AutoPlan
             int Steps(double len) => Math.Max(2, (int)Math.Ceiling(len / step));
 
             // local frame: x away from the next pass (next pass at x = -L), y on along the pass
-            List<Pose> Make(double e)
+            // mirrored: the forward turn goes away from the next pass, the longer turn back
+            // brings the vehicle onto its line (same room)
+            List<Pose> Make(double e, bool mirrored)
             {
                 V2 a0 = p0 + d * e;
                 V2 Wp(double x, double y) => a0 + u * (-x) + d * y;
@@ -63,24 +65,49 @@ namespace AgOpenGPS.AutoPlan
                 Add(p0, false);
                 int n = Steps(e);
                 for (int i = 1; i <= n && e > 1e-6; i++) Add(p0 + d * (e * i / n), false);
-                // forward turn towards the next pass, centre (-R, 0)
-                n = Steps(R * alpha);
-                for (int i = 1; i <= n; i++)
+                V2 q;
+                if (!mirrored)
                 {
-                    double t = alpha * i / n;
-                    Add(Wp(-R + R * Math.Cos(t), R * Math.Sin(t)), false);
+                    // forward turn towards the next pass, centre (-R, 0)
+                    n = Steps(R * alpha);
+                    for (int i = 1; i <= n; i++)
+                    {
+                        double t = alpha * i / n;
+                        Add(Wp(-R + R * Math.Cos(t), R * Math.Sin(t)), false);
+                    }
+                    // backwards with the opposite steering: the heading keeps turning the same way
+                    double cx = -R + 2.0 * R * Math.Cos(alpha), cy = 2.0 * R * Math.Sin(alpha);
+                    double th0 = Math.PI / 2 + alpha, th1 = 1.5 * Math.PI;
+                    n = Steps(R * (th1 - th0));
+                    for (int i = 1; i <= n; i++)
+                    {
+                        double th = th0 + (th1 - th0) * i / n;
+                        Add(Wp(cx - R * Math.Sin(th), cy + R * Math.Cos(th)), true);
+                    }
+                    q = Wp(cx + R, cy);
                 }
-                // backwards with the opposite steering: the heading keeps turning the same way
-                double cx = -R + 2.0 * R * Math.Cos(alpha), cy = 2.0 * R * Math.Sin(alpha);
-                double th0 = Math.PI / 2 + alpha, th1 = 1.5 * Math.PI;
-                n = Steps(R * (th1 - th0));
-                for (int i = 1; i <= n; i++)
+                else
                 {
-                    double th = th0 + (th1 - th0) * i / n;
-                    Add(Wp(cx - R * Math.Sin(th), cy + R * Math.Cos(th)), true);
+                    // forward turn away from the next pass, centre (R, 0)
+                    double am = Math.PI - alpha;
+                    n = Steps(R * am);
+                    for (int i = 1; i <= n; i++)
+                    {
+                        double t = am * i / n;
+                        Add(Wp(R - R * Math.Cos(t), R * Math.Sin(t)), false);
+                    }
+                    // backwards, steering the other way, onto the line of the next pass
+                    double cx = R - 2.0 * R * Math.Cos(am), cy = 2.0 * R * Math.Sin(am);
+                    double th0 = Math.PI / 2 - am, th1 = -Math.PI / 2;
+                    n = Steps(R * (th0 - th1));
+                    for (int i = 1; i <= n; i++)
+                    {
+                        double th = th0 + (th1 - th0) * i / n;
+                        Add(Wp(cx + R * Math.Sin(th), cy - R * Math.Cos(th)), true);
+                    }
+                    q = Wp(cx - R, cy);
                 }
                 // lined up on the next pass: straight forward into it
-                V2 q = Wp(cx + R, cy);
                 double len = (p1 - q).Length;
                 n = Steps(len);
                 for (int i = 1; i <= n; i++) Add(q + (p1 - q) * (i / (double)n), false);
@@ -90,9 +117,11 @@ namespace AgOpenGPS.AutoPlan
 
             // as close to the boundary as it fits
             double eMin = Math.Max(0.0, along - 2.0 * R * Math.Sin(alpha));
+            // the turn towards the next pass first, else the other way round (as close to the
+            // boundary as it fits, both need the same room)
             for (double e = eMin + 40.0; e >= eMin - 1e-9; e -= 0.5)
             {
-                List<Pose> k = Make(e);
+                List<Pose> k = Make(e, false) ?? Make(e, true);
                 if (k != null) return k;
             }
             return null;
