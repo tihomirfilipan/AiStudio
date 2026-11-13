@@ -597,8 +597,17 @@ namespace AgOpenGPS.AutoPlan
         /// The first pass starts, the last one ends, straight on towards the boundary as far as a
         /// turn there would reach (room = turn radius plus half the tool), like the passes in between.
         /// </summary>
-        private static void ExtendFirstAndLast(List<PlanPoint> path, PolygonTester fence, double room, double s)
+        private static void ExtendFirstAndLast(List<PlanPoint> path, PolygonTester fence, double room, double s, double R = 0)
         {
+            // the turn there must still fit: its centre (to the side inside the field) stays far enough out
+            bool TurnFits(V2 q, V2 d)
+            {
+                if (R <= 0) return true;
+                V2 n = new V2(-d.N, d.E);
+                foreach (V2 c in new[] { q + n * R, q - n * R })
+                    if (fence.Inside(c) && fence.EdgeDistance(c, room + 1.0) >= room - 0.3) return true;
+                return false;
+            }
             int first = path.FindIndex(p => p.IsWork);
             int last = path.FindLastIndex(p => p.IsWork);
             if (first < 0 || last <= first + 2) return;
@@ -611,7 +620,7 @@ namespace AgOpenGPS.AutoPlan
                 for (double t = s; t < 60.0; t += s)
                 {
                     V2 q = a + d * t;
-                    if (!fence.Clear(q) || AheadEdgeDistance(fence, q, h, room + 1.0) < room) break;
+                    if (!fence.Clear(q) || AheadEdgeDistance(fence, q, h, room + 1.0) < room || !TurnFits(q, d)) break;
                     add.Add(new PlanPoint { E = q.E, N = q.N, IsWork = true, Heading = HeadingOf(q, a) });
                 }
                 add.Reverse();
@@ -627,7 +636,7 @@ namespace AgOpenGPS.AutoPlan
                 for (double t = s; t < 60.0; t += s)
                 {
                     V2 q = a + d * t;
-                    if (!fence.Clear(q) || AheadEdgeDistance(fence, q, h, room + 1.0) < room) break;
+                    if (!fence.Clear(q) || AheadEdgeDistance(fence, q, h, room + 1.0) < room || !TurnFits(q, d)) break;
                     add.Add(new PlanPoint { E = q.E, N = q.N, IsWork = true, Heading = h });
                 }
                 path.InsertRange(last + 1, add);
@@ -710,6 +719,9 @@ namespace AgOpenGPS.AutoPlan
                 // side by side: three point turn
                 var km = ReverseManeuver.KTurn(new V2(l.E, l.N), l.Heading, pts[0], h1, R, s, fullGrid.Clear);
                 if (km != null) { AddManoeuvre(res, km); res.Turns++; return true; }
+                // both ends on the same edge: straight to it, along it, into the gore
+                var plain = BoundaryTurn(new V2(l.E, l.N), l.Heading, pts[0], h1, R, s, fullGrid);
+                if (plain != null && AlongBoundaryLine(plain, l.Heading, h1, fullGrid)) { AddTurn(plain); return true; }
                 var conn = Connect(new V2(l.E, l.N), l.Heading, pts[0], h1, R, W, s, fullGrid, loop, set.TurnsAtBoundary);
                 if (conn == null) return false;
                 AddTurn(conn);
@@ -1106,7 +1118,7 @@ namespace AgOpenGPS.AutoPlan
                 AppendPoints(path, pts, true, i > 0);
             }
             res.Passes = order.Count;
-            if (set.TurnsAtBoundary || set.HeadlandReverseTurns) ExtendFirstAndLast(path, fenceGrid, R + W * 0.5 + 0.3, s);
+            if (set.TurnsAtBoundary || set.HeadlandReverseTurns) ExtendFirstAndLast(path, fenceGrid, R + W * 0.5 + 0.3, s, R);
 
             if (endsOnly && !set.WorkHeadland)
             {
@@ -2578,6 +2590,9 @@ namespace AgOpenGPS.AutoPlan
 
             double e0 = FurthestCentre(p0, d0, n0, R, target, fence);
             double e1 = FurthestCentre(p1, d1 * -1.0, n1, R, target, fence);
+            // a pass that already runs on to the turn room (first / last pass): turn right there
+            if (e0 < 0 && fence.Inside(p0 + n0 * R) && fence.EdgeDistance(p0 + n0 * R, target + 1.0) >= target - 0.6) e0 = 0;
+            if (e1 < 0 && fence.Inside(p1 + n1 * R) && fence.EdgeDistance(p1 + n1 * R, target + 1.0) >= target - 0.6) e1 = 0;
             if (e0 < 0 || e1 < 0) return null;
 
             V2 a = p0 + d0 * e0, b = p1 - d1 * e1;
