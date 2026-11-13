@@ -2416,7 +2416,7 @@ namespace AgOpenGPS.AutoPlan
             if (wideTurn && near)
             {
                 List<V2> plain = BoundaryTurn(p0, h0, p1, h1, R, s, fence);
-                if (plain != null && AlongBoundaryLine(plain, h0, h1, fence))
+                if (plain != null)
                 {
                     // both passes end on the same straight piece of the boundary
                     V2? ea = AheadEdgeDirection(fence, p0, h0), eb = AheadEdgeDirection(fence, p1, h1 + Math.PI);
@@ -2871,7 +2871,11 @@ namespace AgOpenGPS.AutoPlan
             AddStraight(pts, p0, a, s);
             for (int k = 1; k < best.Count; k++) pts.Add(best[k]);
             AddStraight(pts, b, p1, s);
-            return CountOutside(pts, fence) > 0 ? null : pts;
+            // the straight runs go on along the passes: inside is enough there (a side at a
+            // slight angle may come a bit closer than the clearance); the turn itself keeps it
+            if (CountOutside(best, fence) > 0) return null;
+            foreach (V2 q in pts) if (!fence.Inside(q)) return null;
+            return pts;
         }
 
         /// <summary>Direction of the boundary where it is met driving straight on from p.</summary>
@@ -2886,6 +2890,8 @@ namespace AgOpenGPS.AutoPlan
                 V2 a = poly[i], e = poly[(i + 1) % n] - a;
                 double den = d.E * e.N - d.N * e.E;
                 if (Math.Abs(den) < 1e-9) continue;
+                // a side at a slight angle to the pass is not the end it runs into
+                if (Math.Abs(den) / Math.Max(1e-9, e.Length) < 0.1) continue;
                 V2 w = a - p;
                 double t = (w.E * e.N - w.N * e.E) / den;
                 double u = (w.E * d.N - w.N * d.E) / den;
@@ -2949,7 +2955,7 @@ namespace AgOpenGPS.AutoPlan
                 V2 c = p + dir * e + n * R;
                 // room to the end ahead; a long side next to the pass does not stop it (the turn
                 // itself is checked to stay inside afterwards)
-                if (!fence.Inside(c) || AheadEdgeDistance(fence, c, Math.Atan2(dir.E, dir.N), target + 1.0) < target) break;
+                if (!fence.Inside(c) || AheadEdgeDistance(fence, c, Math.Atan2(dir.E, dir.N), target + 1.0, 0.1) < target) break;
                 best = e;
             }
             return best;
