@@ -2424,6 +2424,34 @@ namespace AgOpenGPS.AutoPlan
             }
         NoHug:
 
+            // neighbour pass closer than two radii (only a loop fits): the loop is made out at the
+            // boundary like the other turns - straight on as far as it still fits, loop there
+            if (wideTurn && near && lateral < 2.0 * R - 0.3 && Math.Abs(AngleDiff(h1, h0 + Math.PI)) < 0.3)
+            {
+                V2 dd0 = new V2(Math.Sin(h0), Math.Cos(h0));
+                V2 dd1 = new V2(Math.Sin(h1), Math.Cos(h1));
+                double l0 = p0.E * dd0.E + p0.N * dd0.N, l1 = p1.E * dd0.E + p1.N * dd0.N;
+                for (double e = 40.0; e >= 0; e -= 0.5)
+                {
+                    double level = Math.Max(l0, l1) + e;
+                    V2 a = p0 + dd0 * (level - l0), b = p1 - dd1 * (level - l1);
+                    if (!fence.Clear(a) || !fence.Clear(b)) continue;
+                    List<V2> loopTurn = null;
+                    foreach (DubinsSolution sol in AllDubins(a, h0, b, h1, R))
+                    {
+                        List<V2> arc = PathFromSolution(a, h0, b, sol, R, s);
+                        if (arc == null || arc.Count < 2 || CountOutside(arc, fence) > 0) continue;
+                        if (loopTurn == null || OpenLength(arc) < OpenLength(loopTurn)) loopTurn = arc;
+                    }
+                    if (loopTurn == null) continue;
+                    var pts = new List<V2>();
+                    AddStraight(pts, p0, a, s);
+                    for (int k = 1; k < loopTurn.Count; k++) pts.Add(loopTurn[k]);
+                    AddStraight(pts, b, p1, s);
+                    if (CountOutside(pts, fence) == 0) return pts;
+                }
+            }
+
             if (wideTurn && near)
             {
                 List<V2> wide = WideTurn(p0, h0, p1, h1, R, s, fence);
@@ -2442,6 +2470,31 @@ namespace AgOpenGPS.AutoPlan
             if (!isTransfer || loop == null) return direct;
 
             List<V2> along = LoopTransfer(p0, h0, p1, h1, loop, R, s, fence, out int alongOut);
+            // like the turns: straight on towards the boundary first, the turn onto the boundary
+            // line out there (as far as it fits)
+            if (wideTurn && along != null)
+            {
+                V2 dq = new V2(Math.Sin(h0), Math.Cos(h0));
+                double reachQ = 0;
+                for (double e = 0.5; e <= 60.0; e += 0.5)
+                {
+                    V2 c = p0 + dq * e;
+                    if (!fence.Clear(c) || AheadEdgeDistance(fence, c, h0, R + fence.Clearance + 1.3, 0.1) < R + fence.Clearance + 0.3) break;
+                    reachQ = e;
+                }
+                for (double e = reachQ; e >= 1.0; e -= 1.0)
+                {
+                    V2 q = p0 + dq * e;
+                    List<V2> ext = LoopTransfer(q, h0, p1, h1, loop, R, s, fence, out int extOut);
+                    if (ext == null || extOut > alongOut) continue;
+                    var pts = new List<V2>();
+                    AddStraight(pts, p0, q, s);
+                    for (int k = 1; k < ext.Count; k++) pts.Add(ext[k]);
+                    along = pts;
+                    alongOut = extOut;
+                    break;
+                }
+            }
             if (along == null) return direct;
             // along the boundary (headland) even when it is a longer way round
             if (alongOut <= directOut) return along;
