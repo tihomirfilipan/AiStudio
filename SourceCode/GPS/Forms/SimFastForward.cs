@@ -12,50 +12,60 @@ namespace AgOpenGPS
     {
         public int simTimeFactor = 1;
         public bool isSimSubStep;
-        private Button btnSimTimeFactor;
+        private Button[] btnSimTime;
+        private static readonly int[] SimFactors = { 1, 10, 50 };
 
         private void AddSimTimeButton()
         {
-            btnSimTimeFactor = new Button
+            // three buttons side by side: PLAY x1, x10, x50 - the one in use is orange
+            btnSimTime = new Button[SimFactors.Length];
+            for (int i = 0; i < SimFactors.Length; i++)
             {
-                Text = "PLAY x1",
-                Font = new Font("Tahoma", 12F, FontStyle.Bold),
-                Size = new Size(110, Math.Max(40, panelSim.Height)),
-                BackColor = Color.WhiteSmoke,
-                FlatStyle = FlatStyle.Flat,
-                Anchor = AnchorStyles.Bottom,
-                Visible = panelSim.Visible
-            };
-            btnSimTimeFactor.Click += (s, e) =>
-            {
-                simTimeFactor = simTimeFactor == 1 ? 10 : (simTimeFactor == 10 ? 50 : 1);
-                btnSimTimeFactor.Text = "PLAY x" + simTimeFactor;
-                btnSimTimeFactor.BackColor = simTimeFactor == 1 ? Color.WhiteSmoke : Color.Orange;
-            };
-
-            (panelSim.Parent ?? this).Controls.Add(btnSimTimeFactor);
-            btnSimTimeFactor.BringToFront();
+                int factor = SimFactors[i];
+                var b = new Button
+                {
+                    Text = i == 0 ? "PLAY x1" : "x" + factor,
+                    Font = new Font("Tahoma", 12F, FontStyle.Bold),
+                    Size = new Size(i == 0 ? 100 : 66, Math.Max(40, panelSim.Height)),
+                    FlatStyle = FlatStyle.Flat,
+                    Anchor = AnchorStyles.Bottom,
+                    Visible = panelSim.Visible
+                };
+                b.Click += (s, e) => SetSimTimeFactor(factor);
+                (panelSim.Parent ?? this).Controls.Add(b);
+                btnSimTime[i] = b;
+            }
+            SetSimTimeFactor(1);
 
             void Place()
             {
                 // left of the simulator controls, where the map is free (the right side is covered
                 // by the button panel on many screens)
-                btnSimTimeFactor.Height = Math.Max(40, panelSim.Height);
-                btnSimTimeFactor.Location = new Point(Math.Max(0, panelSim.Left - btnSimTimeFactor.Width - 6),
-                    panelSim.Bottom - btnSimTimeFactor.Height);
-                btnSimTimeFactor.BringToFront();
-                btnSimTimeFactor.Visible = panelSim.Visible;
-                if (!panelSim.Visible && simTimeFactor != 1)
+                int x = panelSim.Left - 6;
+                for (int i = btnSimTime.Length - 1; i >= 0; i--)
                 {
-                    simTimeFactor = 1;
-                    btnSimTimeFactor.Text = "PLAY x1";
-                    btnSimTimeFactor.BackColor = Color.WhiteSmoke;
+                    Button b = btnSimTime[i];
+                    b.Height = Math.Max(40, panelSim.Height);
+                    x -= b.Width;
+                    b.Location = new Point(Math.Max(0, x), panelSim.Bottom - b.Height);
+                    x -= 2;
+                    b.BringToFront();
+                    b.Visible = panelSim.Visible;
                 }
+                if (!panelSim.Visible && simTimeFactor != 1) SetSimTimeFactor(1);
             }
             panelSim.LocationChanged += (s, e) => Place();
             panelSim.SizeChanged += (s, e) => Place();
             panelSim.VisibleChanged += (s, e) => Place();
             Place();
+        }
+
+        private void SetSimTimeFactor(int factor)
+        {
+            simTimeFactor = factor;
+            if (btnSimTime == null) return;
+            for (int i = 0; i < btnSimTime.Length; i++)
+                btnSimTime[i].BackColor = SimFactors[i] == factor ? Color.Orange : Color.WhiteSmoke;
         }
     }
 }
