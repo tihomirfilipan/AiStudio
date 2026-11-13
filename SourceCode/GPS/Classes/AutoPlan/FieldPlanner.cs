@@ -644,6 +644,8 @@ namespace AgOpenGPS.AutoPlan
             int first = path.FindIndex(p => p.IsWork);
             int last = path.FindLastIndex(p => p.IsWork);
             if (first < 0 || last <= first + 2) return;
+            // no turn before the first pass and after the last one: only the tool must stay inside
+            if (R <= 0) room = fence.Clearance + 0.6;
             // start: back along the first pass
             {
                 V2 a = new V2(path[first].E, path[first].N), b = new V2(path[first + 1].E, path[first + 1].N);
@@ -653,7 +655,7 @@ namespace AgOpenGPS.AutoPlan
                 for (double t = s; t < 60.0; t += s)
                 {
                     V2 q = a + d * t;
-                    if (!fence.Clear(q) || AheadEdgeDistance(fence, q, h, room + 1.0) < room || !TurnFits(q, d)) break;
+                    if (!fence.Inside(q) || AheadEdgeDistance(fence, q, h, room + 1.0, 0.1) < room || !TurnFits(q, d)) break;
                     add.Add(new PlanPoint { E = q.E, N = q.N, IsWork = true, Heading = HeadingOf(q, a) });
                 }
                 add.Reverse();
@@ -669,7 +671,7 @@ namespace AgOpenGPS.AutoPlan
                 for (double t = s; t < 60.0; t += s)
                 {
                     V2 q = a + d * t;
-                    if (!fence.Clear(q) || AheadEdgeDistance(fence, q, h, room + 1.0) < room || !TurnFits(q, d)) break;
+                    if (!fence.Inside(q) || AheadEdgeDistance(fence, q, h, room + 1.0, 0.1) < room || !TurnFits(q, d)) break;
                     add.Add(new PlanPoint { E = q.E, N = q.N, IsWork = true, Heading = h });
                 }
                 path.InsertRange(last + 1, add);
@@ -1195,7 +1197,6 @@ namespace AgOpenGPS.AutoPlan
                 AppendPoints(path, pts, true, i > 0);
             }
             res.Passes = order.Count;
-            if (set.TurnsAtBoundary || set.HeadlandReverseTurns) ExtendFirstAndLast(path, fenceGrid, R + W * 0.5 + 0.3, s, R);
 
             if (endsOnly && !set.WorkHeadland)
             {
@@ -1220,6 +1221,10 @@ namespace AgOpenGPS.AutoPlan
                     }
                 }
             }
+            // the first pass starts, the last one ends nearer the boundary (after the headland line
+            // is applied: nothing turns there)
+            if (set.TurnsAtBoundary || set.HeadlandReverseTurns) ExtendFirstAndLast(path, fenceGrid, R + W * 0.5 + 0.3, s, set.PassRegion != null && set.SecondEdge == null ? R : 0);
+
 
             // --- Headland: strips at the pass ends, or laps all around ---
             if (set.WorkHeadland && endsOnly)
