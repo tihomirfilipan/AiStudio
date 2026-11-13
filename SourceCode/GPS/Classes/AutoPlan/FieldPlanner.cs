@@ -551,6 +551,85 @@ namespace AgOpenGPS.AutoPlan
             res.Ok = true;
         }
 
+        /// <summary>
+        /// Points of a three point turn: the straight run on from the pass end up to where the turn
+        /// starts is worked (sections on), and the straight run into the next pass from the same
+        /// distance on (the work on both passes ends on one line).
+        /// </summary>
+        private static void AddManoeuvreWorked(List<PlanPoint> path, List<ReverseManeuver.Pose> man)
+        {
+            int n = man.Count;
+            if (n < 3)
+            {
+                foreach (var q in man) path.Add(new PlanPoint { E = q.P.E, N = q.P.N, IsWork = false, IsReverse = q.Reverse });
+                return;
+            }
+            V2 p0 = man[0].P;
+            double h0 = HeadingOf(man[0].P, man[1].P);
+            V2 d = new V2(Math.Sin(h0), Math.Cos(h0));
+            // straight on: up to the first point where the heading changes
+            int k = 1;
+            while (k < n && !man[k].Reverse && Math.Abs(AngleDiff(HeadingOf(man[k - 1].P, man[k].P), h0)) < 0.03) k++;
+            V2 a0 = man[k - 1].P;
+            double level = (a0 - p0).E * d.E + (a0 - p0).N * d.N;
+            // straight in at the end: from the last point back while the heading stays the same
+            double h1 = HeadingOf(man[n - 2].P, man[n - 1].P);
+            int e = n - 1;
+            while (e > k && !man[e - 1].Reverse && Math.Abs(AngleDiff(HeadingOf(man[e - 1].P, man[e].P), h1)) < 0.03) e--;
+            for (int i = 0; i < n; i++)
+            {
+                bool work = false;
+                if (i < k) work = true;
+                else if (i >= e)
+                {
+                    double along = (man[i].P - p0).E * d.E + (man[i].P - p0).N * d.N;
+                    work = along <= level + 0.01;
+                }
+                path.Add(new PlanPoint { E = man[i].P.E, N = man[i].P.N, IsWork = work && !man[i].Reverse, IsReverse = man[i].Reverse });
+            }
+        }
+
+        /// <summary>
+        /// The first pass starts, the last one ends, straight on towards the boundary as far as a
+        /// turn there would reach (room = turn radius plus half the tool), like the passes in between.
+        /// </summary>
+        private static void ExtendFirstAndLast(List<PlanPoint> path, PolygonTester fence, double room, double s)
+        {
+            int first = path.FindIndex(p => p.IsWork);
+            int last = path.FindLastIndex(p => p.IsWork);
+            if (first < 0 || last <= first + 2) return;
+            // start: back along the first pass
+            {
+                V2 a = new V2(path[first].E, path[first].N), b = new V2(path[first + 1].E, path[first + 1].N);
+                double h = HeadingOf(b, a);           // backwards
+                V2 d = new V2(Math.Sin(h), Math.Cos(h));
+                var add = new List<PlanPoint>();
+                for (double t = s; t < 60.0; t += s)
+                {
+                    V2 q = a + d * t;
+                    if (!fence.Clear(q) || AheadEdgeDistance(fence, q, h, room + 1.0) < room) break;
+                    add.Add(new PlanPoint { E = q.E, N = q.N, IsWork = true, Heading = HeadingOf(q, a) });
+                }
+                add.Reverse();
+                path.InsertRange(first, add);
+                last += add.Count;
+            }
+            // end: on along the last pass
+            {
+                V2 a = new V2(path[last].E, path[last].N), b = new V2(path[last - 1].E, path[last - 1].N);
+                double h = HeadingOf(b, a);
+                V2 d = new V2(Math.Sin(h), Math.Cos(h));
+                var add = new List<PlanPoint>();
+                for (double t = s; t < 60.0; t += s)
+                {
+                    V2 q = a + d * t;
+                    if (!fence.Clear(q) || AheadEdgeDistance(fence, q, h, room + 1.0) < room) break;
+                    add.Add(new PlanPoint { E = q.E, N = q.N, IsWork = true, Heading = h });
+                }
+                path.InsertRange(last + 1, add);
+            }
+        }
+
         // Points of a forward / backward manoeuvre (not the end points: they are the pass ends)
         private static void AddManoeuvre(FieldPlanResult res, List<ReverseManeuver.Pose> man)
         {
@@ -932,8 +1011,7 @@ namespace AgOpenGPS.AutoPlan
                         else if (cut < path.Count) path.RemoveRange(cut, path.Count - cut);
                         if (man != null)
                         {
-                            foreach (var q in man)
-                                path.Add(new PlanPoint { E = q.P.E, N = q.P.N, IsWork = false, IsReverse = q.Reverse });
+                            AddManoeuvreWorked(path, man);
                             res.Turns++;
                             AppendPoints(path, pts, true, true);
                             continue;
@@ -962,8 +1040,7 @@ namespace AgOpenGPS.AutoPlan
                         else if (cutAt < path.Count) path.RemoveRange(cutAt, path.Count - cutAt);
                         if (man != null)
                         {
-                            foreach (var q in man)
-                                path.Add(new PlanPoint { E = q.P.E, N = q.P.N, IsWork = false, IsReverse = q.Reverse });
+                            AddManoeuvreWorked(path, man);
                             res.Turns++;
                             AppendPoints(path, pts, true, true);
                             continue;
@@ -1012,6 +1089,7 @@ namespace AgOpenGPS.AutoPlan
                 AppendPoints(path, pts, true, i > 0);
             }
             res.Passes = order.Count;
+            if (set.TurnsAtBoundary || set.HeadlandReverseTurns) ExtendFirstAndLast(path, fenceGrid, R + W * 0.5 + 0.3, s);
 
             if (endsOnly && !set.WorkHeadland)
             {
