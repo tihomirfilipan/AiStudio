@@ -1432,6 +1432,24 @@ namespace AgOpenGPS.AutoPlan
                 else if (anyPass && ++emptyInRow > 3) break;
             }
 
+            // A long side running almost along the passes (under about 8 degrees) gets no headland
+            // even where the passes run into it: they go on up to it, no unworked strip there and
+            // no driving empty along it
+            {
+                List<V2> l0 = lanes.Get(0);
+                if (l0.Count >= 2)
+                {
+                    V2 ld = Dir(l0[0], l0[l0.Count - 1]);
+                    int w = Math.Max(2, (int)Math.Ceiling(3.0 / s));
+                    for (int i = 0; i < n; i++)
+                    {
+                        if (!isEnd[i]) continue;
+                        V2 ed = Dir(fence[((i - w) % n + n) % n], fence[(i + w) % n]);
+                        if (Math.Abs(ed.E * ld.E + ed.N * ld.N) > 0.99) isEnd[i] = false;
+                    }
+                }
+            }
+
             // Only real long sides stay without headland: side pieces shorter than 40 m or 30 % of
             // the longest side piece (gaps between pass ends on slanted edges, corners) become ends
             KeepLongSidesOnly(isEnd, s);
