@@ -613,8 +613,8 @@ namespace AgOpenGPS.AutoPlan
                         int k0 = StraightCount(turn, lastH, false), k1 = StraightCount(turn, entryH, true);
                         if (k0 + k1 >= turn.Count) { k0 = 0; k1 = 0; }
                         {
-                            double d0 = fenceGrid.EdgeDistance(turn[Math.Max(0, k0 - 1)], 100.0);
-                            double d1 = fenceGrid.EdgeDistance(turn[turn.Count - Math.Max(1, k1)], 100.0);
+                            double d0 = AheadEdgeDistance(fenceGrid, turn[Math.Max(0, k0 - 1)], lastH, 100.0);
+                            double d1 = AheadEdgeDistance(fenceGrid, turn[turn.Count - Math.Max(1, k1)], entryH, 100.0);
                             // only real turns at the ends, not transfers far from the edge
                             if (d0 < R + W * 0.5 + 2.0 * R) { NoteStraightEnd(turn[Math.Max(0, k0 - 1)], d0); }
                             if (d1 < R + W * 0.5 + 2.0 * R) { NoteStraightEnd(turn[turn.Count - Math.Max(1, k1)], d1); }
@@ -625,12 +625,12 @@ namespace AgOpenGPS.AutoPlan
                         // (and for both legs of a turn the same, the leg that must start turning
                         // farther from the boundary sets it), so on one edge they line up
                         double switchDist = R + W * 0.5;
-                        if (k0 > 1) switchDist = Math.Max(switchDist, fenceGrid.EdgeDistance(turn[k0 - 1], 100.0));
-                        if (k1 > 1) switchDist = Math.Max(switchDist, fenceGrid.EdgeDistance(turn[turn.Count - k1], 100.0));
+                        if (k0 > 1) switchDist = Math.Max(switchDist, AheadEdgeDistance(fenceGrid, turn[k0 - 1], lastH, 100.0));
+                        if (k1 > 1) switchDist = Math.Max(switchDist, AheadEdgeDistance(fenceGrid, turn[turn.Count - k1], entryH, 100.0));
                         for (int j = 0; j < k0; j++)
-                            if (fenceGrid.EdgeDistance(turn[j], switchDist + 1.0) < switchDist) { k0 = j; break; }
+                            if (AheadEdgeDistance(fenceGrid, turn[j], lastH, switchDist + 1.0) < switchDist) { k0 = j; break; }
                         for (int j = 0; j < k1; j++)
-                            if (fenceGrid.EdgeDistance(turn[turn.Count - 1 - j], switchDist + 1.0) < switchDist) { k1 = j; break; }
+                            if (AheadEdgeDistance(fenceGrid, turn[turn.Count - 1 - j], entryH, switchDist + 1.0) < switchDist) { k1 = j; break; }
                         if (k0 > 1) AppendPoints(path, turn.GetRange(0, k0), true, true);
                         AppendPoints(path, turn.GetRange(Math.Max(0, k0 - 1), turn.Count - Math.Max(0, k0 - 1) - Math.Max(0, k1 - 1)), false, true);
                         if (k1 > 1) AppendPoints(path, turn.GetRange(turn.Count - k1, k1), true, true);
@@ -646,7 +646,7 @@ namespace AgOpenGPS.AutoPlan
             {
                 var byEnd = new Dictionary<int, double>();
                 foreach (var kv in straightEndByEnd) byEnd[kv.Key] = kv.Value + 0.3;
-                List<V2> line = InsetEnds(fence, endRunId, R + W * 0.5 + 0.3, s, default, 0.0, byEnd, edgeKey);
+                List<V2> line = InsetEnds(fence, endRunId, R + W * 0.5 + 0.3, s, default, 0.0, byEnd, edgeKey, true);
                 if (line != null && line.Count >= 10) res.SectionLine = line;
             }
 
@@ -978,6 +978,112 @@ namespace AgOpenGPS.AutoPlan
         }
 
         /// <summary>
+        /// Ends moved inwards by their width, each offset line running straight on until it meets
+        /// the side boundary; side points behind such a line (in the headland) are left out.
+        /// </summary>
+        private static List<V2> InsetEndsStraight(List<V2> loop, int[] endRunId, double[] width, double dist, double s)
+        {
+            int n = loop.Count;
+            var grid = new SegmentGrid(loop, true, Math.Max(5.0, dist));
+            var tester = new PolygonTester(loop);
+
+            // offset end points (with their inward normal), raw side points
+            var pts = new List<V2>(n);
+            var nrm = new List<V2>(n);   // inward normal for offset points, zero for side points
+            for (int i = 0; i < n; i++)
+            {
+                if (endRunId[i] < 0) { pts.Add(loop[i]); nrm.Add(new V2(0, 0)); continue; }
+                V2 d = Dir(loop[(i - 1 + n) % n], loop[(i + 1) % n]);
+                V2 inN = new V2(-d.N, d.E);
+                double wi = width[i];
+                V2 p = loop[i] + inN * wi;
+                if (grid.MinDistance(p, wi) < Math.Min(dist, wi) * 0.98) continue;
+                if (!tester.Inside(p)) continue;
+                pts.Add(p);
+                nrm.Add(inN);
+            }
+            int m = pts.Count;
+            if (m < 3) return new List<V2>();
+            bool IsOff(int k) => nrm[k].E != 0 || nrm[k].N != 0;
+
+            // runs of offset points: their straight line at both ends
+            var offLines = new List<(V2 a, V2 dir, V2 inN)>();
+            var r = new List<V2>(m + 8);
+            for (int k = 0; k < m; k++)
+            {
+                if (!IsOff(k)) continue;
+                int prev = (k - 1 + m) % m, next = (k + 1) % m;
+                if (!IsOff(prev))
+                {
+                    // start of a run: line backwards from its first points to the side
+                    int k2 = Math.Min(k + 3, m - 1);
+                    V2 dir = Dir(pts[k2], pts[k]);
+                    offLines.Add((pts[k], dir, nrm[k]));
+                }
+                if (!IsOff(next))
+                {
+                    int k2 = Math.Max(k - 3, 0);
+                    V2 dir = Dir(pts[k2], pts[k]);
+                    offLines.Add((pts[k], dir, nrm[k]));
+                }
+            }
+            bool Behind(V2 x)
+            {
+                foreach (var l in offLines)
+                {
+                    // in the headland: on the boundary side of an offset line and near it along the line
+                    V2 rel = x - l.a;
+                    double across = rel.E * l.inN.E + rel.N * l.inN.N;
+                    double along = rel.E * l.dir.E + rel.N * l.dir.N;
+                    if (across < -0.01 && along > -0.5 && across > -3.0 * dist) return true;
+                }
+                return false;
+            }
+            V2? HitFence(V2 a, V2 dir)
+            {
+                double best = double.MaxValue;
+                V2? hit = null;
+                for (int i = 0; i < n; i++)
+                {
+                    V2 p = loop[i], q = loop[(i + 1) % n];
+                    V2 e = q - p;
+                    double den = dir.E * e.N - dir.N * e.E;
+                    if (Math.Abs(den) < 1e-9) continue;
+                    V2 w = p - a;
+                    double t = (w.E * e.N - w.N * e.E) / den;
+                    double u = (w.E * dir.N - w.N * dir.E) / den;
+                    if (t > 1e-6 && u >= 0 && u <= 1 && t < best) { best = t; hit = a + dir * t; }
+                }
+                return hit;
+            }
+
+            for (int k = 0; k < m; k++)
+            {
+                if (IsOff(k))
+                {
+                    int prev = (k - 1 + m) % m;
+                    if (!IsOff(prev))
+                    {
+                        int k2 = Math.Min(k + 3, m - 1);
+                        V2? h = HitFence(pts[k], Dir(pts[k2], pts[k]));
+                        if (h.HasValue) r.Add(h.Value);
+                    }
+                    r.Add(pts[k]);
+                    int next = (k + 1) % m;
+                    if (!IsOff(next))
+                    {
+                        int k2 = Math.Max(k - 3, 0);
+                        V2? h = HitFence(pts[k], Dir(pts[k2], pts[k]));
+                        if (h.HasValue) r.Add(h.Value);
+                    }
+                }
+                else if (!Behind(pts[k])) r.Add(pts[k]);
+            }
+            if (r.Count < 3) return new List<V2>();
+            return ResampleLoop(r, s);
+        }
+
+        /// <summary>
         /// Key of the straight piece of an end every boundary point belongs to: a new piece
         /// starts at each corner of an end (direction change over about 20 degrees). Side points: -1.
         /// </summary>
@@ -1020,7 +1126,7 @@ namespace AgOpenGPS.AutoPlan
         /// headland width, long side points stay on the boundary.
         /// </summary>
         private static List<V2> InsetEnds(List<V2> loop, int[] endRunId, double dist, double s,
-            V2 laneDir = default, double slantGap = 0.0, Dictionary<int, double> endDist = null, int[] distKey = null)
+            V2 laneDir = default, double slantGap = 0.0, Dictionary<int, double> endDist = null, int[] distKey = null, bool straightToSides = false)
         {
             int n = loop.Count;
             // every end (or piece of an end) may have its own distance (the largest one sets the side band)
@@ -1043,6 +1149,8 @@ namespace AgOpenGPS.AutoPlan
                 if (cos < 0.2 || cos > 0.985) continue;
                 width[i] = dist + Math.Min(dist, slantGap * cos * 0.4);
             }
+
+            if (straightToSides) return InsetEndsStraight(loop, endRunId, width, dist, s);
 
             // Side points inside the headland band of an end belong to the end
             var endIdx = new List<int>();
@@ -1608,6 +1716,18 @@ namespace AgOpenGPS.AutoPlan
             bool near = lateral <= 2.0 * R + 5.0 * W && lengthwise <= 150.0;
             // pass ends on a slanted edge: turn along the headland, up the slant, into the next pass
             // every turn between passes: along the boundary line (the way the driver wants it)
+            // a straight end between the passes (no corner): straight to R from the edge,
+            // along it, R into the pass - it starts turning at the least room from the boundary
+            if (wideTurn && near)
+            {
+                List<V2> plain = BoundaryTurn(p0, h0, p1, h1, R, s, fence);
+                if (plain != null && AlongBoundaryLine(plain, h0, h1, fence))
+                {
+                    // both passes end on the same straight piece of the boundary
+                    V2? ea = AheadEdgeDirection(fence, p0, h0), eb = AheadEdgeDirection(fence, p1, h1 + Math.PI);
+                    if (ea.HasValue && eb.HasValue && Math.Abs(ea.Value.E * eb.Value.E + ea.Value.N * eb.Value.N) > 0.985) return plain;
+                }
+            }
             if (wideTurn && loop != null)
             {
                 V2 d0 = new V2(Math.Sin(h0), Math.Cos(h0));
@@ -1616,7 +1736,7 @@ namespace AgOpenGPS.AutoPlan
                 for (double e = 0.5; e <= 200.0; e += 0.5)
                 {
                     V2 c = p0 + d0 * e;
-                    if (!fence.Clear(c) || fence.EdgeDistance(c, reach + 1.0) < reach) break;
+                    if (!fence.Clear(c) || AheadEdgeDistance(fence, c, h0, reach + 1.0) < reach) break;
                     q = c;
                 }
                 // the next pass starts before the boundary is reached: plain turn into it there,
@@ -1954,6 +2074,71 @@ namespace AgOpenGPS.AutoPlan
             for (int k = 1; k < best.Count; k++) pts.Add(best[k]);
             AddStraight(pts, b, p1, s);
             return CountOutside(pts, fence) > 0 ? null : pts;
+        }
+
+        /// <summary>Direction of the boundary where it is met driving straight on from p.</summary>
+        private static V2? AheadEdgeDirection(PolygonTester fence, V2 p, double heading)
+        {
+            List<V2> poly = fence.Polygon;
+            V2 d = new V2(Math.Sin(heading), Math.Cos(heading));
+            int n = poly.Count, hitI = -1;
+            double best = double.MaxValue;
+            for (int i = 0; i < n; i++)
+            {
+                V2 a = poly[i], e = poly[(i + 1) % n] - a;
+                double den = d.E * e.N - d.N * e.E;
+                if (Math.Abs(den) < 1e-9) continue;
+                V2 w = a - p;
+                double t = (w.E * e.N - w.N * e.E) / den;
+                double u = (w.E * d.N - w.N * d.E) / den;
+                if (t > 1e-6 && u >= 0 && u <= 1 && t < best) { best = t; hitI = i; }
+            }
+            if (hitI < 0) return null;
+            return Dir(poly[(hitI - 2 + n) % n], poly[(hitI + 3) % n]);
+        }
+
+        /// <summary>
+        /// True when the part of a turn that runs across the passes keeps to the boundary line
+        /// (about the clearance from the boundary): it does not cut across a corner.
+        /// </summary>
+        private static bool AlongBoundaryLine(List<V2> turn, double h0, double h1, PolygonTester fence)
+        {
+            double limit = fence.Clearance + 0.3 + 1.5;
+            for (int i = 1; i < turn.Count; i++)
+            {
+                double h = HeadingOf(turn[i - 1], turn[i]);
+                if (Math.Abs(AngleDiff(h, h0)) < 1.05 || Math.Abs(AngleDiff(h, h1)) < 1.05) continue;
+                if (fence.EdgeDistance(turn[i], limit + 1.0) > limit) return false;
+            }
+            return true;
+        }
+
+        /// <summary>
+        /// Distance from p to the boundary edges it drives towards: edges running along the
+        /// heading (a long side next to the first pass) do not count, only the end ahead or behind.
+        /// </summary>
+        private static double AheadEdgeDistance(PolygonTester fence, V2 p, double heading, double radius)
+        {
+            List<V2> poly = fence.Polygon;
+            V2 d = new V2(Math.Sin(heading), Math.Cos(heading));
+            double best = radius;
+            int n = poly.Count;
+            for (int i = 0; i < n; i++)
+            {
+                V2 a = poly[i], b = poly[(i + 1) % n];
+                // quick reject
+                if (Math.Abs(a.E - p.E) > best + 50.0 && Math.Abs(b.E - p.E) > best + 50.0) continue;
+                if (Math.Abs(a.N - p.N) > best + 50.0 && Math.Abs(b.N - p.N) > best + 50.0) continue;
+                V2 e = b - a;
+                double len = e.Length;
+                if (len < 1e-9) continue;
+                // edge (nearly) parallel to the driving direction: a side, not an end
+                if (Math.Abs((e.E * d.N - e.N * d.E) / len) < 0.3) continue;
+                double u = Math.Max(0, Math.Min(1, ((p.E - a.E) * e.E + (p.N - a.N) * e.N) / (len * len)));
+                double dist = (a + e * u - p).Length;
+                if (dist < best) best = dist;
+            }
+            return best;
         }
 
         // Longest straight run from p along dir with the turn centre (p + n * R) still at least
