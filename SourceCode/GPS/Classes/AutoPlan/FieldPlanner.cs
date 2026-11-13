@@ -836,8 +836,14 @@ namespace AgOpenGPS.AutoPlan
                 bool anyEnd = false, anySide = false;
                 foreach (int id in endRunId) { if (id >= 0) anyEnd = true; else anySide = true; }
                 if (anyEnd && anySide)
-                    // slanted ends get a wider headland, so turns between passes fit without loops
-                    work = InsetEnds(fence, endRunId, headWidth, s, midDir, set.WorkHeadland || set.HeadlandReverseTurns ? 0.0 : Math.Max(2.0 * R, W));
+                // slanted ends get a wider headland, so turns between passes fit without loops
+                {
+                    // the headland edge of every end runs straight on to the side boundary
+                    // (no notch at the corners cutting the outer passes short)
+                    work = InsetEnds(fence, endRunId, headWidth, s, midDir, set.WorkHeadland || set.HeadlandReverseTurns ? 0.0 : Math.Max(2.0 * R, W), null, null, true);
+                    List<V2> notched = InsetEnds(fence, endRunId, headWidth, s, midDir, set.WorkHeadland || set.HeadlandReverseTurns ? 0.0 : Math.Max(2.0 * R, W));
+                    if (work == null || work.Count < 10 || Math.Abs(SignedArea(work)) < 0.8 * Math.Abs(SignedArea(notched))) work = notched;
+                }
                 else
                     endsOnly = false; // no clear long sides (round field): headland all around
             }
@@ -2128,6 +2134,12 @@ namespace AgOpenGPS.AutoPlan
                     double dA = Math.Min((ps.A - nb.A).Length, (ps.A - nb.B).Length);
                     double dB = Math.Min((ps.B - nb.A).Length, (ps.B - nb.B).Length);
                     if (Math.Min(dA, dB) > 3.0 * W || Math.Max(dA, dB) < 6.0 * W) continue;
+                    // only one cut by a long side running almost along the passes (a slight angle:
+                    // a side exactly along them does not cut a pass)
+                    V2 mid = dA < dB ? ps.B : ps.A;
+                    V2 sd = fence.EdgeDirection(mid), pd = Dir(ps.A, ps.B);
+                    double cosSide = Math.Abs(sd.E * pd.E + sd.N * pd.N);
+                    if (cosSide < 0.99 || cosSide > 0.9998) continue;
                     stubs.Add(new Step { Pass = ps, Reverse = dA < dB });
                 }
                 if (stubs.Count > 0 && stubs.Count <= 3)
@@ -2322,7 +2334,7 @@ namespace AgOpenGPS.AutoPlan
                 for (double e = 0.5; e <= 200.0; e += 0.5)
                 {
                     V2 c = p0 + d0 * e;
-                    if (!fence.Clear(c) || AheadEdgeDistance(fence, c, h0, reach + 1.0) < reach) break;
+                    if (!fence.Clear(c) || AheadEdgeDistance(fence, c, h0, reach + 1.0, 0.1) < reach) break;
                     q = c;
                 }
                 // the next pass starts before the boundary is reached: plain turn into it there,
@@ -2347,11 +2359,12 @@ namespace AgOpenGPS.AutoPlan
                 // corners on the line's arc; only where the pass ends too close to a corner for
                 // that, the turn may run a little inside the arc
                 V2 q0 = q;
+                bool shortJ = true;
                 List<V2> TryHug(double back, double e, double tol)
                 {
                     V2 qq = q0 - d0 * back;
                     V2 entry = p1 - d1 * e;
-                    List<V2> hug = LoopTransfer(qq, h0, entry, h1, loop, R, s, fence, out int hugOut, out double hugCost, true, tol);
+                    List<V2> hug = LoopTransfer(qq, h0, entry, h1, loop, R, s, fence, out int hugOut, out double hugCost, shortJ, tol);
                     // (not the long way round the field for a turn into a nearby pass)
                     if (hug == null || hugOut != 0 || hugCost >= Math.Min(400.0, 3.0 * (lateral + lengthwise) + 10.0 * R)) return null;
                     var pts = new List<V2>();
@@ -2387,6 +2400,14 @@ namespace AgOpenGPS.AutoPlan
                             return found;
                         }
                     }
+                }
+                // a pass further away (transfer): also straight out to the boundary line first
+                // and straight into the pass at the end, the joins as long as they need to be
+                if (!near)
+                {
+                    shortJ = false;
+                    List<V2> far = TryHug(0, maxBack, 0.8 * R);
+                    if (far != null) return far;
                 }
             }
         NoHug:
@@ -2744,7 +2765,7 @@ namespace AgOpenGPS.AutoPlan
         /// Distance from p to the boundary edges it drives towards: edges running along the
         /// heading (a long side next to the first pass) do not count, only the end ahead or behind.
         /// </summary>
-        private static double AheadEdgeDistance(PolygonTester fence, V2 p, double heading, double radius)
+        private static double AheadEdgeDistance(PolygonTester fence, V2 p, double heading, double radius, double minSin = 0.02)
         {
             List<V2> poly = fence.Polygon;
             V2 d = new V2(Math.Sin(heading), Math.Cos(heading));
@@ -2760,7 +2781,7 @@ namespace AgOpenGPS.AutoPlan
                 double len = e.Length;
                 if (len < 1e-9) continue;
                 // edge (nearly) parallel to the driving direction: a side, not an end
-                if (Math.Abs((e.E * d.N - e.N * d.E) / len) < 0.02) continue;
+                if (Math.Abs((e.E * d.N - e.N * d.E) / len) < minSin) continue;
                 double u = Math.Max(0, Math.Min(1, ((p.E - a.E) * e.E + (p.N - a.N) * e.N) / (len * len)));
                 double dist = (a + e * u - p).Length;
                 if (dist < best) best = dist;
