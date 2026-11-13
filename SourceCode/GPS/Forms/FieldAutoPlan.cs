@@ -248,7 +248,17 @@ namespace AgOpenGPS
                 return;
             }
 
-            if (addTrack && plan.TrackLine.Count > 2) AddAutoPlanTrack(plan.TrackLine);
+            if (addTrack && plan.TrackLine.Count > 2)
+            {
+                // the new track becomes the active one: its guide lines lie on the planned passes
+                int ti = AddAutoPlanTrack(plan.TrackLine);
+                if (ti >= 0)
+                {
+                    trk.idx = ti;
+                    curve.isCurveValid = false;
+                    ABLine.isABValid = false;
+                }
+            }
 
             // The plan drives the headland itself: section control by headland would switch the
             // sections off there and leave unworked stripes between the headland strips
@@ -814,6 +824,14 @@ namespace AgOpenGPS
             CABCurve.CalculateHeadings(ref des);
             track.curvePts.AddRange(des);
 
+            // tracks of earlier plans would not match these passes: replace them
+            for (int i = trk.gArr.Count - 1; i >= 0; i--)
+            {
+                if (trk.gArr[i].name == null || !trk.gArr[i].name.StartsWith("Auto plan ")) continue;
+                trk.gArr.RemoveAt(i);
+                if (trk.idx == i) trk.idx = -1;
+                else if (trk.idx > i) trk.idx--;
+            }
             trk.gArr.Add(track);
             FileSaveTracks();
             Log.EventWriter("Auto field plan: track added " + track.name);
