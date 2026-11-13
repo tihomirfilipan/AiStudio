@@ -115,6 +115,13 @@ namespace AgOpenGPS.AutoPlan
         /// </summary>
         public V2? GoreLinePoint, GoreLineNormal;
 
+        /// <summary>
+        /// Wedge with nearly parallel long edges: the passes of the first half follow
+        /// ReferenceEdge inside PassRegion, these the second long edge inside the second region;
+        /// all of them are ordered together like one field (same turns and skipping).
+        /// </summary>
+        public List<V2> SecondEdge, SecondRegion;
+
         public FieldPlanSettings Clone() => (FieldPlanSettings)MemberwiseClone();
 
         /// <summary>
@@ -184,7 +191,19 @@ namespace AgOpenGPS.AutoPlan
                 V2 midO = new V2(0, 0), midN = new V2(0, 0);
                 List<List<V2>> parts = set.WedgeField ? SplitWedge(fence, WedgeTurnRoom(set), out wedgeRefs, out wedgeRegions, out midO, out midN)
                     : set.SplitField ? SplitAtBends(fence) : null;
-                if (parts != null && parts.Count > 1)
+                if (set.WedgeField && parts != null && parts.Count == 2 && LastWedgeParallel && wedgeRegions != null)
+                {
+                    // long edges nearly parallel: every half its own pass direction, but all the
+                    // passes ordered and turned together like one field
+                    FieldPlanSettings ws = set.Clone();
+                    ws.WedgeField = false;
+                    ws.ReferenceEdge = wedgeRefs[0];
+                    ws.PassRegion = wedgeRegions[0];
+                    ws.SecondEdge = wedgeRefs[1];
+                    ws.SecondRegion = wedgeRegions[1];
+                    BuildInternal(fence, ws, startPos, startHeading, res);
+                }
+                else if (parts != null && parts.Count > 1)
                     BuildParts(parts, fence, set, startPos, startHeading, res, wedgeRefs, wedgeRegions, midO, midN);
                 else
                     BuildInternal(fence, set, startPos, startHeading, res);
@@ -214,6 +233,8 @@ namespace AgOpenGPS.AutoPlan
             double W = set.WorkWidth, R = Math.Max(0.5, set.TurnRadius);
             return R + W * 0.5 + 0.3;
         }
+
+        [ThreadStatic] private static bool LastWedgeParallel;
 
         public static List<List<V2>> SplitWedge(IList<V2> fenceIn, double turnRoom, out List<List<V2>> refs)
         {
@@ -260,10 +281,9 @@ namespace AgOpenGPS.AutoPlan
                     if (sc > best) { best = sc; e1 = i; e2 = j; }
                 }
             if (e1 < 0 || best < 30.0) return null;
-            // the long edges nearly parallel (under about 4 degrees): no wedge, a normal field
             {
                 V2 da = Dir(edges[e1].a, edges[e1].b), db = Dir(edges[e2].a, edges[e2].b);
-                if (Math.Abs(da.E * db.N - da.N * db.E) < 0.07) return null;
+                LastWedgeParallel = Math.Abs(da.E * db.N - da.N * db.E) < 0.07;
             }
 
             V2 pA = edges[e1].a, dA = Dir(edges[e1].a, edges[e1].b);
@@ -906,6 +926,44 @@ namespace AgOpenGPS.AutoPlan
                     }
                 }
                 passes.Add(new Pass { Lane = lane, Pts = ResampleOpen(best, s) });
+            }
+
+            // second half of a nearly parallel wedge: passes along its own long edge, lanes
+            // numbered on from the middle so the order sees one field
+            if (set.SecondEdge != null && set.SecondEdge.Count >= 2 && set.SecondRegion != null)
+            {
+                List<V2> ref2 = SmoothOpen(ResampleOpen(new List<V2>(set.SecondEdge), s), 7, 2);
+                if (ref2.Count >= 5)
+                {
+                    List<V2> ext2 = ExtendOpen(ref2, diag, s);
+                    int m2 = ref2.Count / 2;
+                    V2 md2 = Dir(ref2[Math.Max(0, m2 - 2)], ref2[Math.Min(ref2.Count - 1, m2 + 2)]);
+                    V2 ln2 = new V2(-md2.N, md2.E);
+                    double side2 = PointInPolygon(fence, ref2[m2] + ln2 * (W * 0.5)) ? 1.0 : -1.0;
+                    var lanes2 = new LaneLines(ext2, side2, W, (endsOnly ? 0.0 : headWidth) + W * 0.5, Math.Max(1.5 * R, 10.0), s);
+                    var second = new List<List<V2>>();
+                    int empty2 = 0;
+                    for (int lane = 0; lane < 10000; lane++)
+                    {
+                        List<V2> off = lanes2.Get(lane);
+                        if (off.Count < 2) break;
+                        var runs = new List<List<V2>>();
+                        foreach (var run in InsideRuns(off, work)) runs.AddRange(InsideRuns(run, set.SecondRegion));
+                        List<V2> best = null;
+                        foreach (var run in runs)
+                            if (OpenLength(run) >= Math.Max(2.0 * W, 5.0) && (best == null || run.Count > best.Count)) best = run;
+                        if (best == null)
+                        {
+                            if (second.Count > 0 && ++empty2 > 3) break;
+                            continue;
+                        }
+                        empty2 = 0;
+                        second.Add(ResampleOpen(best, s));
+                    }
+                    int lastLane = passes.Count > 0 ? passes[passes.Count - 1].Lane : -1;
+                    for (int k = second.Count - 1; k >= 0; k--)
+                        passes.Add(new Pass { Lane = lastLane + 1 + (second.Count - 1 - k), Pts = second[k] });
+                }
             }
 
             if (passes.Count == 0) { res.Error = "No passes fit inside the field"; return; }
