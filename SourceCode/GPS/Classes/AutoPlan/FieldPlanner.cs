@@ -100,6 +100,12 @@ namespace AgOpenGPS.AutoPlan
         /// </summary>
         public bool WedgeField = false;
 
+        /// <summary>
+        /// Headland line (where the sections switch) at this distance from the boundary on every
+        /// end, e.g. two pass widths; 0 = at the least room the turns of each end need.
+        /// </summary>
+        public double HeadlandLineDistance = 0;
+
         /// <summary>Passes only inside this polygon (one half of a wedge field); null = everywhere.</summary>
         public List<V2> PassRegion;
 
@@ -479,6 +485,8 @@ namespace AgOpenGPS.AutoPlan
                     if (pi >= 0 && pi < partRegions.Count) ps.PassRegion = partRegions[pi];
                     // the far side of a half is the middle line: no extra pass along it
                     ps.AddExtraPass = false;
+                    // headland two pass widths on every end
+                    if (ps.HeadlandLineDistance <= 0) ps.HeadlandLineDistance = 2.0 * W;
                     // passes ending on the middle line (gores) are driven at the end, both halves together
                     ps.GoreLinePoint = midO;
                     ps.GoreLineNormal = midN;
@@ -1127,7 +1135,9 @@ namespace AgOpenGPS.AutoPlan
                 // with three point turns the work goes on up to where the turn starts
                 double lineDist = set.HeadlandReverseTurns ? ReverseManeuver.KTurnReach(W, R) + W * 0.5 + 0.3 : R + W * 0.5 + 0.3;
                 // (three point turns all start at the same distance: one line for every end)
-                List<V2> line = InsetEnds(fence, endRunId, lineDist, s, default, 0.0, set.HeadlandReverseTurns ? null : byEnd, edgeKey, true);
+                bool fixedLine = set.HeadlandLineDistance > 0;
+                if (fixedLine) lineDist = set.HeadlandLineDistance;
+                List<V2> line = InsetEnds(fence, endRunId, lineDist, s, default, 0.0, set.HeadlandReverseTurns || fixedLine ? null : byEnd, edgeKey, true);
                 if (line != null && line.Count >= 10)
                 {
                     res.SectionLine = line;
