@@ -174,7 +174,7 @@ namespace AgOpenGPS.Tests.AutoPlan
         }
 
         [Test]
-        public void TrackLine_IsFirstPassAcrossTheField()
+        public void TrackLine_IsBesideTheFirstPassAcrossTheField()
         {
             var res = FieldPlanner.Build(Rectangle(300, 200), new FieldPlanSettings { WorkWidth = 6, TurnRadius = 6 }, new V2(-10, -10), 0);
             Assert.That(res.Ok, Is.True, res.Error);
@@ -182,7 +182,9 @@ namespace AgOpenGPS.Tests.AutoPlan
             double minE = double.MaxValue, maxE = double.MinValue;
             foreach (V2 p in res.TrackLine)
             {
-                Assert.That(p.N, Is.EqualTo(3.0).Within(0.5)); // half a width from the south side
+                // one width from the south side: AgOpenGPS puts the curve's guide lines half a
+                // width beside it, so the first one lies on the first pass (3 m)
+                Assert.That(p.N, Is.EqualTo(6.0).Within(0.5));
                 minE = Math.Min(minE, p.E);
                 maxE = Math.Max(maxE, p.E);
             }
