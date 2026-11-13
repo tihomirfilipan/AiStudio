@@ -30,9 +30,10 @@ namespace AgOpenGPS.AutoPlan
         /// Null if nothing was found within the search limit.
         /// </summary>
         /// <summary>
-        /// Three point turn into the neighbour pass as the K-turn symbol shows: straight forward
-        /// on past the pass end, backwards in a turn away from the next pass, then forward in a
-        /// turn into the next pass, lined up (straight) when it enters.
+        /// Three point turn into the neighbour pass as the K-turn symbol shows: from the pass
+        /// end straight on to the turn, a big forward turn towards the next pass, a short turn
+        /// backwards until the vehicle stands on the line of the next pass facing along it, then
+        /// straight forward into the pass (lined up). Made as close to the boundary as it fits.
         /// Null when the passes are not side by side (opposite headings, closer than two radii)
         /// or it does not fit.
         /// </summary>
@@ -47,39 +48,39 @@ namespace AgOpenGPS.AutoPlan
             double lat = rel.E * r.E + rel.N * r.N;
             double L = Math.Abs(lat);
             if (L < 0.5 || L >= 2.0 * R - 0.01) return null;
-            V2 away = r * -Math.Sign(lat);                      // away from the next pass
-            double beta = Math.Acos(L / (2.0 * R));             // turn backwards
-            double gamma = Math.PI - beta;                      // turn forward into the next pass
-            double drop = 2.0 * R * Math.Sin(beta);             // how far the turns come back
+            V2 u = r * Math.Sign(lat);                          // towards the next pass
+            double alpha = Math.Acos(-L / (2.0 * R));           // forward turn (over 90 degrees)
             double step = Math.Max(0.2, spacing);
             int Steps(double len) => Math.Max(2, (int)Math.Ceiling(len / step));
 
-            List<Pose> Make(double a)
+            // local frame: x away from the next pass (next pass at x = -L), y on along the pass
+            List<Pose> Make(double e)
             {
-                // local frame: x away from the next pass, y on along the pass
-                V2 Wp(double x, double y) => p0 + away * x + d * y;
+                V2 a0 = p0 + d * e;
+                V2 Wp(double x, double y) => a0 + u * (-x) + d * y;
                 var pts = new List<Pose>();
                 void Add(V2 p, bool rev) { pts.Add(new Pose { P = p, Reverse = rev }); }
                 Add(p0, false);
-                int n = Steps(a);
-                for (int i = 1; i <= n; i++) Add(Wp(0, a * i / n), false);
-                // backwards, steering away: centre (R, a), the nose turns towards the next pass
-                n = Steps(R * beta);
+                int n = Steps(e);
+                for (int i = 1; i <= n && e > 1e-6; i++) Add(p0 + d * (e * i / n), false);
+                // forward turn towards the next pass, centre (-R, 0)
+                n = Steps(R * alpha);
                 for (int i = 1; i <= n; i++)
                 {
-                    double t = beta * i / n;
-                    Add(Wp(R - R * Math.Cos(t), a - R * Math.Sin(t)), true);
+                    double t = alpha * i / n;
+                    Add(Wp(-R + R * Math.Cos(t), R * Math.Sin(t)), false);
                 }
-                // forward turn into the next pass: centre (R - 2R cos b, a - 2R sin b)
-                double cx = R - 2.0 * R * Math.Cos(beta), cy = a - drop;
-                n = Steps(R * gamma);
+                // backwards with the opposite steering: the heading keeps turning the same way
+                double cx = -R + 2.0 * R * Math.Cos(alpha), cy = 2.0 * R * Math.Sin(alpha);
+                double th0 = Math.PI / 2 + alpha, th1 = 1.5 * Math.PI;
+                n = Steps(R * (th1 - th0));
                 for (int i = 1; i <= n; i++)
                 {
-                    double t = beta + gamma * i / n;      // angle of the radius from the centre
-                    Add(Wp(cx + R * Math.Cos(t), cy + R * Math.Sin(t)), false);
+                    double th = th0 + (th1 - th0) * i / n;
+                    Add(Wp(cx - R * Math.Sin(th), cy + R * Math.Cos(th)), true);
                 }
-                // lined up on the next pass: straight into it
-                V2 q = Wp(-L, cy);
+                // lined up on the next pass: straight forward into it
+                V2 q = Wp(cx + R, cy);
                 double len = (p1 - q).Length;
                 n = Steps(len);
                 for (int i = 1; i <= n; i++) Add(q + (p1 - q) * (i / (double)n), false);
@@ -87,14 +88,21 @@ namespace AgOpenGPS.AutoPlan
                 return pts;
             }
 
-            // as far on as it fits: the longest straight entry into the next pass
-            double aMin = Math.Max(0.0, along + drop);
-            for (double a = aMin + 40.0; a >= aMin - 1e-9; a -= 0.5)
+            // as close to the boundary as it fits
+            double eMin = Math.Max(0.0, along - 2.0 * R * Math.Sin(alpha));
+            for (double e = eMin + 40.0; e >= eMin - 1e-9; e -= 0.5)
             {
-                List<Pose> k = Make(a);
+                List<Pose> k = Make(e);
                 if (k != null) return k;
             }
             return null;
+        }
+
+        /// <summary>Room the three point turn needs past its start (towards the boundary).</summary>
+        public static double KTurnReach(double W, double R)
+        {
+            if (W >= 2.0 * R) return R;
+            return 2.0 * R * Math.Sin(Math.Acos(-W / (2.0 * R)));
         }
 
         public static List<Pose> Find(V2 p0, double h0, V2 p1, double h1, double R, double spacing,

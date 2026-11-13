@@ -543,7 +543,7 @@ namespace AgOpenGPS.AutoPlan
             // lined up - they need room for the turns coming back (2R sin b, cos b = W / 2R)
             if (set.HeadlandReverseTurns && W < 2.0 * R)
             {
-                double need = 2.0 * R * Math.Sin(Math.Acos(W / (2.0 * R))) + W * 0.5 + 1.0;
+                double need = ReverseManeuver.KTurnReach(W, R) + W * 0.5 + 1.0;
                 laps = Math.Max(laps, (int)Math.Ceiling(need / W));
             }
             double headWidth = laps * W;
@@ -807,7 +807,9 @@ namespace AgOpenGPS.AutoPlan
             {
                 var byEnd = new Dictionary<int, double>();
                 foreach (var kv in straightEndByEnd) byEnd[kv.Key] = kv.Value + 0.3;
-                List<V2> line = InsetEnds(fence, endRunId, R + W * 0.5 + 0.3, s, default, 0.0, byEnd, edgeKey, true);
+                // with three point turns the work goes on up to where the turn starts
+                double lineDist = set.HeadlandReverseTurns ? ReverseManeuver.KTurnReach(W, R) + W * 0.5 + 0.3 : R + W * 0.5 + 0.3;
+                List<V2> line = InsetEnds(fence, endRunId, lineDist, s, default, 0.0, byEnd, edgeKey, true);
                 if (line != null && line.Count >= 10) res.SectionLine = line;
             }
 
