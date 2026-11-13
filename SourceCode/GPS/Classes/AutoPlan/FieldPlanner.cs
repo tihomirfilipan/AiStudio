@@ -539,6 +539,13 @@ namespace AgOpenGPS.AutoPlan
             int laps = set.HeadlandLaps;
             // the turn reaches R past the pass end and the tool sticks out half a width more
             if (laps <= 0) laps = Math.Max(1, (int)Math.Ceiling((R + Math.Max(set.TurnMargin, W * 0.5 + 1.0)) / W));
+            // three point turns into the neighbour pass: straight on, back, forward into the pass
+            // lined up - they need room for the turns coming back (2R sin b, cos b = W / 2R)
+            if (set.HeadlandReverseTurns && W < 2.0 * R)
+            {
+                double need = 2.0 * R * Math.Sin(Math.Acos(W / (2.0 * R))) + W * 0.5 + 1.0;
+                laps = Math.Max(laps, (int)Math.Ceiling(need / W));
+            }
             double headWidth = laps * W;
 
             // --- Reference edge: longest smooth part of the boundary ---
