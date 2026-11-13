@@ -153,6 +153,9 @@ namespace AgOpenGPS.AutoPlan
 
         /// <summary>Gores of a wedge half (passes ending on the middle line), see GoreLinePoint.</summary>
         public List<List<V2>> Gores = new List<List<V2>>();
+
+        /// <summary>Headland lines of the parts of a split / wedge field (see SectionLine).</summary>
+        public List<List<V2>> PartSectionLines = new List<List<V2>>();
     }
 
     /// <summary>
@@ -488,6 +491,7 @@ namespace AgOpenGPS.AutoPlan
                 var r = new FieldPlanResult();
                 BuildInternal(part, ps, pos, heading, r);
                 if (r.Gores.Count > 0) goresOf[parts.IndexOf(part)] = r.Gores;
+                if (r.SectionLine.Count > 0) res.PartSectionLines.Add(r.SectionLine);
                 if (!r.Ok || r.Points.Count < 2) continue;
 
                 if (!first)
