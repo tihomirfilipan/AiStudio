@@ -842,7 +842,7 @@ namespace AgOpenGPS.AutoPlan
                     // (no notch at the corners cutting the outer passes short)
                     work = InsetEnds(fence, endRunId, headWidth, s, midDir, set.WorkHeadland || set.HeadlandReverseTurns ? 0.0 : Math.Max(2.0 * R, W), null, null, true);
                     List<V2> notched = InsetEnds(fence, endRunId, headWidth, s, midDir, set.WorkHeadland || set.HeadlandReverseTurns ? 0.0 : Math.Max(2.0 * R, W));
-                    if (work == null || work.Count < 10 || Math.Abs(SignedArea(work)) < 0.8 * Math.Abs(SignedArea(notched))) work = notched;
+                    if (work == null || work.Count < 10 || Math.Abs(SignedArea(work)) < Math.Abs(SignedArea(notched)) - 1.0) work = notched;
                 }
                 else
                     endsOnly = false; // no clear long sides (round field): headland all around
@@ -987,7 +987,7 @@ namespace AgOpenGPS.AutoPlan
             List<Step> order = ChooseOrder(passes, R, W, fenceGrid, orderStart, orderHeading, s, transferLoop, orderMode, out string orderName,
                 set.HeadlandReverseTurns || wedgeKTurns);
             if (slantFirst != null) order.Insert(0, slantFirst);
-            else if (!set.HeadlandReverseTurns) order = AlternateSlant(order, passes, fenceGrid, R);
+
             res.OrderDescription = orderName;
 
             var path = new List<PlanPoint>();
@@ -1578,7 +1578,8 @@ namespace AgOpenGPS.AutoPlan
                     V2 w = p - a;
                     double t = (w.E * e.N - w.N * e.E) / den;
                     double u = (w.E * dir.N - w.N * dir.E) / den;
-                    if (t > 1e-6 && u >= 0 && u <= 1 && t < best) { best = t; hit = a + dir * t; }
+                    // only a short way on to the side (a long one would cut through the field)
+                    if (t > 1e-6 && t <= 2.0 * dist && u >= 0 && u <= 1 && t < best) { best = t; hit = a + dir * t; }
                 }
                 return hit;
             }
@@ -2189,6 +2190,17 @@ namespace AgOpenGPS.AutoPlan
                     }
                     if (turn == null) { score += 1e6; continue; }
                     score += TurnLength(ep, eh, p, h, R, orderMode != 1) + 1000.0 * outside;
+                }
+                // going back against the direction of the work by more than two passes (the turn
+                // crosses the turns before it at that end): only when nothing else fits
+                if (plan.Count >= 3)
+                {
+                    int dirAll = Math.Sign(plan[plan.Count - 1].Pass.Lane - plan[0].Pass.Lane);
+                    for (int i = 1; i < plan.Count; i++)
+                    {
+                        int d = plan[i].Pass.Lane - plan[i - 1].Pass.Lane;
+                        if (dirAll != 0 && Math.Sign(d) == -dirAll && Math.Abs(d) >= 3) score += 150.0;
+                    }
                 }
                 return score;
             }
