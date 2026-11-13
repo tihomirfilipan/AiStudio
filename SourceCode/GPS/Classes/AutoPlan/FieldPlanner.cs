@@ -1197,6 +1197,8 @@ namespace AgOpenGPS.AutoPlan
                 AppendPoints(path, pts, true, i > 0);
             }
             res.Passes = order.Count;
+            // with worked headland: before the headland laps (the last pass, not the last lap)
+            if (set.WorkHeadland && (set.TurnsAtBoundary || set.HeadlandReverseTurns)) ExtendFirstAndLast(path, fenceGrid, R + W * 0.5 + 0.3, s, R);
 
             if (endsOnly && !set.WorkHeadland)
             {
@@ -1223,7 +1225,7 @@ namespace AgOpenGPS.AutoPlan
             }
             // the first pass starts, the last one ends nearer the boundary (after the headland line
             // is applied: nothing turns there)
-            if (set.TurnsAtBoundary || set.HeadlandReverseTurns) ExtendFirstAndLast(path, fenceGrid, R + W * 0.5 + 0.3, s, set.PassRegion != null && set.SecondEdge == null ? R : 0);
+            if (!set.WorkHeadland && (set.TurnsAtBoundary || set.HeadlandReverseTurns)) ExtendFirstAndLast(path, fenceGrid, R + W * 0.5 + 0.3, s, set.PassRegion != null && set.SecondEdge == null ? R : 0);
 
 
             // --- Headland: strips at the pass ends, or laps all around ---
