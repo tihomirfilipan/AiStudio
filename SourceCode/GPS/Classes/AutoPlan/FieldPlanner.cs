@@ -809,7 +809,8 @@ namespace AgOpenGPS.AutoPlan
                 foreach (var kv in straightEndByEnd) byEnd[kv.Key] = kv.Value + 0.3;
                 // with three point turns the work goes on up to where the turn starts
                 double lineDist = set.HeadlandReverseTurns ? ReverseManeuver.KTurnReach(W, R) + W * 0.5 + 0.3 : R + W * 0.5 + 0.3;
-                List<V2> line = InsetEnds(fence, endRunId, lineDist, s, default, 0.0, byEnd, edgeKey, true);
+                // (three point turns all start at the same distance: one line for every end)
+                List<V2> line = InsetEnds(fence, endRunId, lineDist, s, default, 0.0, set.HeadlandReverseTurns ? null : byEnd, edgeKey, true);
                 if (line != null && line.Count >= 10) res.SectionLine = line;
             }
 
