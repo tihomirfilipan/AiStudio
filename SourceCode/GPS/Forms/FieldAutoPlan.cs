@@ -254,7 +254,15 @@ namespace AgOpenGPS
             // sections off there and leave unworked stripes between the headland strips
             // the plan switches the sections (also in the straight part of turns out to the
             // boundary): the app's headland must not switch them off
-            if (cboxIsSectionControlled.Checked)
+            // Without worked headland: the app's headland line is the plan's switch line at the
+            // pass ends, every section switches there by itself (a straight end of the work)
+            bool sectionLine = plan.SectionLine.Count >= 10;
+            if (sectionLine)
+            {
+                ApplyPlanHeadland(plan.SectionLine);
+                planHeadlandDashed = true;
+            }
+            else if (cboxIsSectionControlled.Checked)
             {
                 cboxIsSectionControlled.Checked = false;
                 cboxIsSectionControlled_Click(cboxIsSectionControlled, EventArgs.Empty);
@@ -268,7 +276,10 @@ namespace AgOpenGPS
             double toolBehind = -(tool.hitchLength
                 + (tool.isToolTrailing ? tool.trailingHitchLength + (tool.isToolTBT ? tool.tankTrailingHitchLength : 0) : 0));
             toolBehind = Math.Max(-20.0, Math.Min(30.0, toolBehind));
-            var planPoints = FieldPlanner.ShiftWorkFlags(plan.Points, toolBehind);
+            // (with the switch line the master stays on a tool width longer on the straight, the
+            // sections are cut at the line one by one)
+            var planPoints = FieldPlanner.ShiftWorkFlags(
+                sectionLine ? FieldPlanner.ExtendWorkStraight(plan.Points, tool.width) : plan.Points, toolBehind);
             Log.EventWriter("Auto field plan: section switching shifted by " + toolBehind.ToString("0.0", CultureInfo.InvariantCulture) + " m");
 
             foreach (PlanPoint p in planPoints)
@@ -813,8 +824,77 @@ namespace AgOpenGPS
         /// Uses the inner edge of the planned headland as the app's headland line, switches the
         /// headland on and lets it switch the sections off (they stay off in the headland).
         /// </summary>
+        // the headland line set by the auto plan is drawn dashed, only where it is off the boundary
+        public bool planHeadlandDashed;
+
+        private List<vec3> planDashCache;
+        private List<vec3> planDashSource;
+        private int planDashSourceCount;
+
+        private void DrawPlanHeadlandDashed()
+        {
+            if (bnd.bndList.Count == 0) return;
+            var hd = bnd.bndList[0].hdLine;
+            var fence = bnd.bndList[0].fenceLine;
+            int n = hd.Count;
+            if (n < 3 || fence.Count < 3) return;
+
+            // dashes worked out once per headland line
+            if (planDashCache == null || !ReferenceEquals(planDashSource, hd) || planDashSourceCount != n)
+            {
+                planDashCache = new List<vec3>();
+                planDashSource = hd;
+                planDashSourceCount = n;
+                const double dash = 3.0, gap = 2.0;
+                double phase = 0;
+                for (int i = 0; i < n; i++)
+                {
+                    vec3 a = hd[i], b = hd[(i + 1) % n];
+                    if (DistToFence(a, fence) < 0.5 && DistToFence(b, fence) < 0.5) { phase = 0; continue; }
+                    double len = Math.Sqrt((b.easting - a.easting) * (b.easting - a.easting) + (b.northing - a.northing) * (b.northing - a.northing));
+                    if (len < 1e-6) continue;
+                    double t = 0;
+                    while (t < len)
+                    {
+                        double cycle = phase % (dash + gap);
+                        double stepLen = cycle < dash ? Math.Min(dash - cycle, len - t) : Math.Min(dash + gap - cycle, len - t);
+                        if (cycle < dash)
+                        {
+                            planDashCache.Add(new vec3(a.easting + (b.easting - a.easting) * t / len, a.northing + (b.northing - a.northing) * t / len, 0));
+                            planDashCache.Add(new vec3(a.easting + (b.easting - a.easting) * (t + stepLen) / len, a.northing + (b.northing - a.northing) * (t + stepLen) / len, 0));
+                        }
+                        t += stepLen;
+                        phase += stepLen;
+                    }
+                }
+            }
+
+            GL.Begin(PrimitiveType.Lines);
+            foreach (vec3 p in planDashCache) GL.Vertex3(p.easting, p.northing, 0);
+            GL.End();
+        }
+
+        private static double DistToFence(vec3 p, List<vec3> fence)
+        {
+            double best = double.MaxValue;
+            int n = fence.Count;
+            for (int i = 0; i < n; i++)
+            {
+                vec3 a = fence[i], b = fence[(i + 1) % n];
+                double dx = b.easting - a.easting, dy = b.northing - a.northing;
+                double l2 = dx * dx + dy * dy;
+                double u = l2 > 1e-12 ? ((p.easting - a.easting) * dx + (p.northing - a.northing) * dy) / l2 : 0;
+                u = Math.Max(0, Math.Min(1, u));
+                double ex = a.easting + u * dx - p.easting, ey = a.northing + u * dy - p.northing;
+                best = Math.Min(best, ex * ex + ey * ey);
+            }
+            return Math.Sqrt(best);
+        }
+
         private void ApplyPlanHeadland(List<V2> work)
         {
+            planHeadlandDashed = false;
+            planDashCache = null;
             if (work == null || work.Count < 10 || bnd.bndList.Count == 0) return;
 
             var hd = bnd.bndList[0].hdLine;

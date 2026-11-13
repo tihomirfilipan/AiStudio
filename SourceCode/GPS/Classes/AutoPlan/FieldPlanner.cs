@@ -123,6 +123,11 @@ namespace AgOpenGPS.AutoPlan
 
         // For debugging / visualisation
         public List<V2> WorkArea = new List<V2>();
+        /// <summary>
+        /// Line where the sections switch at the pass ends (the turns' room from the boundary),
+        /// only at the ends; long sides stay on the boundary. Empty when the plan works the headland.
+        /// </summary>
+        public List<V2> SectionLine = new List<V2>();
         public List<V2> ReferenceEdge = new List<V2>();
 
         /// <summary>Centre line of the first pass across the whole field, for a guidance track.</summary>
@@ -551,6 +556,9 @@ namespace AgOpenGPS.AutoPlan
             res.OrderDescription = orderName;
 
             var path = new List<PlanPoint>();
+            // farthest point from the boundary where a pass still runs straight at a turn: the
+            // sections' switch line goes there, so every pass reaches it (a straight end)
+            double straightEnd = R + W * 0.5;
             for (int i = 0; i < order.Count; i++)
             {
                 Step st = order[i];
@@ -587,6 +595,13 @@ namespace AgOpenGPS.AutoPlan
                         // until the vehicle starts to turn), so only a narrow strip is left unworked
                         int k0 = StraightCount(turn, lastH, false), k1 = StraightCount(turn, entryH, true);
                         if (k0 + k1 >= turn.Count) { k0 = 0; k1 = 0; }
+                        {
+                            double d0 = fenceGrid.EdgeDistance(turn[Math.Max(0, k0 - 1)], 100.0);
+                            double d1 = fenceGrid.EdgeDistance(turn[turn.Count - Math.Max(1, k1)], 100.0);
+                            // only real turns at the ends, not transfers far from the edge
+                            if (d0 < R + W * 0.5 + 2.0 * R) straightEnd = Math.Max(straightEnd, d0);
+                            if (d1 < R + W * 0.5 + 2.0 * R) straightEnd = Math.Max(straightEnd, d1);
+                        }
 
                         // sections switch off and on always at the same distance from the boundary:
                         // the room the turn needs (turning radius plus half the tool)
@@ -609,6 +624,12 @@ namespace AgOpenGPS.AutoPlan
                 AppendPoints(path, pts, true, i > 0);
             }
             res.Passes = order.Count;
+
+            if (endsOnly && !set.WorkHeadland)
+            {
+                List<V2> line = InsetEnds(fence, endRunId, straightEnd + 0.3, s);
+                if (line != null && line.Count >= 10) res.SectionLine = line;
+            }
 
             // --- Headland: strips at the pass ends, or laps all around ---
             if (set.WorkHeadland && endsOnly)
@@ -735,6 +756,45 @@ namespace AgOpenGPS.AutoPlan
             double l2 = ab.E * ab.E + ab.N * ab.N;
             double t = l2 > 1e-12 ? Math.Max(0, Math.Min(1, ((p.E - a.E) * ab.E + (p.N - a.N) * ab.N) / l2)) : 0;
             return (p - (a + ab * t)).Length;
+        }
+
+        /// <summary>
+        /// Working runs go on straight ahead (and start straight before) by up to dist, so the
+        /// master switch stays on while each section switches at the headland line by itself.
+        /// </summary>
+        public static List<PlanPoint> ExtendWorkStraight(IList<PlanPoint> pts, double dist)
+        {
+            var r = new List<PlanPoint>(pts);
+            int n = r.Count;
+            if (n < 3 || dist <= 0) return r;
+            double Step(int a, int b) => Math.Sqrt(Sq(pts[b].E - pts[a].E) + Sq(pts[b].N - pts[a].N));
+            double Hd(int a, int b) => Math.Atan2(pts[b].E - pts[a].E, pts[b].N - pts[a].N);
+            for (int i = 1; i < n; i++)
+            {
+                // end of a run: on along the straight
+                if (pts[i - 1].IsWork && !pts[i].IsWork && i >= 2)
+                {
+                    double h = Hd(i - 2, i - 1), acc = 0;
+                    for (int k = i; k < n && !pts[k].IsWork && !pts[k].IsReverse; k++)
+                    {
+                        acc += Step(k - 1, k);
+                        if (acc > dist || Math.Abs(AngleDiff(Hd(k - 1, k), h)) > 0.035) break;
+                        PlanPoint p = r[k]; p.IsWork = true; p.IsHeadland = false; r[k] = p;
+                    }
+                }
+                // start of a run: on already along the straight before it
+                if (!pts[i - 1].IsWork && pts[i].IsWork && i + 1 < n)
+                {
+                    double h = Hd(i, i + 1), acc = 0;
+                    for (int k = i - 1; k >= 0 && !pts[k].IsWork && !pts[k].IsReverse; k--)
+                    {
+                        acc += Step(k, k + 1);
+                        if (acc > dist || Math.Abs(AngleDiff(Hd(k, k + 1), h)) > 0.035) break;
+                        PlanPoint p = r[k]; p.IsWork = true; p.IsHeadland = false; r[k] = p;
+                    }
+                }
+            }
+            return r;
         }
 
         public static List<PlanPoint> ShiftWorkFlags(IList<PlanPoint> pts, double toolBehind)
@@ -1519,21 +1579,43 @@ namespace AgOpenGPS.AutoPlan
                 // corners on the line's arc; only where the pass ends too close to a corner for
                 // that, the turn may run a little inside the arc
                 V2 q0 = q;
+                List<V2> TryHug(double back, double e, double tol)
+                {
+                    V2 qq = q0 - d0 * back;
+                    V2 entry = p1 - d1 * e;
+                    List<V2> hug = LoopTransfer(qq, h0, entry, h1, loop, R, s, fence, out int hugOut, out double hugCost, true, tol);
+                    if (hug == null || hugOut != 0 || hugCost >= 400.0) return null;
+                    var pts = new List<V2>();
+                    AddStraight(pts, p0, qq, s);
+                    for (int k = 1; k < hug.Count; k++) pts.Add(hug[k]);
+                    AddStraight(pts, entry, p1, s);
+                    return pts;
+                }
+                // coarse search first, then the turn is fine tuned to start and end as close
+                // to the boundary as it fits (the least room from the boundary)
+                double backStep = 0.5 * R, eStep = Math.Max(2.0, maxBack / 3.0);
                 foreach (double tol in new[] { 1.0, 0.8 * R })
                 {
-                    for (double back = 0; back <= reachLen && back <= 3.0 * R; back += 0.5 * R)
+                    for (double back = 0; back <= reachLen && back <= 3.0 * R; back += backStep)
                     {
-                        q = q0 - d0 * back;
-                        for (double e = maxBack; e >= 0; e -= Math.Max(2.0, maxBack / 3.0))
+                        for (double e = maxBack; e >= 0; e -= eStep)
                         {
-                            V2 entry = p1 - d1 * e;
-                            List<V2> hug = LoopTransfer(q, h0, entry, h1, loop, R, s, fence, out int hugOut, out double hugCost, true, tol);
-                            if (hug == null || hugOut != 0 || hugCost >= 400.0) continue;
-                            var pts = new List<V2>();
-                            AddStraight(pts, p0, q, s);
-                            for (int k = 1; k < hug.Count; k++) pts.Add(hug[k]);
-                            AddStraight(pts, entry, p1, s);
-                            return pts;
+                            List<V2> found = TryHug(back, e, tol);
+                            if (found == null) continue;
+                            for (double bf = Math.Max(0, back - backStep + 1.0); bf < back; bf += 1.0)
+                            {
+                                for (double ef = Math.Min(maxBack, e + eStep - 0.5); ef >= e - 1e-9; ef -= 0.5)
+                                {
+                                    List<V2> fine = TryHug(bf, ef, tol);
+                                    if (fine != null) return fine;
+                                }
+                            }
+                            for (double ef = Math.Min(maxBack, e + eStep - 0.5); ef > e; ef -= 0.5)
+                            {
+                                List<V2> fine = TryHug(back, ef, tol);
+                                if (fine != null) return fine;
+                            }
+                            return found;
                         }
                     }
                 }

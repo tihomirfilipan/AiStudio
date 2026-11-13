@@ -358,7 +358,17 @@ namespace AgOpenGPS
                         }
 
                         //Draw headland
-                        if (bnd.isHeadlandOn && bnd.bndList.Count > 0)
+                        if (bnd.isHeadlandOn && bnd.bndList.Count > 0 && planHeadlandDashed)
+                        {
+                            // headland line of the auto plan: dashed, only at the pass ends
+                            GL.LineWidth(ABLine.lineWidth * 3);
+                            GL.Color4(0, 0, 0, 0.80f);
+                            DrawPlanHeadlandDashed();
+                            GL.LineWidth(ABLine.lineWidth);
+                            GL.Color4(0.960f, 0.96232f, 0.30f, 1.0f);
+                            DrawPlanHeadlandDashed();
+                        }
+                        else if (bnd.isHeadlandOn && bnd.bndList.Count > 0)
                         {
                             GL.LineWidth(ABLine.lineWidth * 3);
 

@@ -1239,6 +1239,7 @@ namespace AgOpenGPS
         //close the current job
         public void JobClose()
         {
+            planHeadlandDashed = false;
             recPath.resumeState = 0;
             btnResumePath.Image = Properties.Resources.pathResumeStart;
             recPath.currentPositonIndex = 0;
