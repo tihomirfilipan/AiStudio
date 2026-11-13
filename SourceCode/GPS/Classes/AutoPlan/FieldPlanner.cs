@@ -2025,6 +2025,41 @@ namespace AgOpenGPS.AutoPlan
                 if (c < bestCost) { bestCost = c; bestPos = pos; }
             }
             rest.InsertRange(bestPos, block);
+
+            // after the block go on into the rest of the field: a neighbour of the last block
+            // pass next (only a loop fits there) is moved to where it fits best
+            int after = bestPos + block.Count;
+            Pass lastBlock = block[block.Count - 1].Pass;
+            if (after < rest.Count && Math.Abs(rest[after].Pass.Lane - lastBlock.Lane) <= 1)
+            {
+                Step moved = rest[after];
+                rest.RemoveAt(after);
+                double TL(Step a, Step b)
+                {
+                    ExitPose(a, out V2 p, out double h);
+                    EntryPose(b.Pass, b.Reverse, out V2 q, out double hq);
+                    return TurnLength(p, h, q, hq, R);
+                }
+                int bestAt = rest.Count;
+                bool bestRev = moved.Reverse;
+                double bestAdd = double.MaxValue;
+                for (int pos = 0; pos <= rest.Count; pos++)
+                {
+                    // not inside the block
+                    if (pos > bestPos && pos <= bestPos + block.Count - 1) continue;
+                    if (pos == after) continue;
+                    foreach (bool rev in new[] { false, true })
+                    {
+                        var st = new Step { Pass = moved.Pass, Reverse = rev };
+                        double c = 0;
+                        if (pos > 0) c += TL(rest[pos - 1], st);
+                        if (pos < rest.Count) c += TL(st, rest[pos]);
+                        if (pos > 0 && pos < rest.Count) c -= TL(rest[pos - 1], rest[pos]);
+                        if (c < bestAdd) { bestAdd = c; bestAt = pos; bestRev = rev; }
+                    }
+                }
+                rest.Insert(bestAt, new Step { Pass = moved.Pass, Reverse = bestRev });
+            }
             return rest;
         }
 
