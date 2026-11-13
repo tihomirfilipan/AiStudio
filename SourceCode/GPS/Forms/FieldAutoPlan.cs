@@ -824,14 +824,10 @@ namespace AgOpenGPS
             CABCurve.CalculateHeadings(ref des);
             track.curvePts.AddRange(des);
 
-            // tracks of earlier plans would not match these passes: replace them
-            for (int i = trk.gArr.Count - 1; i >= 0; i--)
-            {
-                if (trk.gArr[i].name == null || !trk.gArr[i].name.StartsWith("Auto plan ")) continue;
-                trk.gArr.RemoveAt(i);
-                if (trk.idx == i) trk.idx = -1;
-                else if (trk.idx > i) trk.idx--;
-            }
+            // tracks of earlier plans would not match these passes: kept, but hidden (in the
+            // background, they can be switched visible again in the track list)
+            foreach (CTrk old in trk.gArr)
+                if (old.name != null && old.name.StartsWith("Auto plan ")) old.isVisible = false;
             trk.gArr.Add(track);
             FileSaveTracks();
             Log.EventWriter("Auto field plan: track added " + track.name);
