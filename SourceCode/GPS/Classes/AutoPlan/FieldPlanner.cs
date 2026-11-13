@@ -479,6 +479,9 @@ namespace AgOpenGPS.AutoPlan
                     // passes ending on the middle line (gores) are driven at the end, both halves together
                     ps.GoreLinePoint = midO;
                     ps.GoreLineNormal = midN;
+                    // few full passes in a half: skip one, so the turns at the ends fit without
+                    // loops or transfers
+                    if (ps.OrderMode == 0 && !ps.HeadlandReverseTurns) ps.OrderMode = 2;
                 }
                 ps.SplitField = false;
                 ps.WedgeField = false;
@@ -491,7 +494,16 @@ namespace AgOpenGPS.AutoPlan
                 {
                     PlanPoint l = res.Points[res.Points.Count - 1];
                     PlanPoint f = r.Points[0];
-                    var conn = Connect(new V2(l.E, l.N), l.Heading, new V2(f.E, f.N), f.Heading, R, W, s, fullGrid, loop);
+                    // wedge halves meet side by side: a three point turn instead of a loop
+                    List<ReverseManeuver.Pose> man = partRegions != null
+                        ? ReverseManeuver.KTurn(new V2(l.E, l.N), l.Heading, new V2(f.E, f.N), f.Heading, R, s, fullGrid.Clear, false)
+                        : null;
+                    if (man != null)
+                    {
+                        AddManoeuvre(res, man);
+                        res.Turns++;
+                    }
+                    var conn = man != null ? null : Connect(new V2(l.E, l.N), l.Heading, new V2(f.E, f.N), f.Heading, R, W, s, fullGrid, loop);
                     if (conn != null)
                     {
                         if (CountOutside(conn, fullGrid) > 0) res.TurnsLeavingField++;
@@ -535,6 +547,18 @@ namespace AgOpenGPS.AutoPlan
             }
             res.PartCount = parts.Count;
             res.Ok = true;
+        }
+
+        // Points of a forward / backward manoeuvre (not the end points: they are the pass ends)
+        private static void AddManoeuvre(FieldPlanResult res, List<ReverseManeuver.Pose> man)
+        {
+            for (int i = 1; i < man.Count - 1; i++)
+            {
+                V2 a = man[i - 1].P, b = man[i].P;
+                double hd = HeadingOf(a, b);
+                if (man[i].Reverse) hd = (hd + Math.PI) % TwoPi;
+                res.Points.Add(new PlanPoint { E = b.E, N = b.N, Heading = hd, IsWork = false, IsReverse = man[i].Reverse });
+            }
         }
 
         /// <summary>
@@ -598,6 +622,9 @@ namespace AgOpenGPS.AutoPlan
                 if (res.Points.Count == 0) return true;
                 PlanPoint l = res.Points[res.Points.Count - 1];
                 double h1 = HeadingOf(pts[0], pts[Math.Min(3, pts.Count - 1)]);
+                // side by side: three point turn
+                var km = ReverseManeuver.KTurn(new V2(l.E, l.N), l.Heading, pts[0], h1, R, s, fullGrid.Clear);
+                if (km != null) { AddManoeuvre(res, km); res.Turns++; return true; }
                 var conn = Connect(new V2(l.E, l.N), l.Heading, pts[0], h1, R, W, s, fullGrid, loop, set.TurnsAtBoundary);
                 if (conn == null) return false;
                 AddTurn(conn);
@@ -625,16 +652,11 @@ namespace AgOpenGPS.AutoPlan
                     // the previous gore ended on the middle line: three point turn into this one
                     PlanPoint l = res.Points[res.Points.Count - 1];
                     double h1 = HeadingOf(pts[0], pts[Math.Min(3, pts.Count - 1)]);
-                    var man = ReverseManeuver.KTurn(new V2(l.E, l.N), l.Heading, pts[0], h1, R, s, fullGrid.Clear, false);
+                    var man = ReverseManeuver.KTurn(new V2(l.E, l.N), l.Heading, pts[0], h1, R, s, fullGrid.Clear, false)
+                        ?? ReverseManeuver.Find(new V2(l.E, l.N), l.Heading, pts[0], h1, R, s, fullGrid.Clear);
                     if (man != null)
                     {
-                        for (int i = 1; i < man.Count - 1; i++)
-                        {
-                            V2 a = man[i - 1].P, b = man[i].P;
-                            double hd = HeadingOf(a, b);
-                            if (man[i].Reverse) hd = (hd + Math.PI) % TwoPi;
-                            res.Points.Add(new PlanPoint { E = b.E, N = b.N, Heading = hd, IsWork = false, IsReverse = man[i].Reverse });
-                        }
+                        AddManoeuvre(res, man);
                         res.Turns++;
                         done = true;
                     }
@@ -849,8 +871,10 @@ namespace AgOpenGPS.AutoPlan
             V2 orderStart = startPos;
             double orderHeading = startHeading;
             if (slantFirst != null) ExitPose(slantFirst, out orderStart, out orderHeading);
+            // a wedge half: the neighbour pass (only one left) is reached with a three point turn
+            bool wedgeKTurns = !set.HeadlandReverseTurns && set.GoreLinePoint.HasValue;
             List<Step> order = ChooseOrder(passes, R, W, fenceGrid, orderStart, orderHeading, s, transferLoop, orderMode, out string orderName,
-                set.HeadlandReverseTurns);
+                set.HeadlandReverseTurns || wedgeKTurns);
             if (slantFirst != null) order.Insert(0, slantFirst);
             else if (!set.HeadlandReverseTurns) order = AlternateSlant(order, passes, fenceGrid, R);
             res.OrderDescription = orderName;
@@ -904,6 +928,26 @@ namespace AgOpenGPS.AutoPlan
                         }
                         if (man == null) man = ReverseManeuver.Find(lastP, lastH, pts[0], entryH, R, s, fenceGrid.Clear);
                         else if (cut < path.Count) path.RemoveRange(cut, path.Count - cut);
+                        if (man != null)
+                        {
+                            foreach (var q in man)
+                                path.Add(new PlanPoint { E = q.P.E, N = q.P.N, IsWork = false, IsReverse = q.Reverse });
+                            res.Turns++;
+                            AppendPoints(path, pts, true, true);
+                            continue;
+                        }
+                    }
+                }
+                if (i > 0 && wedgeKTurns)
+                {
+                    LastPose(path, s, out V2 lp, out double lh);
+                    double eh = HeadingOf(pts[0], pts[Math.Min(3, pts.Count - 1)]);
+                    V2 dd = pts[0] - lp;
+                    double lat = Math.Abs(dd.E * Math.Cos(lh) - dd.N * Math.Sin(lh));
+                    if (lat < 2.0 * R - 0.5 && Math.Abs(AngleDiff(eh, lh + Math.PI)) < 0.3)
+                    {
+                        var man = ReverseManeuver.KTurn(lp, lh, pts[0], eh, R, s, fenceGrid.Clear)
+                            ?? ReverseManeuver.Find(lp, lh, pts[0], eh, R, s, fenceGrid.Clear);
                         if (man != null)
                         {
                             foreach (var q in man)
