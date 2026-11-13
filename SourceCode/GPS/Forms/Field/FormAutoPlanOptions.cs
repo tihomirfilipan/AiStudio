@@ -203,7 +203,7 @@ namespace AgOpenGPS.Forms.Field
             tileSplit.Selected = set.setAutoPlan_splitField;
             tileSlant = new PictureTile(T("Pass along a gently slanted edge", "Prohod uz kosu među"), DrawSlantPass);
             tileSlant.Selected = set.setAutoPlan_slantPass;
-            tileWedge = new PictureTile(T("Wedge field: along both long edges, gores in the middle", "Parcela u klin: uz obje duge međe, oklinci u sredini"), DrawWedge);
+            tileWedge = new PictureTile(T("Wedge field (gores in the middle)", "Parcela u klin (oklinci u sredini)"), DrawWedge);
             tileWedge.Selected = set.setAutoPlan_wedgeField;
             AddGroup(extras, T("Extras (tap to switch on/off)", "Dodatno (dodir uključi/isključi)"), false, -1,
                 tileWorkHeadland, tileExtraPass, tileAddTrack, tileAvoidWorked, tileSplit, tileSlant, tileWedge);
@@ -259,6 +259,9 @@ namespace AgOpenGPS.Forms.Field
             for (int i = 0; i < tiles.Length; i++)
             {
                 PictureTile t = tiles[i];
+                // many tiles in one row: narrower (and a bit taller for the text), so all of them
+                // fit left of the preview
+                if (tiles.Length > 5) t.Size = new Size(128, 168);
                 if (single)
                 {
                     t.Selected = i == selected;
