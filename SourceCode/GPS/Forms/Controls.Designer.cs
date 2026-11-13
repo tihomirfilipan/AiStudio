@@ -2051,7 +2051,7 @@ namespace AgOpenGPS
         {
             if (isJobStarted)
             {
-                if (autoBtnState == btnStates.Off && manualBtnState == btnStates.Off)
+                // sections that are on are switched off by the delete itself (no need to do it first)
                 {
                     DialogResult result = FormDialog.ShowQuestion(
                         gStr.gsDeleteAllContoursAndSections,
@@ -2117,10 +2117,6 @@ namespace AgOpenGPS
                     {
                         TimedMessageBox(1500, gStr.gsNothingDeleted, gStr.gsActionHasBeenCancelled);
                     }
-                }
-                else
-                {
-                    TimedMessageBox(1500, "Sections are on", "Turn Auto or Manual Off First");
                 }
             }
         }
