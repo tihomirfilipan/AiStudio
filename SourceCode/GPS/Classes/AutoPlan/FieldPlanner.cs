@@ -260,6 +260,11 @@ namespace AgOpenGPS.AutoPlan
                     if (sc > best) { best = sc; e1 = i; e2 = j; }
                 }
             if (e1 < 0 || best < 30.0) return null;
+            // the long edges nearly parallel (under about 4 degrees): no wedge, a normal field
+            {
+                V2 da = Dir(edges[e1].a, edges[e1].b), db = Dir(edges[e2].a, edges[e2].b);
+                if (Math.Abs(da.E * db.N - da.N * db.E) < 0.07) return null;
+            }
 
             V2 pA = edges[e1].a, dA = Dir(edges[e1].a, edges[e1].b);
             V2 pB = edges[e2].b, dB = Dir(edges[e2].b, edges[e2].a);   // same way as edge 1
@@ -2082,9 +2087,12 @@ namespace AgOpenGPS.AutoPlan
                 sorted.Sort((x, y) => x.Lane.CompareTo(y.Lane));
                 for (int skip = 0; skip <= 5; skip++)
                 {
-                    for (int variant = 0; variant < (skip == 0 ? 1 : 3); variant++)
+                    for (int variant = 0; variant < (skip == 0 ? 1 : 4); variant++)
                     {
-                        List<int> idx = SkipPattern(sorted.Count, skip + 1, variant);
+                        // variant 3: out over the field on every other pass, back on the others
+                        // (one wide loop: all turns half circles side by side, none crossing)
+                        List<int> idx = variant == 3 ? RacetrackPattern(sorted.Count, skip + 1) : SkipPattern(sorted.Count, skip + 1, variant);
+                        if (idx == null) continue;
                         for (int flip = 0; flip < 2; flip++)
                         {
                             for (int firstRev = 0; firstRev < 2; firstRev++)
@@ -2106,11 +2114,12 @@ namespace AgOpenGPS.AutoPlan
                                 }
                                 EntryPose(plan[0].Pass, plan[0].Reverse, out V2 sp, out double sh);
                                 double sc = ScoreOrder(plan) + DubinsLength(startPos, startHeading, sp, sh, R);
+                                if (variant == 3) sc *= 0.85;   // preferred when about as good
                                 if (sc < bestScore)
                                 {
                                     bestScore = sc;
                                     bestPlan = plan;
-                                    name = "skip passes, " + skip;
+                                    name = variant == 3 ? "every other pass out, back on the others" : "skip passes, " + skip;
                                 }
                             }
                         }
@@ -2211,6 +2220,17 @@ namespace AgOpenGPS.AutoPlan
         /// (step 1 = neighbours): blocks of 2*step lanes, 0, step, 1, step+1, ... so passes in a
         /// row are step or step-1 lanes apart.
         /// </summary>
+        // Every other pass out (0, 2, 4, ...), the others back; null for other steps
+        private static List<int> RacetrackPattern(int n, int step)
+        {
+            if (step != 2 || n < 4) return null;
+            var r = new List<int>(n);
+            for (int i = 0; i < n; i += 2) r.Add(i);
+            int last = n % 2 == 0 ? n - 1 : n - 2;
+            for (int i = last; i >= 1; i -= 2) r.Add(i);
+            return r;
+        }
+
         private static List<int> SkipPattern(int n, int step, int variant = 0)
         {
             var r = new List<int>(n);
