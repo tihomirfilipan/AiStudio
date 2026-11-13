@@ -981,6 +981,17 @@ namespace AgOpenGPS.AutoPlan
                 int id = edgeKey[best];
                 straightEndByEnd[id] = Math.Max(straightEndByEnd.TryGetValue(id, out double v) ? v : R + W * 0.5, d);
             }
+            // where a three point turn starts: the headland line of that end goes there
+            void NoteTurnStart(List<ReverseManeuver.Pose> man)
+            {
+                if (man.Count < 3) return;
+                double h0 = HeadingOf(man[0].P, man[1].P);
+                int k = 1;
+                while (k < man.Count && !man[k].Reverse && Math.Abs(AngleDiff(HeadingOf(man[k - 1].P, man[k].P), h0)) < 0.03) k++;
+                V2 a0 = man[k - 1].P;
+                double d0 = AheadEdgeDistance(fenceGrid, a0, h0, 100.0);
+                if (d0 < 100.0) NoteStraightEnd(a0, d0);
+            }
             for (int i = 0; i < order.Count; i++)
             {
                 Step st = order[i];
@@ -1012,6 +1023,7 @@ namespace AgOpenGPS.AutoPlan
                         if (man != null)
                         {
                             AddManoeuvreWorked(path, man);
+                            NoteTurnStart(man);
                             res.Turns++;
                             AppendPoints(path, pts, true, true);
                             continue;
@@ -1041,6 +1053,7 @@ namespace AgOpenGPS.AutoPlan
                         if (man != null)
                         {
                             AddManoeuvreWorked(path, man);
+                            NoteTurnStart(man);
                             res.Turns++;
                             AppendPoints(path, pts, true, true);
                             continue;
@@ -1099,7 +1112,18 @@ namespace AgOpenGPS.AutoPlan
                 double lineDist = set.HeadlandReverseTurns ? ReverseManeuver.KTurnReach(W, R) + W * 0.5 + 0.3 : R + W * 0.5 + 0.3;
                 // (three point turns all start at the same distance: one line for every end)
                 List<V2> line = InsetEnds(fence, endRunId, lineDist, s, default, 0.0, set.HeadlandReverseTurns ? null : byEnd, edgeKey, true);
-                if (line != null && line.Count >= 10) res.SectionLine = line;
+                if (line != null && line.Count >= 10)
+                {
+                    res.SectionLine = line;
+                    // the work of every pass ends on the line (one straight headland per end)
+                    var inLine = new PolygonTester(line);
+                    for (int k = 0; k < path.Count; k++)
+                    {
+                        PlanPoint pp = path[k];
+                        if (!pp.IsWork || pp.IsHeadland) continue;
+                        if (!inLine.Inside(new V2(pp.E, pp.N))) { pp.IsWork = false; path[k] = pp; }
+                    }
+                }
             }
 
             // --- Headland: strips at the pass ends, or laps all around ---
