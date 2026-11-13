@@ -24,7 +24,7 @@ namespace AgOpenGPS.Forms.Field
         private readonly PictureTile tileEnds, tileAllAround;
         private readonly PictureTile tileTurnsEdge, tileTurnsShort, tileTurnsReverse;
         private readonly PictureTile tileOrderAuto, tileOrderNeighbour, tileOrderSkip;
-        private readonly PictureTile tileWorkHeadland, tileExtraPass, tileAddTrack, tileAvoidWorked, tileSplit, tileSlant;
+        private readonly PictureTile tileWorkHeadland, tileExtraPass, tileAddTrack, tileAvoidWorked, tileSplit, tileSlant, tileWedge;
 
         // live preview
         private readonly List<V2> fence;
@@ -203,15 +203,17 @@ namespace AgOpenGPS.Forms.Field
             tileSplit.Selected = set.setAutoPlan_splitField;
             tileSlant = new PictureTile(T("Pass along a gently slanted edge", "Prohod uz kosu među"), DrawSlantPass);
             tileSlant.Selected = set.setAutoPlan_slantPass;
+            tileWedge = new PictureTile(T("Wedge field: along both long edges, gores in the middle", "Parcela u klin: uz obje duge međe, oklinci u sredini"), DrawWedge);
+            tileWedge.Selected = set.setAutoPlan_wedgeField;
             AddGroup(extras, T("Extras (tap to switch on/off)", "Dodatno (dodir uključi/isključi)"), false, -1,
-                tileWorkHeadland, tileExtraPass, tileAddTrack, tileAvoidWorked, tileSplit, tileSlant);
+                tileWorkHeadland, tileExtraPass, tileAddTrack, tileAvoidWorked, tileSplit, tileSlant, tileWedge);
             root.Controls.Add(extras);
 
             // every change redraws the preview (after a short pause)
             previewTimer = new Timer { Interval = 450 };
             previewTimer.Tick += (s, e) => { previewTimer.Stop(); StartPreview(); };
             foreach (PictureTile t in new[] { tilePath, tileGuidance, tileEnds, tileAllAround, tileTurnsEdge, tileTurnsShort, tileTurnsReverse,
-                tileOrderAuto, tileOrderNeighbour, tileOrderSkip, tileWorkHeadland, tileExtraPass, tileAddTrack, tileAvoidWorked, tileSplit, tileSlant })
+                tileOrderAuto, tileOrderNeighbour, tileOrderSkip, tileWorkHeadland, tileExtraPass, tileAddTrack, tileAvoidWorked, tileSplit, tileSlant, tileWedge })
                 t.Click += (s, e) => OptionsChanged();
             nudWidth.ValueChanged += (s, e) => OptionsChanged();
             nudRadius.ValueChanged += (s, e) => OptionsChanged();
@@ -331,6 +333,7 @@ namespace AgOpenGPS.Forms.Field
                 AvoidWorked = tileAvoidWorked.Selected,
                 SplitField = tileSplit.Selected,
                 SlantEdgePass = tileSlant.Selected,
+                WedgeField = tileWedge.Selected,
                 ReferenceEdge = edgeIndex >= 0 ? new List<V2>(edges[edgeIndex]) : pickedEdge
             };
         }
@@ -351,6 +354,7 @@ namespace AgOpenGPS.Forms.Field
             tileAvoidWorked.Selected = false;
             tileSplit.Selected = false;
             tileSlant.Selected = false;
+            tileWedge.Selected = false;
             edgeIndex = -1;
             OptionsChanged();
         }
@@ -419,6 +423,7 @@ namespace AgOpenGPS.Forms.Field
             set.setAutoPlan_avoidWorked = tileAvoidWorked.Selected;
             set.setAutoPlan_splitField = tileSplit.Selected;
             set.setAutoPlan_slantPass = tileSlant.Selected;
+            set.setAutoPlan_wedgeField = tileWedge.Selected;
             set.Save();
 
             DialogResult = DialogResult.OK;
@@ -591,6 +596,26 @@ namespace AgOpenGPS.Forms.Field
             }
             using (var p = new Pen(Color.White, 2f) { DashStyle = DashStyle.Dash })
                 g.DrawLine(p, r.Left + 4, r.Top + 52, r.Left + 52, r.Top + 52);
+        }
+
+        private static void DrawWedge(Graphics g, Rectangle r)
+        {
+            // wedge field: passes along the left and the right long edge, gores where they meet
+            int cx = (r.Left + r.Right) / 2;
+            var poly = new[] { new Point(r.Left + 4, r.Bottom - 4), new Point(cx - 10, r.Top + 4), new Point(cx + 10, r.Top + 4), new Point(r.Right - 4, r.Bottom - 4) };
+            using (var b = new SolidBrush(CField)) g.FillPolygon(b, poly);
+            using (var p = new Pen(CEdge, 2f)) g.DrawPolygon(p, poly);
+            double ln = Math.Atan2(cx - 10 - (r.Left + 4), (r.Bottom - 4) - (r.Top + 4));
+            using (Pen p = P(CPass, 1.3f))
+                for (int i = 1; i <= 4; i++)
+                {
+                    int x0 = r.Left + 4 + i * 7, x1 = r.Right - 4 - i * 7;
+                    int top = r.Top + 6 + (int)(i * 7 / Math.Tan(Math.Max(0.05, ln)) * 0.35);
+                    g.DrawLine(p, x0, r.Bottom - 6, cx - 1, Math.Max(r.Top + 6, top));
+                    g.DrawLine(p, x1, r.Bottom - 6, cx + 1, Math.Max(r.Top + 6, top));
+                }
+            using (var p = new Pen(Color.FromArgb(255, 105, 180), 2f) { DashStyle = DashStyle.Dash })
+                g.DrawLine(p, cx, r.Top + 4, cx, r.Bottom - 4);
         }
 
         private static void DrawSlantPass(Graphics g, Rectangle r)

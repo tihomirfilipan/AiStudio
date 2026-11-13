@@ -103,6 +103,12 @@ namespace AgOpenGPS.AutoPlan
         /// <summary>Passes only inside this polygon (one half of a wedge field); null = everywhere.</summary>
         public List<V2> PassRegion;
 
+        /// <summary>
+        /// Middle line of a wedge field (a point and its normal): passes ending on it are gores,
+        /// they are left out here and returned in FieldPlanResult.Gores.
+        /// </summary>
+        public V2? GoreLinePoint, GoreLineNormal;
+
         public FieldPlanSettings Clone() => (FieldPlanSettings)MemberwiseClone();
 
         /// <summary>
@@ -144,6 +150,9 @@ namespace AgOpenGPS.AutoPlan
 
         /// <summary>Number of field parts with their own pass direction (1 = not split).</summary>
         public int PartCount = 1;
+
+        /// <summary>Gores of a wedge half (passes ending on the middle line), see GoreLinePoint.</summary>
+        public List<List<V2>> Gores = new List<List<V2>>();
     }
 
     /// <summary>
@@ -163,10 +172,11 @@ namespace AgOpenGPS.AutoPlan
             try
             {
                 List<List<V2>> wedgeRefs = null, wedgeRegions = null;
-                List<List<V2>> parts = set.WedgeField ? SplitWedge(fence, WedgeTurnRoom(set), out wedgeRefs, out wedgeRegions)
+                V2 midO = new V2(0, 0), midN = new V2(0, 0);
+                List<List<V2>> parts = set.WedgeField ? SplitWedge(fence, WedgeTurnRoom(set), out wedgeRefs, out wedgeRegions, out midO, out midN)
                     : set.SplitField ? SplitAtBends(fence) : null;
                 if (parts != null && parts.Count > 1)
-                    BuildParts(parts, fence, set, startPos, startHeading, res, wedgeRefs, wedgeRegions);
+                    BuildParts(parts, fence, set, startPos, startHeading, res, wedgeRefs, wedgeRegions, midO, midN);
                 else
                     BuildInternal(fence, set, startPos, startHeading, res);
             }
@@ -198,13 +208,16 @@ namespace AgOpenGPS.AutoPlan
 
         public static List<List<V2>> SplitWedge(IList<V2> fenceIn, double turnRoom, out List<List<V2>> refs)
         {
-            return SplitWedge(fenceIn, turnRoom, out refs, out _);
+            return SplitWedge(fenceIn, turnRoom, out refs, out _, out _, out _);
         }
 
-        public static List<List<V2>> SplitWedge(IList<V2> fenceIn, double turnRoom, out List<List<V2>> refs, out List<List<V2>> regions)
+        public static List<List<V2>> SplitWedge(IList<V2> fenceIn, double turnRoom, out List<List<V2>> refs, out List<List<V2>> regions,
+            out V2 midPoint, out V2 midNormal)
         {
             refs = null;
             regions = null;
+            midPoint = new V2(0, 0);
+            midNormal = new V2(0, 0);
             var f = new List<V2>(fenceIn);
             if (f.Count < 4) return null;
             if (SignedArea(f) < 0) f.Reverse();
@@ -261,6 +274,8 @@ namespace AgOpenGPS.AutoPlan
             // every half reaches past the middle line by the turn room: its headland lies across
             // the line (turns there), its passes end on the line
             regions = new List<List<V2>> { ResampleLoop(left, 1.0), ResampleLoop(right, 1.0) };
+            midPoint = m0;
+            midNormal = mN;
             left = ClipHalf(f, m0 - mN * turnRoom, mN, 1.0);
             right = ClipHalf(f, m0 + mN * turnRoom, mN, -1.0);
 
@@ -421,8 +436,9 @@ namespace AgOpenGPS.AutoPlan
 
         /// <summary>Plans every part with its own direction and joins them, nearest part next.</summary>
         private static void BuildParts(List<List<V2>> parts, IList<V2> fenceIn, FieldPlanSettings set, V2 startPos, double startHeading, FieldPlanResult res,
-            List<List<V2>> partRefs = null, List<List<V2>> partRegions = null)
+            List<List<V2>> partRefs = null, List<List<V2>> partRegions = null, V2 midO = default, V2 midN = default)
         {
+            var goresOf = new Dictionary<int, List<List<V2>>>();
             double W = set.WorkWidth, R = Math.Max(0.5, set.TurnRadius);
             var full = new List<V2>(fenceIn);
             if (SignedArea(full) < 0) full.Reverse();
@@ -460,11 +476,15 @@ namespace AgOpenGPS.AutoPlan
                     if (pi >= 0 && pi < partRegions.Count) ps.PassRegion = partRegions[pi];
                     // the far side of a half is the middle line: no extra pass along it
                     ps.AddExtraPass = false;
+                    // passes ending on the middle line (gores) are driven at the end, both halves together
+                    ps.GoreLinePoint = midO;
+                    ps.GoreLineNormal = midN;
                 }
                 ps.SplitField = false;
                 ps.WedgeField = false;
                 var r = new FieldPlanResult();
                 BuildInternal(part, ps, pos, heading, r);
+                if (r.Gores.Count > 0) goresOf[parts.IndexOf(part)] = r.Gores;
                 if (!r.Ok || r.Points.Count < 2) continue;
 
                 if (!first)
@@ -503,6 +523,7 @@ namespace AgOpenGPS.AutoPlan
                 pos = new V2(last.E, last.N);
                 heading = last.Heading;
             }
+            if (goresOf.Count > 0) AddGores(goresOf, midO, midN, set, R, W, s, fullGrid, loop, res);
             if (res.Points.Count < 2) { res.Error = "No passes fit inside the field"; return; }
 
             res.OrderDescription = names.Count > 0 ? names[0] : "";
@@ -514,6 +535,113 @@ namespace AgOpenGPS.AutoPlan
             }
             res.PartCount = parts.Count;
             res.Ok = true;
+        }
+
+        /// <summary>
+        /// Gores of a wedge field, after all the full passes: from the shortest to the longest,
+        /// one half up to the middle line, a three point turn there (over the unworked longer
+        /// gores) into the gore of the other half, down it, along the headland to the next one.
+        /// </summary>
+        private static void AddGores(Dictionary<int, List<List<V2>>> goresOf, V2 midO, V2 midN, FieldPlanSettings set,
+            double R, double W, double s, PolygonTester fullGrid, List<V2> loop, FieldPlanResult res)
+        {
+            double DistMid(V2 p) => Math.Abs((p.E - midO.E) * midN.E + (p.N - midO.N) * midN.N);
+            // every gore from its outer end to its end on the middle line, shortest first
+            List<List<V2>> Oriented(int key)
+            {
+                var list = new List<List<V2>>();
+                if (!goresOf.TryGetValue(key, out var g)) return list;
+                foreach (var gore in g)
+                {
+                    var pts = new List<V2>(gore);
+                    if (DistMid(pts[0]) < DistMid(pts[pts.Count - 1])) pts.Reverse();
+                    if (pts.Count < 2) continue;
+                    // straight on to the middle line itself (the work area stops a bit before it)
+                    V2 end = pts[pts.Count - 1];
+                    V2 dir = Dir(pts[Math.Max(0, pts.Count - 4)], end);
+                    double toward = -Math.Sign((end.E - midO.E) * midN.E + (end.N - midO.N) * midN.N);
+                    double cos = Math.Abs(dir.E * midN.E + dir.N * midN.N);
+                    if (cos > 0.02)
+                    {
+                        double ext = DistMid(end) / cos;
+                        V2 dn = midN * toward;
+                        if (dir.E * dn.E + dir.N * dn.N > 0)
+                            for (double t = s; t <= ext; t += s) pts.Add(end + dir * t);
+                    }
+                    list.Add(pts);
+                }
+                list.Sort((a, b) => OpenLength(a).CompareTo(OpenLength(b)));
+                return list;
+            }
+            List<List<V2>> up = Oriented(0), down = Oriented(1);
+            if (up.Count == 0 && down.Count == 0) return;
+            if (up.Count == 0) { up = down; down = new List<List<V2>>(); }
+
+            void AddWork(List<V2> pts)
+            {
+                for (int i = 0; i < pts.Count; i++)
+                {
+                    V2 a = pts[Math.Max(0, i - 1)], b = pts[Math.Min(pts.Count - 1, Math.Max(1, i))];
+                    res.Points.Add(new PlanPoint { E = pts[i].E, N = pts[i].N, Heading = HeadingOf(a, b), IsWork = true });
+                }
+                res.Passes++;
+            }
+            void AddTurn(List<V2> conn)
+            {
+                for (int i = 1; i < conn.Count - 1; i++)
+                    res.Points.Add(new PlanPoint { E = conn[i].E, N = conn[i].N, Heading = HeadingOf(conn[i - 1], conn[i]), IsWork = false });
+                if (CountOutside(conn, fullGrid) > 0) res.TurnsLeavingField++;
+                res.Turns++;
+            }
+            bool ConnectTo(List<V2> pts)
+            {
+                if (res.Points.Count == 0) return true;
+                PlanPoint l = res.Points[res.Points.Count - 1];
+                double h1 = HeadingOf(pts[0], pts[Math.Min(3, pts.Count - 1)]);
+                var conn = Connect(new V2(l.E, l.N), l.Heading, pts[0], h1, R, W, s, fullGrid, loop, set.TurnsAtBoundary);
+                if (conn == null) return false;
+                AddTurn(conn);
+                return true;
+            }
+
+            var order = new List<List<V2>>();
+            for (int i = 0; i < Math.Max(up.Count, down.Count); i++)
+            {
+                if (i < up.Count) order.Add(up[i]);
+                if (i < down.Count)
+                {
+                    var d = new List<V2>(down[i]);
+                    d.Reverse();     // from the middle line down
+                    order.Add(d);
+                }
+            }
+            for (int k = 0; k < order.Count; k++)
+            {
+                List<V2> pts = order[k];
+                bool fromMiddle = DistMid(pts[0]) < 2.0;
+                bool done = false;
+                if (fromMiddle && res.Points.Count > 0)
+                {
+                    // the previous gore ended on the middle line: three point turn into this one
+                    PlanPoint l = res.Points[res.Points.Count - 1];
+                    double h1 = HeadingOf(pts[0], pts[Math.Min(3, pts.Count - 1)]);
+                    var man = ReverseManeuver.KTurn(new V2(l.E, l.N), l.Heading, pts[0], h1, R, s, fullGrid.Clear, false);
+                    if (man != null)
+                    {
+                        for (int i = 1; i < man.Count - 1; i++)
+                        {
+                            V2 a = man[i - 1].P, b = man[i].P;
+                            double hd = HeadingOf(a, b);
+                            if (man[i].Reverse) hd = (hd + Math.PI) % TwoPi;
+                            res.Points.Add(new PlanPoint { E = b.E, N = b.N, Heading = hd, IsWork = false, IsReverse = man[i].Reverse });
+                        }
+                        res.Turns++;
+                        done = true;
+                    }
+                }
+                if (!done && !ConnectTo(pts)) continue;
+                AddWork(pts);
+            }
         }
 
         private static void BuildInternal(IList<V2> fenceIn, FieldPlanSettings set, V2 startPos, double startHeading, FieldPlanResult res)
@@ -629,6 +757,16 @@ namespace AgOpenGPS.AutoPlan
                 }
                 emptyInRow = 0;
                 res.SkippedPieces += pieces - 1;
+                if (set.GoreLinePoint.HasValue && set.GoreLineNormal.HasValue)
+                {
+                    V2 go = set.GoreLinePoint.Value, gn = set.GoreLineNormal.Value;
+                    double DistMid(V2 p) => Math.Abs((p.E - go.E) * gn.E + (p.N - go.N) * gn.N);
+                    if (DistMid(best[0]) < W * 0.6 || DistMid(best[best.Count - 1]) < W * 0.6)
+                    {
+                        res.Gores.Add(ResampleOpen(best, s));
+                        continue;
+                    }
+                }
                 passes.Add(new Pass { Lane = lane, Pts = ResampleOpen(best, s) });
             }
 

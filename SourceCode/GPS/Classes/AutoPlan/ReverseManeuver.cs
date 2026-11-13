@@ -37,18 +37,25 @@ namespace AgOpenGPS.AutoPlan
         /// Null when the passes are not side by side (opposite headings, closer than two radii)
         /// or it does not fit.
         /// </summary>
-        public static List<Pose> KTurn(V2 p0, double h0, V2 p1, double h1, double R, double spacing, Func<V2, bool> inside)
+        public static List<Pose> KTurn(V2 p0, double h0, V2 p1, double h1, double R, double spacing, Func<V2, bool> inside,
+            bool nearBoundary = true)
         {
             double dh = Math.IEEERemainder(h1 - h0 - Math.PI, 2.0 * Math.PI);
-            if (Math.Abs(dh) > 0.2) return null;
+            // gores meeting on the middle line of a wedge are not quite parallel
+            if (Math.Abs(dh) > (nearBoundary ? 0.2 : 0.5)) return null;
             V2 d = new V2(Math.Sin(h0), Math.Cos(h0));
             V2 r = new V2(Math.Cos(h0), -Math.Sin(h0));        // to the right of the heading
             V2 rel = p1 - p0;
             double along = rel.E * d.E + rel.N * d.N;
             double lat = rel.E * r.E + rel.N * r.N;
             double L = Math.Abs(lat);
-            if (L < 0.5 || L >= 2.0 * R - 0.01) return null;
-            V2 u = r * Math.Sign(lat);                          // towards the next pass
+            if (L >= 2.0 * R - 0.01 || (nearBoundary && L < 0.5)) return null;
+            // the side of the next pass: where it runs, a bit along it (its start may be right here)
+            V2 d1 = new V2(Math.Sin(h1), Math.Cos(h1));
+            V2 ahead = p1 + d1 * 5.0 - p0;
+            double sideLat = L >= 0.5 ? lat : ahead.E * r.E + ahead.N * r.N;
+            if (Math.Abs(sideLat) < 1e-6) return null;
+            V2 u = r * Math.Sign(sideLat);                      // towards the next pass
             double alpha = Math.Acos(-L / (2.0 * R));           // forward turn (over 90 degrees)
             double step = Math.Max(0.2, spacing);
             int Steps(double len) => Math.Max(2, (int)Math.Ceiling(len / step));
@@ -90,6 +97,16 @@ namespace AgOpenGPS.AutoPlan
 
             // as close to the boundary as it fits
             double eMin = Math.Max(0.0, along - 2.0 * R * Math.Sin(alpha));
+            if (!nearBoundary)
+            {
+                // right where the pass ends (top of a gore): as soon as it fits
+                for (double e = eMin; e <= eMin + 40.0; e += 0.5)
+                {
+                    List<Pose> k = Make(e);
+                    if (k != null) return k;
+                }
+                return null;
+            }
             for (double e = eMin + 40.0; e >= eMin - 1e-9; e -= 0.5)
             {
                 List<Pose> k = Make(e);

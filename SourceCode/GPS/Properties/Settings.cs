@@ -45,6 +45,7 @@ namespace AgOpenGPS.Properties
         public bool setAutoPlan_reverseTurns = false;
         public bool setAutoPlan_avoidWorked = false;
         public bool setAutoPlan_splitField = false;
+        public bool setAutoPlan_wedgeField = false;
         public bool setAutoPlan_slantPass = false;
         public bool setDisplay_planCard = false;
 
