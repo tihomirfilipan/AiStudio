@@ -2687,7 +2687,9 @@ namespace AgOpenGPS.AutoPlan
             for (double e = 0; e <= 160.0; e += 0.25)
             {
                 V2 c = p + dir * e + n * R;
-                if (!fence.Inside(c) || fence.EdgeDistance(c, target + 1.0) < target) break;
+                // room to the end ahead; a long side next to the pass does not stop it (the turn
+                // itself is checked to stay inside afterwards)
+                if (!fence.Inside(c) || AheadEdgeDistance(fence, c, Math.Atan2(dir.E, dir.N), target + 1.0) < target) break;
                 best = e;
             }
             return best;
