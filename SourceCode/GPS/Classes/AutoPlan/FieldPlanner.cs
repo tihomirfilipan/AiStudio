@@ -558,7 +558,24 @@ namespace AgOpenGPS.AutoPlan
             var path = new List<PlanPoint>();
             // farthest point from the boundary where a pass still runs straight at a turn: the
             // sections' switch line goes there, so every pass reaches it (a straight end)
-            double straightEnd = R + W * 0.5;
+            var straightEndByEnd = new Dictionary<int, double>();
+            // every straight piece of an end (split at its corners) gets its own distance
+            int[] edgeKey = endRunId == null ? null : EdgePieces(fence, endRunId);
+            void NoteStraightEnd(V2 p, double d)
+            {
+                if (endRunId == null) return;
+                int best = -1;
+                double bd = double.MaxValue;
+                for (int k = 0; k < fence.Count; k++)
+                {
+                    if (endRunId[k] < 0) continue;
+                    double q = Sq(fence[k].E - p.E) + Sq(fence[k].N - p.N);
+                    if (q < bd) { bd = q; best = k; }
+                }
+                if (best < 0) return;
+                int id = edgeKey[best];
+                straightEndByEnd[id] = Math.Max(straightEndByEnd.TryGetValue(id, out double v) ? v : R + W * 0.5, d);
+            }
             for (int i = 0; i < order.Count; i++)
             {
                 Step st = order[i];
@@ -599,8 +616,8 @@ namespace AgOpenGPS.AutoPlan
                             double d0 = fenceGrid.EdgeDistance(turn[Math.Max(0, k0 - 1)], 100.0);
                             double d1 = fenceGrid.EdgeDistance(turn[turn.Count - Math.Max(1, k1)], 100.0);
                             // only real turns at the ends, not transfers far from the edge
-                            if (d0 < R + W * 0.5 + 2.0 * R) straightEnd = Math.Max(straightEnd, d0);
-                            if (d1 < R + W * 0.5 + 2.0 * R) straightEnd = Math.Max(straightEnd, d1);
+                            if (d0 < R + W * 0.5 + 2.0 * R) { NoteStraightEnd(turn[Math.Max(0, k0 - 1)], d0); }
+                            if (d1 < R + W * 0.5 + 2.0 * R) { NoteStraightEnd(turn[turn.Count - Math.Max(1, k1)], d1); }
                         }
 
                         // sections switch off and on always at the same distance from the boundary:
@@ -627,7 +644,9 @@ namespace AgOpenGPS.AutoPlan
 
             if (endsOnly && !set.WorkHeadland)
             {
-                List<V2> line = InsetEnds(fence, endRunId, straightEnd + 0.3, s);
+                var byEnd = new Dictionary<int, double>();
+                foreach (var kv in straightEndByEnd) byEnd[kv.Key] = kv.Value + 0.3;
+                List<V2> line = InsetEnds(fence, endRunId, R + W * 0.5 + 0.3, s, default, 0.0, byEnd, edgeKey);
                 if (line != null && line.Count >= 10) res.SectionLine = line;
             }
 
@@ -959,20 +978,61 @@ namespace AgOpenGPS.AutoPlan
         }
 
         /// <summary>
+        /// Key of the straight piece of an end every boundary point belongs to: a new piece
+        /// starts at each corner of an end (direction change over about 20 degrees). Side points: -1.
+        /// </summary>
+        private static int[] EdgePieces(List<V2> loop, int[] endRunId)
+        {
+            int n = loop.Count;
+            var key = new int[n];
+            for (int i = 0; i < n; i++) key[i] = -1;
+            int start = Array.IndexOf(endRunId, -1);
+            if (start < 0) start = 0;
+            const int w = 4;   // points each side for the direction
+            int piece = -1;
+            bool prevEnd = false;
+            for (int c = 0; c < n; c++)
+            {
+                int i = (start + c) % n;
+                if (endRunId[i] < 0) { prevEnd = false; continue; }
+                V2 a = Dir(loop[(i - w + n) % n], loop[i]);
+                V2 b = Dir(loop[i], loop[(i + w) % n]);
+                bool corner = a.E * b.E + a.N * b.N < 0.94;
+                // one corner gives several neighbouring corner points: new piece only at its first
+                if (!prevEnd || (corner && (c == 0 || key[(i - 1 + n) % n] >= 0) && !CornerAt(loop, (i - 1 + n) % n, w)))
+                    piece++;
+                key[i] = piece;
+                prevEnd = true;
+            }
+            return key;
+        }
+
+        private static bool CornerAt(List<V2> loop, int i, int w)
+        {
+            int n = loop.Count;
+            V2 a = Dir(loop[(i - w + n) % n], loop[i]);
+            V2 b = Dir(loop[i], loop[(i + w) % n]);
+            return a.E * b.E + a.N * b.N < 0.94;
+        }
+
+        /// <summary>
         /// Work area with the headland only at the ends: end points are moved inwards by the
         /// headland width, long side points stay on the boundary.
         /// </summary>
         private static List<V2> InsetEnds(List<V2> loop, int[] endRunId, double dist, double s,
-            V2 laneDir = default, double slantGap = 0.0)
+            V2 laneDir = default, double slantGap = 0.0, Dictionary<int, double> endDist = null, int[] distKey = null)
         {
             int n = loop.Count;
+            // every end (or piece of an end) may have its own distance (the largest one sets the side band)
+            double EndDist(int i) => endDist != null && distKey != null && endDist.TryGetValue(distKey[i], out double v) ? v : dist;
+            if (endDist != null) foreach (double v in endDist.Values) dist = Math.Max(dist, v);
 
             // headland width per point: on an end that is slanted against the passes, neighbouring
             // pass ends are staggered; extra width (gap * cos of the angle) gives room to turn
             var width = new double[n];
             for (int i = 0; i < n; i++)
             {
-                width[i] = dist;
+                width[i] = endRunId[i] >= 0 ? EndDist(i) : dist;
                 if (slantGap <= 0 || endRunId[i] < 0) continue;
                 V2 t1 = Dir(loop[(i - 1 + n) % n], loop[i]);
                 V2 t2 = Dir(loop[i], loop[(i + 1) % n]);
@@ -985,15 +1045,17 @@ namespace AgOpenGPS.AutoPlan
             }
 
             // Side points inside the headland band of an end belong to the end
-            var endPts = new List<V2>();
-            for (int i = 0; i < n; i++) if (endRunId[i] >= 0) endPts.Add(loop[i]);
+            var endIdx = new List<int>();
+            for (int i = 0; i < n; i++) if (endRunId[i] >= 0) endIdx.Add(i);
             var isEnd = new bool[n];
-            double d2 = dist * dist;
             for (int i = 0; i < n; i++)
             {
                 if (endRunId[i] >= 0) { isEnd[i] = true; continue; }
-                foreach (V2 e in endPts)
-                    if (Sq(e.E - loop[i].E) + Sq(e.N - loop[i].N) < d2) { isEnd[i] = true; break; }
+                foreach (int k in endIdx)
+                {
+                    double wk = width[k];
+                    if (Sq(loop[k].E - loop[i].E) + Sq(loop[k].N - loop[i].N) < wk * wk) { isEnd[i] = true; width[i] = wk; break; }
+                }
             }
 
             var grid = new SegmentGrid(loop, true, Math.Max(5.0, dist));
@@ -1005,7 +1067,7 @@ namespace AgOpenGPS.AutoPlan
                 V2 d = Dir(loop[(i - 1 + n) % n], loop[(i + 1) % n]);
                 double wi = width[i];
                 V2 p = loop[i] + new V2(-d.N, d.E) * wi;
-                if (grid.MinDistance(p, wi) < dist * 0.98) continue;
+                if (grid.MinDistance(p, wi) < Math.Min(dist, wi) * 0.98) continue;
                 if (!tester.Inside(p)) continue;
                 r.Add(p);
             }
