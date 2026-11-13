@@ -242,9 +242,18 @@ namespace AgOpenGPS
                     pathCount = recList.Count - C;
 
                     //section control - only if different click the button
+                    //Painting (and the section valves) lag behind the switching by the look ahead
+                    //times, so switch that far ahead of where the work starts / ends on the path,
+                    //the same way the look ahead does it in normal section control
                     bool autoBtn = (mf.autoBtnState == btnStates.Auto);
                     trig = autoBtn;
-                    if (autoBtn != recList[C].autoBtnState) mf.btnSectionMasterAuto.PerformClick();
+                    double mps = Math.Abs(mf.avgSpeed) / 3.6;
+                    double leadOn = mps * mf.tool.lookAheadOnSetting;
+                    double leadOff = mps * (mf.tool.lookAheadOffSetting > 0
+                        ? mf.tool.lookAheadOffSetting + 4.0 / mf.gpsHz
+                        : mf.tool.turnOffDelay);
+                    bool wanted = autoBtn ? WorkFlagAhead(C, leadOff) : WorkFlagAhead(C, leadOn);
+                    if (autoBtn != wanted) mf.btnSectionMasterAuto.PerformClick();
                 }
                 else
                 {
@@ -339,6 +348,21 @@ namespace AgOpenGPS
                 }
                 return;
             }
+        }
+
+        // Work flag of the path point the given distance ahead of point 'from'
+        private bool WorkFlagAhead(int from, double dist)
+        {
+            int k = from;
+            double acc = 0;
+            while (k + 1 < recList.Count && acc < dist)
+            {
+                double dx = recList[k + 1].easting - recList[k].easting;
+                double dz = recList[k + 1].northing - recList[k].northing;
+                acc += Math.Sqrt(dx * dx + dz * dz);
+                k++;
+            }
+            return recList[k].autoBtnState;
         }
 
         private void PurePursuitRecPath(int ptCount)
