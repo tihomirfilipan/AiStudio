@@ -262,11 +262,37 @@ namespace AgOpenGPS.AutoPlan
                 if (d1.E * d2.E + d1.N * d2.N < 0.966) corners.Add(i);
             }
             if (corners.Count < 3) return null;
-            var edges = new List<(V2 a, V2 b, double len)>();
-            for (int k = 0; k < corners.Count; k++)
+            // sides: straight pieces joined where the boundary bends only gently (under about 35
+            // degrees), so a slightly bent long side is one side followed from end to end
+            var pieces = new List<(int i0, int i1)>();
+            for (int k = 0; k < corners.Count; k++) pieces.Add((corners[k], corners[(k + 1) % corners.Count]));
+            V2 PDir(int k) => Dir(f[pieces[k].i0], f[pieces[k].i1]);
+            int np = pieces.Count;
+            int startK = 0;
+            for (int k = 0; k < np; k++)
             {
-                V2 a = f[corners[k]], b = f[corners[(k + 1) % corners.Count]];
-                edges.Add((a, b, (b - a).Length));
+                V2 p = PDir((k - 1 + np) % np), q = PDir(k);
+                if (p.E * q.E + p.N * q.N < 0.82) { startK = k; break; }
+            }
+            var sideIdx = new List<(int i0, int i1)>();
+            for (int c = 0; c < np; c++)
+            {
+                int k = (startK + c) % np;
+                if (c > 0)
+                {
+                    V2 p = PDir((k - 1 + np) % np), q = PDir(k);
+                    if (p.E * q.E + p.N * q.N >= 0.82) { sideIdx[sideIdx.Count - 1] = (sideIdx[sideIdx.Count - 1].i0, pieces[k].i1); continue; }
+                }
+                sideIdx.Add(pieces[k]);
+            }
+            var edges = new List<(V2 a, V2 b, double len)>();
+            var sidePts = new List<List<V2>>();
+            foreach (var si in sideIdx)
+            {
+                var pl = new List<V2>();
+                for (int i = si.i0; ; i = (i + 1) % n) { pl.Add(f[i]); if (i == si.i1) break; }
+                sidePts.Add(pl);
+                edges.Add((f[si.i0], f[si.i1], OpenLength(pl)));
             }
             // the two longest edges running against each other (as two sides of a wedge)
             int e1 = -1, e2 = -1;
@@ -319,8 +345,8 @@ namespace AgOpenGPS.AutoPlan
             {
                 // the long edge that lies in this half
                 bool aIn = SideOf(midA, m0, mN) == SideOf(Centroid(part), m0, mN);
-                var e = aIn ? edges[e1] : edges[e2];
-                refs.Add(new List<V2> { e.a, e.b });
+                // the whole side, bends included: the passes follow it from end to end
+                refs.Add(new List<V2>(aIn ? sidePts[e1] : sidePts[e2]));
             }
             return parts;
         }
