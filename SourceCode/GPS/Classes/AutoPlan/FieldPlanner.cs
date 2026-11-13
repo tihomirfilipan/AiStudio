@@ -996,9 +996,11 @@ namespace AgOpenGPS.AutoPlan
 
             if (passes.Count == 0) { res.Error = "No passes fit inside the field"; return; }
 
-            // Guidance track: first pass line over the whole field (not cut at the headland)
+            // Guidance track over the whole field (not cut at the headland). AgOpenGPS draws the
+            // guidance lines of a curve half a tool width beside it (n + 1/2 widths), so the track
+            // is the line between the first and the second pass: its guide lines are the passes
             {
-                List<V2> line = lanes.Get(0);
+                List<V2> line = new LaneLines(refExt, side, W, (endsOnly ? 0.0 : headWidth) + W, minRadius, s).Get(0);
                 List<V2> bestRun = null;
                 foreach (var run in InsideRuns(line, fence))
                     if (bestRun == null || run.Count > bestRun.Count) bestRun = run;
