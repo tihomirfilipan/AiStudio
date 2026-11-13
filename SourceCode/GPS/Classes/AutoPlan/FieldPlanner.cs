@@ -849,7 +849,8 @@ namespace AgOpenGPS.AutoPlan
             V2 orderStart = startPos;
             double orderHeading = startHeading;
             if (slantFirst != null) ExitPose(slantFirst, out orderStart, out orderHeading);
-            List<Step> order = ChooseOrder(passes, R, W, fenceGrid, orderStart, orderHeading, s, transferLoop, orderMode, out string orderName);
+            List<Step> order = ChooseOrder(passes, R, W, fenceGrid, orderStart, orderHeading, s, transferLoop, orderMode, out string orderName,
+                set.HeadlandReverseTurns);
             if (slantFirst != null) order.Insert(0, slantFirst);
             else if (!set.HeadlandReverseTurns) order = AlternateSlant(order, passes, fenceGrid, R);
             res.OrderDescription = orderName;
@@ -887,7 +888,22 @@ namespace AgOpenGPS.AutoPlan
                     double entryH = HeadingOf(pts[0], pts[Math.Min(3, pts.Count - 1)]);
                     if ((pts[0] - lastP).Length <= 2.0 * R + 4.0 * W + 40.0)
                     {
-                        var man = ReverseManeuver.Find(lastP, lastH, pts[0], entryH, R, s, fenceGrid.Clear);
+                        // the three point turn; near corners the pass may run on too close to the
+                        // boundary for it: then it starts a bit earlier on the pass, but never before
+                        // the headland line (the pass is worked up to there anyway)
+                        double lineRev = ReverseManeuver.KTurnReach(W, R) + W * 0.5 + 0.3;
+                        List<ReverseManeuver.Pose> man = null;
+                        int cut = path.Count;
+                        for (int j = path.Count - 1; j >= 0; j--)
+                        {
+                            V2 pj = new V2(path[j].E, path[j].N);
+                            if ((pj - lastP).Length > 2.0 * R) break;
+                            if (j < path.Count - 1 && AheadEdgeDistance(fenceGrid, pj, lastH, 100.0) > lineRev + 0.5) break;
+                            man = ReverseManeuver.KTurn(pj, lastH, pts[0], entryH, R, s, fenceGrid.Clear);
+                            if (man != null) { cut = j + 1; break; }
+                        }
+                        if (man == null) man = ReverseManeuver.Find(lastP, lastH, pts[0], entryH, R, s, fenceGrid.Clear);
+                        else if (cut < path.Count) path.RemoveRange(cut, path.Count - cut);
                         if (man != null)
                         {
                             foreach (var q in man)
@@ -1751,7 +1767,7 @@ namespace AgOpenGPS.AutoPlan
         /// length, plus a big penalty for turns leaving the boundary, wins.
         /// </summary>
         private static List<Step> ChooseOrder(List<Pass> passes, double R, double W, PolygonTester fence,
-            V2 startPos, double startHeading, double s, List<V2> transferLoop, int orderMode, out string name)
+            V2 startPos, double startHeading, double s, List<V2> transferLoop, int orderMode, out string name, bool reverseTurns = false)
         {
             // weight of the lane penalty: 1e6 = strictly neighbour passes, small = skipping allowed
             double[] weights = orderMode == 1 ? new[] { 1e6 }
@@ -1821,8 +1837,16 @@ namespace AgOpenGPS.AutoPlan
                     {
                         Step cand = cands[c].Value;
                         EntryPose(cand.Pass, cand.Reverse, out V2 p, out double h);
-                        var turn = ClearDubins(ep, eh, p, h, R, Math.Max(2.0, s), fence);
-                        int outside = turn == null ? 1000 : CountOutside(turn, fence);
+                        int outside;
+                        V2 dd = p - ep;
+                        double lat = Math.Abs(dd.E * Math.Cos(eh) - dd.N * Math.Sin(eh));
+                        if (reverseTurns && Math.Abs(AngleDiff(h, eh + Math.PI)) < 0.3 && lat < 2.0 * R && dd.Length < 4.0 * R)
+                            outside = 0;   // neighbour pass: a three point turn, it fits in the headland
+                        else
+                        {
+                            var turn = ClearDubins(ep, eh, p, h, R, Math.Max(2.0, s), fence);
+                            outside = turn == null ? 1000 : CountOutside(turn, fence);
+                        }
                         double cost = cands[c].Key + 1000.0 * outside;
                         if (cost < pickCost) { pickCost = cost; pick = cand; }
                         if (outside == 0) break;
