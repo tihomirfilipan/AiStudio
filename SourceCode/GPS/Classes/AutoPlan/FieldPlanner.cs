@@ -503,7 +503,9 @@ namespace AgOpenGPS.AutoPlan
                         AddManoeuvre(res, man);
                         res.Turns++;
                     }
-                    var conn = man != null ? null : Connect(new V2(l.E, l.N), l.Heading, new V2(f.E, f.N), f.Heading, R, W, s, fullGrid, loop);
+                    // (turns out at the boundary: straight on to it, along the boundary line, into the pass)
+                    var conn = man != null ? null : Connect(new V2(l.E, l.N), l.Heading, new V2(f.E, f.N), f.Heading, R, W, s, fullGrid, loop,
+                        partRegions != null && set.TurnsAtBoundary);
                     if (conn != null)
                     {
                         if (CountOutside(conn, fullGrid) > 0) res.TurnsLeavingField++;
@@ -946,8 +948,18 @@ namespace AgOpenGPS.AutoPlan
                     double lat = Math.Abs(dd.E * Math.Cos(lh) - dd.N * Math.Sin(lh));
                     if (lat < 2.0 * R - 0.5 && Math.Abs(AngleDiff(eh, lh + Math.PI)) < 0.3)
                     {
-                        var man = ReverseManeuver.KTurn(lp, lh, pts[0], eh, R, s, fenceGrid.Clear)
-                            ?? ReverseManeuver.Find(lp, lh, pts[0], eh, R, s, fenceGrid.Clear);
+                        // the three point turn may start a bit earlier on the pass (up to two radii)
+                        List<ReverseManeuver.Pose> man = null;
+                        int cutAt = path.Count;
+                        for (int j = path.Count - 1; j >= 0; j--)
+                        {
+                            V2 pj = new V2(path[j].E, path[j].N);
+                            if ((pj - lp).Length > 2.0 * R) break;
+                            man = ReverseManeuver.KTurn(pj, lh, pts[0], eh, R, s, fenceGrid.Clear);
+                            if (man != null) { cutAt = j + 1; break; }
+                        }
+                        if (man == null) man = ReverseManeuver.Find(lp, lh, pts[0], eh, R, s, fenceGrid.Clear);
+                        else if (cutAt < path.Count) path.RemoveRange(cutAt, path.Count - cutAt);
                         if (man != null)
                         {
                             foreach (var q in man)
