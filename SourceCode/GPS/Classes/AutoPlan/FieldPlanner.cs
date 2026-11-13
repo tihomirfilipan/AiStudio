@@ -94,6 +94,15 @@ namespace AgOpenGPS.AutoPlan
         /// </summary>
         public bool SlantEdgePass = false;
 
+        /// <summary>
+        /// Field in a wedge: the two long outer edges each get passes along them, worked from
+        /// both sides towards the middle line between them; the passes there get shorter (gores).
+        /// </summary>
+        public bool WedgeField = false;
+
+        /// <summary>Passes only inside this polygon (one half of a wedge field); null = everywhere.</summary>
+        public List<V2> PassRegion;
+
         public FieldPlanSettings Clone() => (FieldPlanSettings)MemberwiseClone();
 
         /// <summary>
@@ -153,9 +162,11 @@ namespace AgOpenGPS.AutoPlan
             var res = new FieldPlanResult();
             try
             {
-                List<List<V2>> parts = set.SplitField ? SplitAtBends(fence) : null;
+                List<List<V2>> wedgeRefs = null, wedgeRegions = null;
+                List<List<V2>> parts = set.WedgeField ? SplitWedge(fence, WedgeTurnRoom(set), out wedgeRefs, out wedgeRegions)
+                    : set.SplitField ? SplitAtBends(fence) : null;
                 if (parts != null && parts.Count > 1)
-                    BuildParts(parts, fence, set, startPos, startHeading, res);
+                    BuildParts(parts, fence, set, startPos, startHeading, res, wedgeRefs, wedgeRegions);
                 else
                     BuildInternal(fence, set, startPos, startHeading, res);
             }
@@ -170,6 +181,129 @@ namespace AgOpenGPS.AutoPlan
         // =====================================================================
         // Field split into parts
         // =====================================================================
+
+        /// <summary>
+        /// Wedge field: the two longest edges of the boundary that run roughly against each other
+        /// (the long outer sides) and the middle line between them (the bisector of the two edge
+        /// lines). The field is cut along that line; every half gets its long edge as reference.
+        /// Returns null when there is no such pair.
+        /// </summary>
+        // Room for the turns past the middle line of a wedge field.
+        private static double WedgeTurnRoom(FieldPlanSettings set)
+        {
+            // the turn radius plus half the tool: sections switch right on the middle line
+            double W = set.WorkWidth, R = Math.Max(0.5, set.TurnRadius);
+            return R + W * 0.5 + 0.3;
+        }
+
+        public static List<List<V2>> SplitWedge(IList<V2> fenceIn, double turnRoom, out List<List<V2>> refs)
+        {
+            return SplitWedge(fenceIn, turnRoom, out refs, out _);
+        }
+
+        public static List<List<V2>> SplitWedge(IList<V2> fenceIn, double turnRoom, out List<List<V2>> refs, out List<List<V2>> regions)
+        {
+            refs = null;
+            regions = null;
+            var f = new List<V2>(fenceIn);
+            if (f.Count < 4) return null;
+            if (SignedArea(f) < 0) f.Reverse();
+            // straight edges: corners where the direction changes by more than about 15 degrees
+            var corners = new List<int>();
+            int n = f.Count;
+            for (int i = 0; i < n; i++)
+            {
+                V2 a = f[(i - 1 + n) % n], b = f[i], c = f[(i + 1) % n];
+                if ((b - a).Length < 1e-6 || (c - b).Length < 1e-6) continue;
+                V2 d1 = Dir(a, b), d2 = Dir(b, c);
+                if (d1.E * d2.E + d1.N * d2.N < 0.966) corners.Add(i);
+            }
+            if (corners.Count < 3) return null;
+            var edges = new List<(V2 a, V2 b, double len)>();
+            for (int k = 0; k < corners.Count; k++)
+            {
+                V2 a = f[corners[k]], b = f[corners[(k + 1) % corners.Count]];
+                edges.Add((a, b, (b - a).Length));
+            }
+            // the two longest edges running against each other (as two sides of a wedge)
+            int e1 = -1, e2 = -1;
+            double best = 0;
+            for (int i = 0; i < edges.Count; i++)
+                for (int j = i + 1; j < edges.Count; j++)
+                {
+                    V2 di = Dir(edges[i].a, edges[i].b), dj = Dir(edges[j].a, edges[j].b);
+                    // on a counter clockwise boundary the two sides of a wedge point against each other
+                    if (di.E * dj.E + di.N * dj.N > -0.7) continue;
+                    double sc = Math.Min(edges[i].len, edges[j].len);
+                    if (sc > best) { best = sc; e1 = i; e2 = j; }
+                }
+            if (e1 < 0 || best < 30.0) return null;
+
+            V2 pA = edges[e1].a, dA = Dir(edges[e1].a, edges[e1].b);
+            V2 pB = edges[e2].b, dB = Dir(edges[e2].b, edges[e2].a);   // same way as edge 1
+            // middle line: through the middle between the edges, direction halfway between them
+            V2 mDir = Dir(new V2(0, 0), dA + dB);
+            V2 midA = (edges[e1].a + edges[e1].b) * 0.5, midB = (edges[e2].a + edges[e2].b) * 0.5;
+            V2 m0 = (midA + midB) * 0.5;
+            // lines of the two edges meet: the middle line goes through that point
+            double den = dA.E * dB.N - dA.N * dB.E;
+            if (Math.Abs(den) > 1e-6)
+            {
+                V2 w = pB - pA;
+                double t = (w.E * dB.N - w.N * dB.E) / den;
+                m0 = pA + dA * t;
+            }
+            V2 mN = new V2(-mDir.N, mDir.E);
+            List<V2> left = ClipHalf(f, m0, mN, 1.0), right = ClipHalf(f, m0, mN, -1.0);
+            if (left.Count < 3 || right.Count < 3) return null;
+            double area = Math.Abs(SignedArea(f));
+            if (Math.Abs(SignedArea(left)) < 0.15 * area || Math.Abs(SignedArea(right)) < 0.15 * area) return null;
+            // every half reaches past the middle line by the turn room: its headland lies across
+            // the line (turns there), its passes end on the line
+            regions = new List<List<V2>> { ResampleLoop(left, 1.0), ResampleLoop(right, 1.0) };
+            left = ClipHalf(f, m0 - mN * turnRoom, mN, 1.0);
+            right = ClipHalf(f, m0 + mN * turnRoom, mN, -1.0);
+
+            var parts = new List<List<V2>> { left, right };
+            refs = new List<List<V2>>();
+            foreach (var part in parts)
+            {
+                // the long edge that lies in this half
+                bool aIn = SideOf(midA, m0, mN) == SideOf(Centroid(part), m0, mN);
+                var e = aIn ? edges[e1] : edges[e2];
+                refs.Add(new List<V2> { e.a, e.b });
+            }
+            return parts;
+        }
+
+        private static double SideOf(V2 p, V2 o, V2 nrm) => Math.Sign((p.E - o.E) * nrm.E + (p.N - o.N) * nrm.N);
+
+        private static V2 Centroid(List<V2> poly)
+        {
+            double e = 0, nn = 0;
+            foreach (V2 p in poly) { e += p.E; nn += p.N; }
+            return new V2(e / poly.Count, nn / poly.Count);
+        }
+
+        // Part of the polygon on one side of the line through o with normal nrm (side = +1 / -1).
+        private static List<V2> ClipHalf(List<V2> poly, V2 o, V2 nrm, double side)
+        {
+            var r = new List<V2>();
+            int n = poly.Count;
+            double D(V2 p) => side * ((p.E - o.E) * nrm.E + (p.N - o.N) * nrm.N);
+            for (int i = 0; i < n; i++)
+            {
+                V2 a = poly[i], b = poly[(i + 1) % n];
+                double da = D(a), db = D(b);
+                if (da >= 0) r.Add(a);
+                if ((da >= 0) != (db >= 0))
+                {
+                    double t = da / (da - db);
+                    r.Add(a + (b - a) * t);
+                }
+            }
+            return r;
+        }
 
         /// <summary>
         /// Splits the boundary at strong inside bends with the shortest cut through the bend
@@ -286,7 +420,8 @@ namespace AgOpenGPS.AutoPlan
         }
 
         /// <summary>Plans every part with its own direction and joins them, nearest part next.</summary>
-        private static void BuildParts(List<List<V2>> parts, IList<V2> fenceIn, FieldPlanSettings set, V2 startPos, double startHeading, FieldPlanResult res)
+        private static void BuildParts(List<List<V2>> parts, IList<V2> fenceIn, FieldPlanSettings set, V2 startPos, double startHeading, FieldPlanResult res,
+            List<List<V2>> partRefs = null, List<List<V2>> partRegions = null)
         {
             double W = set.WorkWidth, R = Math.Max(0.5, set.TurnRadius);
             var full = new List<V2>(fenceIn);
@@ -314,7 +449,20 @@ namespace AgOpenGPS.AutoPlan
 
                 FieldPlanSettings ps = set.Clone();
                 ps.ReferenceEdge = null;
+                if (partRefs != null)
+                {
+                    int pi = parts.IndexOf(part);
+                    if (pi >= 0 && pi < partRefs.Count) ps.ReferenceEdge = partRefs[pi];
+                }
+                if (partRegions != null)
+                {
+                    int pi = parts.IndexOf(part);
+                    if (pi >= 0 && pi < partRegions.Count) ps.PassRegion = partRegions[pi];
+                    // the far side of a half is the middle line: no extra pass along it
+                    ps.AddExtraPass = false;
+                }
                 ps.SplitField = false;
+                ps.WedgeField = false;
                 var r = new FieldPlanResult();
                 BuildInternal(part, ps, pos, heading, r);
                 if (!r.Ok || r.Points.Count < 2) continue;
@@ -452,6 +600,12 @@ namespace AgOpenGPS.AutoPlan
                 List<V2> off = lanes.Get(lane);
                 if (off.Count < 2) break;
                 List<List<V2>> runs = InsideRuns(off, work);
+                if (set.PassRegion != null && set.PassRegion.Count >= 3)
+                {
+                    var clipped = new List<List<V2>>();
+                    foreach (var run in runs) clipped.AddRange(InsideRuns(run, set.PassRegion));
+                    runs = clipped;
+                }
                 double minLen = Math.Max(2.0 * W, 5.0);
                 List<V2> best = null;
                 int pieces = 0;
@@ -2168,7 +2322,7 @@ namespace AgOpenGPS.AutoPlan
                 double len = e.Length;
                 if (len < 1e-9) continue;
                 // edge (nearly) parallel to the driving direction: a side, not an end
-                if (Math.Abs((e.E * d.N - e.N * d.E) / len) < 0.3) continue;
+                if (Math.Abs((e.E * d.N - e.N * d.E) / len) < 0.02) continue;
                 double u = Math.Max(0, Math.Min(1, ((p.E - a.E) * e.E + (p.N - a.N) * e.N) / (len * len)));
                 double dist = (a + e * u - p).Length;
                 if (dist < best) best = dist;
