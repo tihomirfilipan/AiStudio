@@ -1499,6 +1499,20 @@ namespace AgOpenGPS.AutoPlan
                     path[k] = pp;
                 }
                 int StepEnd(int i) => i + 1 < order.Count ? stepStart[i + 1] : path.Count;
+                // the straight run of a turn out of an extra strip pass (inside the field, not at
+                // the headland) is not worked
+                for (int i = 1; i < order.Count; i++)
+                {
+                    if (!order[i - 1].Pass.Extra) continue;
+                    Pass sp = order[i].Pass;
+                    for (int k = stepStart[i]; k < StepEnd(i) && k < path.Count; k++)
+                    {
+                        if (!path[k].IsWork) continue;
+                        V2 q = new V2(path[k].E, path[k].N);
+                        if ((sp.Pts[NearestIndex(sp.Pts, q)] - q).Length >= 1.0) Off(k);
+                        else break;
+                    }
+                }
                 // the grown part of a pass (and an extra strip pass) works only up to where it
                 // comes to a crossing with a pass driven later: from there on sections off
                 for (int i = 0; i < order.Count; i++)
