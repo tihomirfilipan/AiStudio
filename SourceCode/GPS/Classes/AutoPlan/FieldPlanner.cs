@@ -3705,11 +3705,48 @@ namespace AgOpenGPS.AutoPlan
                 var line = new List<V2>(bestLen);
                 for (int c = 0; c < bestLen; c++) line.Add(inset[(bestStart + c) % m]);
                 line = ResampleOpen(line, s);
-                if (line.Count >= 3 && OpenLength(line) > 2.0 * W) result.Add(line);
+                if (line.Count >= 3 && OpenLength(line) > 2.0 * W) result.Add(ExtendToFence(line, fence, W, s));
             }
             result.Sort((a, b) => OpenLength(b).CompareTo(OpenLength(a)));
             if (result.Count > 2) result.RemoveRange(2, result.Count - 2);
             return result;
+        }
+
+        // Extends an open line straight on at both ends until it comes close to the boundary,
+        // so the guidance line reaches over the corners
+        private static List<V2> ExtendToFence(List<V2> line, List<V2> fence, double W, double s)
+        {
+            var grid = new SegmentGrid(fence, true, Math.Max(5.0, W));
+            var tester = new PolygonTester(fence);
+            double margin = 0.5 * W;
+            double step = Math.Max(0.5, s);
+            int back = Math.Max(1, Math.Min(line.Count - 1, (int)Math.Ceiling(W / step)));
+            var head = new List<V2>();
+            V2 d0 = Dir(line[back], line[0]);
+            V2 p = line[0];
+            for (int k = 0; k < 2000; k++)
+            {
+                V2 q = p + d0 * step;
+                if (!tester.Inside(q) || grid.MinDistance(q, margin) < margin) break;
+                head.Add(q);
+                p = q;
+            }
+            var tail = new List<V2>();
+            V2 d1 = Dir(line[line.Count - 1 - back], line[line.Count - 1]);
+            p = line[line.Count - 1];
+            for (int k = 0; k < 2000; k++)
+            {
+                V2 q = p + d1 * step;
+                if (!tester.Inside(q) || grid.MinDistance(q, margin) < margin) break;
+                tail.Add(q);
+                p = q;
+            }
+            head.Reverse();
+            var r = new List<V2>(head.Count + line.Count + tail.Count);
+            r.AddRange(head);
+            r.AddRange(line);
+            r.AddRange(tail);
+            return r;
         }
 
         private static List<V2> InsetLoop(List<V2> loop, double dist, double s)
