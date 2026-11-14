@@ -1464,8 +1464,8 @@ namespace AgOpenGPS.AutoPlan
                 }
             }
             // from the middle: the grown parts of passes work only ground no other pass works -
-            // first they give way to the passes driven later (last to first, the last one always
-            // works), then to the ground already worked before them
+            // they stop working at a crossing with a pass driven later, and where the ground was
+            // worked before them
             if (set.StartFromMiddle && set.SecondEdge != null)
             {
                 bool Covered(List<V2> worked, int k)
@@ -1499,17 +1499,43 @@ namespace AgOpenGPS.AutoPlan
                     path[k] = pp;
                 }
                 int StepEnd(int i) => i + 1 < order.Count ? stepStart[i + 1] : path.Count;
-                var later = new List<V2>();
-                for (int i = order.Count - 1; i >= 0; i--)
+                // the grown part of a pass (and an extra strip pass) works only up to where it
+                // comes to a crossing with a pass driven later: from there on sections off
+                for (int i = 0; i < order.Count; i++)
                 {
-                    var mine = new List<V2>();
+                    Pass sp = order[i].Pass;
+                    if (!sp.Extra && !sp.OrigA.HasValue) continue;
+                    int n = sp.Pts.Count;
+                    int lo, hi;
+                    if (sp.Extra) { lo = n / 2; hi = n / 2; }
+                    else
+                    {
+                        int ia = NearestIndex(sp.Pts, sp.OrigA.Value), ib = NearestIndex(sp.Pts, sp.OrigB.Value);
+                        lo = Math.Min(ia, ib);
+                        hi = Math.Max(ia, ib);
+                    }
+                    bool AtCrossing(V2 q)
+                    {
+                        for (int j = i + 1; j < order.Count; j++)
+                        {
+                            Pass o = order[j].Pass;
+                            if (o == sp) continue;
+                            int ko = NearestIndex(o.Pts, q);
+                            if ((o.Pts[ko] - q).Length < 1.0) return true;
+                        }
+                        return false;
+                    }
+                    int from = 0, to = n - 1;
+                    for (int k = lo; k >= 0; k--) if (AtCrossing(sp.Pts[k])) { from = k; break; }
+                    for (int k = hi; k < n; k++) if (AtCrossing(sp.Pts[k])) { to = k; break; }
+                    if (from == 0 && to == n - 1) continue;
                     for (int k = stepStart[i]; k < StepEnd(i) && k < path.Count; k++)
                     {
                         if (!path[k].IsWork) continue;
-                        if (Grown(order[i].Pass, k) && Covered(later, k)) Off(k);
-                        else if (k % 2 == 0) mine.Add(new V2(path[k].E, path[k].N));
+                        V2 q = new V2(path[k].E, path[k].N);
+                        int ip = NearestIndex(sp.Pts, q);
+                        if ((sp.Pts[ip] - q).Length < 1.0 && (ip < from || ip > to)) Off(k);
                     }
-                    later.AddRange(mine);
                 }
                 var before = new List<V2>();
                 for (int i = 0; i < order.Count; i++)
