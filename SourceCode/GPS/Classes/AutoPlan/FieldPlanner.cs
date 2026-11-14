@@ -1252,30 +1252,18 @@ namespace AgOpenGPS.AutoPlan
             if (nearFirst != null && firstFamilyCount > 0)
             {
                 ExtendInsideEnds(passes, laneOf, work, fenceGrid, W, s, headWidth + R + 0.5 * W + 5.0);
-                // strips left between a pass of each side: one more pass along their middle, put
-                // in where it adds the shortest drive (the other passes keep order and direction)
-                double Link(Step from, Step to)
-                {
-                    ExitPose(from, out V2 ep, out double eh);
-                    EntryPose(to.Pass, to.Reverse, out V2 np, out double nh);
-                    List<V2> c = Connect(ep, eh, np, nh, R, W, s, fenceGrid, transferLoop, set.TurnsAtBoundary);
-                    return c == null ? 1e7 : OpenLength(c) + 1000.0 * CountOutside(c, fenceGrid);
-                }
+                // strips left between a pass of each side (in the middle of the field): one more
+                // pass along their middle, driven first - the plan starts in the middle anyway;
+                // from its end on to the first pass over ground not yet worked
+                int first = 0;
                 foreach (var (strip, pa, pb) in MiddleStrips(passes, firstFamilyCount, W, s))
                 {
                     var extra = new Pass { Lane = pa.Lane, Pts = strip, Extra = true };
-                    int bestAt = order.Count;
-                    bool bestRev = false;
-                    double bestCost = double.MaxValue;
-                    for (int at = 1; at <= order.Count; at++)
-                        for (int r = 0; r < 2; r++)
-                        {
-                            var x = new Step { Pass = extra, Reverse = r == 1 };
-                            double cost = Link(order[at - 1], x);
-                            if (at < order.Count) cost += Link(x, order[at]) - Link(order[at - 1], order[at]);
-                            if (cost < bestCost) { bestCost = cost; bestAt = at; bestRev = r == 1; }
-                        }
-                    order.Insert(bestAt, new Step { Pass = extra, Reverse = bestRev });
+                    // its end towards the entry of the first pass
+                    EntryPose(order[first].Pass, order[first].Reverse, out V2 np, out double _);
+                    bool rev = (extra.A - np).Length < (extra.B - np).Length;
+                    order.Insert(first, new Step { Pass = extra, Reverse = rev });
+                    first++;
                 }
             }
 
@@ -1309,7 +1297,8 @@ namespace AgOpenGPS.AutoPlan
                 while (k < man.Count && !man[k].Reverse && Math.Abs(AngleDiff(HeadingOf(man[k - 1].P, man[k].P), h0)) < 0.03) k++;
                 V2 a0 = man[k - 1].P;
                 double d0 = AheadEdgeDistance(fenceGrid, a0, h0, 100.0);
-                if (d0 < 100.0) NoteStraightEnd(a0, d0);
+                // (not a turn inside the field, at the tip where the two sides meet)
+                if (d0 < 100.0 && !(set.StartFromMiddle && d0 > 2.0 * R + W)) NoteStraightEnd(a0, d0);
             }
             var stepStart = new int[order.Count];
             for (int i = 0; i < order.Count; i++)
