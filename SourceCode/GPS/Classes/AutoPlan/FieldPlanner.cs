@@ -1212,6 +1212,12 @@ namespace AgOpenGPS.AutoPlan
                 // B2, ...); every turn is at least "jump" passes wide
                 var f1 = passes.GetRange(0, firstFamilyCount);
                 var f2 = passes.GetRange(firstFamilyCount, passes.Count - firstFamilyCount);
+                var gores = new List<Pass>();
+                gores.AddRange(f1.FindAll(p => p.Gore));
+                gores.AddRange(f2.FindAll(p => p.Gore));
+                var inFirst = new HashSet<Pass>(f1);
+                f1.RemoveAll(p => p.Gore);
+                f2.RemoveAll(p => p.Gore);
                 f1.Sort((a, b) => b.Lane.CompareTo(a.Lane));   // middle first
                 f2.Sort((a, b) => a.Lane.CompareTo(b.Lane));
                 double Near(Pass ps) => Math.Min((ps.A - startPos).Length, (ps.B - startPos).Length);
@@ -1223,7 +1229,6 @@ namespace AgOpenGPS.AutoPlan
                 order = new List<Step>();
                 var done = new HashSet<Pass>();
                 V2 at = startPos;
-                var inFirst = new HashSet<Pass>(f1);
                 void AddStep(Pass ps)
                 {
                     if (done.Contains(ps)) return;
@@ -1231,15 +1236,21 @@ namespace AgOpenGPS.AutoPlan
                     bool rev = (ps.B - at).Length < (ps.A - at).Length;
                     order.Add(new Step { Pass = ps, Reverse = rev });
                     at = rev ? ps.A : ps.B;
+                    // a gore piece that starts where this pass ends: driven next
+                    ExitPose(order[order.Count - 1], out V2 ep, out double eh);
+                    foreach (Pass g in gores)
+                    {
+                        if (done.Contains(g)) continue;
+                        if (Math.Min((g.A - ep).Length, (g.B - ep).Length) < 2.0 * R + 2.0 * W) { AddStep(g); return; }
+                    }
                     // it ends in the field where the two sides meet: on into the pass of the other
                     // side that ends there too (a V, turned at its tip), then the order goes on
-                    ExitPose(order[order.Count - 1], out V2 ep, out double eh);
                     if (AheadEdgeDistance(fenceGrid, ep, Mod2Pi(eh + Math.PI), 150.0) <= headWidth + 2.0 * R + 2.0 * W) return;
                     Pass partner = null;
                     double pd = 3.0 * W;
                     foreach (Pass o in passes)
                     {
-                        if (done.Contains(o) || inFirst.Contains(o) == inFirst.Contains(ps)) continue;
+                        if (done.Contains(o) || o.Gore || inFirst.Contains(o) == inFirst.Contains(ps)) continue;
                         double d = Math.Min((o.A - ep).Length, (o.B - ep).Length);
                         if (d < pd) { pd = d; partner = o; }
                     }
@@ -1261,6 +1272,8 @@ namespace AgOpenGPS.AutoPlan
                     }
                     if (sideB) kB = k; else kA = k;
                 }
+                // gore pieces not reached on the way: at the end
+                foreach (Pass g in gores) AddStep(g);
                 orderName = "from the middle, halves in turn, out " + jump + " and back";
             }
 
@@ -2308,6 +2321,8 @@ namespace AgOpenGPS.AutoPlan
         {
             public int Lane;
             public List<V2> Pts;
+            // a short pass filling a gore between the two sides (driven next to its neighbour)
+            public bool Gore;
             public V2 A => Pts[0];
             public V2 B => Pts[Pts.Count - 1];
             public double HeadingA => HeadingOf(Pts[0], Pts[Math.Min(3, Pts.Count - 1)]);
@@ -4087,8 +4102,8 @@ namespace AgOpenGPS.AutoPlan
         }
 
         // Grows the passes of two families along their lane lines, a point at a time on every
-        // pass in turn, as long as they stay in the work area and half a width away from the
-        // other family's passes: both sides reach the line where they meet
+        // pass in turn, as long as they stay in the work area and do not reach a pass
+        // of the other family: passes meeting at an angle are joined up to their crossing (a V)
         private static void JoinFamilies(List<Pass> passes, int firstCount, Dictionary<Pass, List<V2>> laneOf, List<V2> work, double W, double s)
         {
             var inWork = new PolygonTester(work);
@@ -4108,7 +4123,7 @@ namespace AgOpenGPS.AutoPlan
                 for (int g = 0; g < grow.Count; g++)
                 {
                     if (grow[g].fam == fam) continue;
-                    if (MinDistTo(cur[g], q) < 0.5 * W) return false;
+                    if (MinDistTo(cur[g], q) < 1.0) return false;   // up to the crossing
                 }
                 return true;
             }
@@ -4180,12 +4195,43 @@ namespace AgOpenGPS.AutoPlan
                                 double d = MinDistTo(o.Pts, mid);
                                 if (d < nd) { nd = d; near = o; }
                             }
-                            var np = new Pass { Lane = near.Lane, Pts = ResampleOpen(piece, s) };
+                            var np = new Pass { Lane = near.Lane, Pts = ResampleOpen(piece, s), Gore = true };
                             list.Add(np);
                             for (int i = 0; i < np.Pts.Count; i += 2) all.Add(np.Pts[i]);
                         }
                 }
             }
+            // strips between a pass of each side running beside each other a bit more than a width
+            // apart: a pass along the middle of the strip
+            foreach (Pass pa in new List<Pass>(fam1))
+                foreach (Pass pb in new List<Pass>(fam2))
+                {
+                    var mids = new List<V2>();
+                    var strips = new List<List<V2>>();
+                    foreach (V2 q in pa.Pts)
+                    {
+                        int k = NearestIndex(pb.Pts, q);
+                        V2 o = pb.Pts[k];
+                        double d = (o - q).Length;
+                        V2 m = (q + o) * 0.5;
+                        bool ok = d > 1.1 * W && d < 2.0 * W && k > 0 && k < pb.Pts.Count - 1;
+                        if (ok)
+                        {
+                            foreach (Pass other in passes)
+                                if (other != pa && other != pb && MinDistTo(other.Pts, m) < 0.45 * W) { ok = false; break; }
+                        }
+                        if (ok) mids.Add(m);
+                        else if (mids.Count > 0) { strips.Add(mids); mids = new List<V2>(); }
+                    }
+                    if (mids.Count > 0) strips.Add(mids);
+                    foreach (var st in strips)
+                    {
+                        if (OpenLength(st) < minLen) continue;
+                        var np = new Pass { Lane = pa.Lane, Pts = ResampleOpen(SmoothOpen(ResampleOpen(st, s), 3, 2), s), Gore = true };
+                        fam1.Add(np);
+                        passes.Add(np);
+                    }
+                }
             passes.Clear();
             passes.AddRange(fam1);
             passes.AddRange(fam2);
