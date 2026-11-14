@@ -923,7 +923,7 @@ namespace AgOpenGPS.AutoPlan
             List<V2> work = null;
             if (endsOnly)
             {
-                endRunId = ClassifyEnds(fence, lanesEnds, W, diag, s, set.SecondEdge, minRadius);
+                endRunId = ClassifyEnds(fence, lanesEnds, W, diag, s, set.SecondEdge, minRadius, set.StartFromMiddle);
                 bool anyEnd = false, anySide = false;
                 foreach (int id in endRunId) { if (id >= 0) anyEnd = true; else anySide = true; }
                 if (anyEnd && anySide)
@@ -947,23 +947,19 @@ namespace AgOpenGPS.AutoPlan
             }
             res.WorkArea = work;
 
-            // two pass families of a nearly parallel wedge, split between the long edges (the
-            // passes of the two families meet side by side, not across a straight cut)
-            Func<V2, bool> nearFirst = null;
+            // two pass families of a nearly parallel wedge: the lanes of both long edges are laid
+            // out whole and taken in turn, one from each edge towards the middle; a lane keeps
+            // only what does not run over the passes already taken (the families meet side by
+            // side, the same number from each edge, the gores in the middle reach the wide end)
+            // (with the start in the middle; otherwise the halves are split along a straight line)
+            bool twoFamilies = set.StartFromMiddle && set.SecondEdge != null && set.SecondEdge.Count >= 2 && set.ReferenceEdge != null
+                && set.ReferenceEdge.Count >= 2 && set.SecondRegion != null;
             PolygonTester fenceClear = null;
-            if (set.SecondEdge != null && set.SecondEdge.Count >= 2 && set.ReferenceEdge != null && set.ReferenceEdge.Count >= 2)
+            var rawFirst = new List<List<List<V2>>>();
+            if (twoFamilies)
             {
-                List<V2> e1 = ResampleOpen(new List<V2>(set.ReferenceEdge), 1.0), e2 = ResampleOpen(new List<V2>(set.SecondEdge), 1.0);
-                // equal number of passes on each side: the split lies between two passes, half of
-                // the passes that fit across the field here (the odd one to the first side)
                 fenceClear = new PolygonTester(fence);
                 fenceClear.SetClearance(fence, Math.Max(0.0, W * 0.5 - 0.3));
-                nearFirst = p =>
-                {
-                    double d1 = MinDistTo(e1, p), d2 = MinDistTo(e2, p);
-                    double across = Math.Floor((d1 + d2) / W + 0.25);
-                    return d1 < W * Math.Ceiling(across / 2.0);
-                };
             }
 
             // --- Passes ---
@@ -978,13 +974,14 @@ namespace AgOpenGPS.AutoPlan
                 List<V2> off = lanes.Get(lane);
                 if (off.Count < 2) break;
                 List<List<V2>> runs = InsideRuns(off, work);
-                if (nearFirst != null)
+                if (twoFamilies)
                 {
-                    var clipped = new List<List<V2>>();
-                    foreach (var run in runs) clipped.AddRange(RunsWhere(run, nearFirst));
-                    runs = clipped;
+                    if (runs.Count > 1) runs = JoinThroughHeadland(off, runs, fenceClear, W);
+                    rawFirst.Add(runs);
+                    if (runs.Count == 0 && rawFirst.Count > 3 && rawFirst[rawFirst.Count - 2].Count == 0 && rawFirst[rawFirst.Count - 3].Count == 0) break;
+                    continue;
                 }
-                else if (set.PassRegion != null && set.PassRegion.Count >= 3)
+                if (set.PassRegion != null && set.PassRegion.Count >= 3)
                 {
                     var clipped = new List<List<V2>>();
                     foreach (var run in runs) clipped.AddRange(InsideRuns(run, set.PassRegion));
@@ -1034,36 +1031,72 @@ namespace AgOpenGPS.AutoPlan
                     double side2 = PointInPolygon(fence, ref2[m2] + ln2 * (W * 0.5)) ? 1.0 : -1.0;
                     var lanes2 = new LaneLines(ext2, side2, W, (endsOnly ? 0.0 : headWidth) + W * 0.5, Math.Max(1.5 * R, 10.0), s);
                     var second = new List<List<V2>>();
-                    var firstPts = new List<V2>();
-                    foreach (Pass fp in passes) firstPts.AddRange(fp.Pts);
-                    int empty2 = 0;
-                    for (int lane = 0; lane < 10000; lane++)
+                    if (twoFamilies)
                     {
-                        List<V2> off = lanes2.Get(lane);
-                        if (off.Count < 2) break;
-                        var runs = new List<List<V2>>();
-                        foreach (var run in InsideRuns(off, work))
-                            runs.AddRange(nearFirst != null ? RunsWhere(run, p => !nearFirst(p)) : InsideRuns(run, set.SecondRegion));
-                        // a pass cut only by the headland of a small end beside it (a notch in the
-                        // boundary) goes on through it: one piece up to the far end
-                        if (nearFirst != null && runs.Count > 1) runs = JoinThroughHeadland(off, runs, fenceClear, W);
-                        // not over the passes of the first family (they meet side by side)
-                        if (nearFirst != null)
+                        // lanes of the second edge, laid out whole
+                        var rawSecond = new List<List<List<V2>>>();
+                        for (int lane = 0; lane < 10000; lane++)
                         {
-                            var apart = new List<List<V2>>();
-                            foreach (var run in runs) apart.AddRange(RunsWhere(run, p => firstPts.Count == 0 || MinDistTo(firstPts, p) >= 0.8 * W));
-                            runs = apart;
+                            List<V2> off = lanes2.Get(lane);
+                            if (off.Count < 2) break;
+                            List<List<V2>> runs = InsideRuns(off, work);
+                            // a pass cut only by the headland of a small end beside it (a notch in
+                            // the boundary) goes on through it: one piece up to the far end
+                            if (runs.Count > 1) runs = JoinThroughHeadland(off, runs, fenceClear, W);
+                            rawSecond.Add(runs);
+                            if (runs.Count == 0 && rawSecond.Count > 3 && rawSecond[rawSecond.Count - 2].Count == 0 && rawSecond[rawSecond.Count - 3].Count == 0) break;
                         }
-                        List<V2> best = null;
-                        foreach (var run in runs)
-                            if (OpenLength(run) >= Math.Max(2.0 * W, 5.0) && (best == null || run.Count > best.Count)) best = run;
-                        if (best == null)
+                        // taken in turn from both edges; a lane keeps the part at least most of a
+                        // width away from the other edge's passes, its longest piece
+                        double minLen = Math.Max(2.0 * W, 5.0);
+                        var taken1 = new PointHash(W);
+                        var taken2 = new PointHash(W);
+                        var first = new List<List<V2>>();
+                        for (int k = 0; k < Math.Max(rawFirst.Count, rawSecond.Count); k++)
                         {
-                            if (second.Count > 0 && ++empty2 > 3) break;
-                            continue;
+                            for (int fam = 0; fam < 2; fam++)
+                            {
+                                var raw = fam == 0 ? rawFirst : rawSecond;
+                                if (k >= raw.Count) continue;
+                                PointHash other = fam == 0 ? taken2 : taken1;
+                                List<V2> best = null;
+                                int pieces = 0;
+                                foreach (var run in raw[k])
+                                    foreach (var piece in RunsWhere(run, p => other.Farther(p, 0.85 * W)))
+                                    {
+                                        if (OpenLength(piece) < minLen) continue;
+                                        pieces++;
+                                        if (best == null || piece.Count > best.Count) best = piece;
+                                    }
+                                if (best == null) continue;
+                                res.SkippedPieces += pieces - 1;
+                                best = ResampleOpen(best, s);
+                                (fam == 0 ? taken1 : taken2).AddRange(best);
+                                (fam == 0 ? first : second).Add(best);
+                            }
                         }
-                        empty2 = 0;
-                        second.Add(ResampleOpen(best, s));
+                        for (int k = 0; k < first.Count; k++) passes.Add(new Pass { Lane = k, Pts = first[k] });
+                    }
+                    else
+                    {
+                        int empty2 = 0;
+                        for (int lane = 0; lane < 10000; lane++)
+                        {
+                            List<V2> off = lanes2.Get(lane);
+                            if (off.Count < 2) break;
+                            var runs = new List<List<V2>>();
+                            foreach (var run in InsideRuns(off, work)) runs.AddRange(InsideRuns(run, set.SecondRegion));
+                            List<V2> best = null;
+                            foreach (var run in runs)
+                                if (OpenLength(run) >= Math.Max(2.0 * W, 5.0) && (best == null || run.Count > best.Count)) best = run;
+                            if (best == null)
+                            {
+                                if (second.Count > 0 && ++empty2 > 3) break;
+                                continue;
+                            }
+                            empty2 = 0;
+                            second.Add(ResampleOpen(best, s));
+                        }
                     }
                     // its guidance track (half a width beside its first pass, as the first one)
                     {
@@ -1180,7 +1213,8 @@ namespace AgOpenGPS.AutoPlan
                 bool secondFirst = Near(f2[0]) < Near(f1[0]);
                 var famA = secondFirst ? f2 : f1;
                 var famB = secondFirst ? f1 : f2;
-                int jump = Math.Max(3, (int)Math.Ceiling(2.0 * R / W - 1e-6));
+                // three times the passes one turn needs (12 m tool: 3, 3 m tool: 12)
+                int jump = 3 * Math.Max(1, (int)Math.Ceiling(2.0 * R / W - 1e-6));
                 order = new List<Step>();
                 var done = new HashSet<Pass>();
                 V2 at = startPos;
@@ -1189,6 +1223,20 @@ namespace AgOpenGPS.AutoPlan
                     if (done.Contains(ps)) return;
                     done.Add(ps);
                     bool rev = (ps.B - at).Length < (ps.A - at).Length;
+                    if (order.Count > 0)
+                    {
+                        // the end reached by the shorter drive (round a notch the nearer end can
+                        // be the far one to drive to)
+                        ExitPose(order[order.Count - 1], out V2 ep, out double eh);
+                        double best = double.MaxValue;
+                        for (int r = 0; r < 2; r++)
+                        {
+                            EntryPose(ps, r == 1, out V2 np, out double nh);
+                            List<V2> c = Connect(ep, eh, np, nh, R, W, s, fenceGrid, transferLoop, set.TurnsAtBoundary);
+                            double len = c == null ? double.MaxValue / 2 : OpenLength(c) + 1000.0 * CountOutside(c, fenceGrid);
+                            if (len < best) { best = len; rev = r == 1; }
+                        }
+                    }
                     order.Add(new Step { Pass = ps, Reverse = rev });
                     at = rev ? ps.A : ps.B;
                 }
@@ -1283,7 +1331,7 @@ namespace AgOpenGPS.AutoPlan
                         }
                     }
                 }
-                if (i > 0 && wedgeKTurns)
+                if (i > 0 && (wedgeKTurns || twoFamilies))
                 {
                     LastPose(path, s, out V2 lp, out double lh);
                     double eh = HeadingOf(pts[0], pts[Math.Min(3, pts.Count - 1)]);
@@ -1317,10 +1365,20 @@ namespace AgOpenGPS.AutoPlan
                 {
                     LastPose(path, s, out V2 lastP, out double lastH);
                     double entryH = HeadingOf(pts[0], pts[Math.Min(3, pts.Count - 1)]);
-                    var turn = Connect(lastP, lastH, pts[0], entryH, R, W, s, fenceGrid, transferLoop, set.TurnsAtBoundary);
+                    // two pass families: a pass ending inside the field (a gore in the middle, not
+                    // at the headland) turns right there - a straight run on to the boundary would
+                    // work over the passes beside it
+                    bool atBoundary = set.TurnsAtBoundary;
+                    if (atBoundary && twoFamilies)
+                    {
+                        double ahead0 = AheadEdgeDistance(fenceGrid, lastP, lastH, 100.0);
+                        double ahead1 = AheadEdgeDistance(fenceGrid, pts[0], entryH + Math.PI, 100.0);
+                        if (Math.Max(ahead0, ahead1) > headWidth + 2.0 * R + 2.0 * W) atBoundary = false;
+                    }
+                    var turn = Connect(lastP, lastH, pts[0], entryH, R, W, s, fenceGrid, transferLoop, atBoundary);
                     if (turn == null) { res.Error = "Turn could not be built"; return; }
                     if (CountOutside(turn, fenceGrid) > 0) res.TurnsLeavingField++;
-                    if (set.TurnsAtBoundary)
+                    if (atBoundary)
                     {
                         // the straight run on to the edge and back is worked too (sections stay on
                         // until the vehicle starts to turn), so only a narrow strip is left unworked
@@ -1663,7 +1721,7 @@ namespace AgOpenGPS.AutoPlan
             return best;
         }
 
-        private static int[] ClassifyEnds(List<V2> fence, LaneLines lanes, double W, double diag, double s, List<V2> secondSide = null, double minRadius = 10.0)
+        private static int[] ClassifyEnds(List<V2> fence, LaneLines lanes, double W, double diag, double s, List<V2> secondSide = null, double minRadius = 10.0, bool familyEnds = false)
         {
             // The ends are where passes run into the boundary: lay out passes over the whole
             // field (no headland) and mark the boundary around every pass end.
@@ -1694,7 +1752,7 @@ namespace AgOpenGPS.AutoPlan
                             int f = NearestIndex(fence, endPt);
                             // a wedge: a pass meeting the boundary almost along it (under about 15
                             // degrees) does not end there, it goes on along it
-                            if (secondSide != null && piece.Count >= 6)
+                            if (familyEnds && secondSide != null && piece.Count >= 6)
                             {
                                 V2 pd = e == 0 ? Dir(piece[0], piece[5]) : Dir(piece[piece.Count - 6], piece[piece.Count - 1]);
                                 int w3 = Math.Max(2, (int)Math.Ceiling(3.0 / s));
@@ -1710,7 +1768,7 @@ namespace AgOpenGPS.AutoPlan
             }
 
             LaneLines lanes2 = null;
-            if (secondSide != null && secondSide.Count >= 2)
+            if (familyEnds && secondSide != null && secondSide.Count >= 2)
             {
                 List<V2> ref2 = SmoothOpen(ResampleOpen(new List<V2>(secondSide), s), 7, 2);
                 if (ref2.Count >= 5)
@@ -3931,6 +3989,36 @@ namespace AgOpenGPS.AutoPlan
         }
 
         /// <summary>Parts of a line that lie inside a polygon.</summary>
+        // Points in a grid of cells, for "is any point nearer than d" tests
+        private class PointHash
+        {
+            private readonly double cell;
+            private readonly Dictionary<long, List<V2>> cells = new Dictionary<long, List<V2>>();
+            public PointHash(double cellSize) { cell = Math.Max(1.0, cellSize); }
+            private long Key(int x, int y) => ((long)x << 32) ^ (uint)y;
+            public void AddRange(IEnumerable<V2> pts)
+            {
+                foreach (V2 p in pts)
+                {
+                    long k = Key((int)Math.Floor(p.E / cell), (int)Math.Floor(p.N / cell));
+                    if (!cells.TryGetValue(k, out var l)) cells[k] = l = new List<V2>();
+                    l.Add(p);
+                }
+            }
+            // no point nearer than d (d at most one cell)
+            public bool Farther(V2 p, double d)
+            {
+                int cx = (int)Math.Floor(p.E / cell), cy = (int)Math.Floor(p.N / cell);
+                double d2 = d * d;
+                for (int x = cx - 1; x <= cx + 1; x++)
+                    for (int y = cy - 1; y <= cy + 1; y++)
+                        if (cells.TryGetValue(Key(x, y), out var l))
+                            foreach (V2 q in l)
+                                if ((q.E - p.E) * (q.E - p.E) + (q.N - p.N) * (q.N - p.N) < d2) return false;
+                return true;
+            }
+        }
+
         // Joins pieces of one lane line when the line between them stays in the field with the
         // whole tool inside (only a headland lay between them)
         private static List<List<V2>> JoinThroughHeadland(List<V2> line, List<List<V2>> runs, PolygonTester fence, double W)
