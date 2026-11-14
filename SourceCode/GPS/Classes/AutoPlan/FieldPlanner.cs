@@ -1110,7 +1110,11 @@ namespace AgOpenGPS.AutoPlan
                     }
                     // passes ending where the two families meet go on along their lane line up to
                     // the passes of the other side (to the crossing, no gap between them)
-                    if (nearFirst != null && firstFamilyCount > 0) JoinFamilies(passes, firstFamilyCount, laneOf, work, W, s);
+                    if (nearFirst != null && firstFamilyCount > 0)
+                    {
+                        JoinFamilies(passes, firstFamilyCount, laneOf, work, W, s);
+                        firstFamilyCount = FillGores(passes, firstFamilyCount, lanes, lanes2, work, W, s);
+                    }
                 }
             }
 
@@ -4083,7 +4087,7 @@ namespace AgOpenGPS.AutoPlan
         }
 
         // Grows the passes of two families along their lane lines, a point at a time on every
-        // pass in turn, as long as they stay in the work area and most of a width away from the
+        // pass in turn, as long as they stay in the work area and half a width away from the
         // other family's passes: both sides reach the line where they meet
         private static void JoinFamilies(List<Pass> passes, int firstCount, Dictionary<Pass, List<V2>> laneOf, List<V2> work, double W, double s)
         {
@@ -4104,7 +4108,7 @@ namespace AgOpenGPS.AutoPlan
                 for (int g = 0; g < grow.Count; g++)
                 {
                     if (grow[g].fam == fam) continue;
-                    if (MinDistTo(cur[g], q) < 0.8 * W) return false;
+                    if (MinDistTo(cur[g], q) < 0.5 * W) return false;
                 }
                 return true;
             }
@@ -4141,6 +4145,51 @@ namespace AgOpenGPS.AutoPlan
                 if ((pts[0] - grow[g].ps.Pts[0]).Length > (pts[pts.Count - 1] - grow[g].ps.Pts[0]).Length) pts.Reverse();
                 grow[g].ps.Pts = ResampleOpen(pts, s);
             }
+        }
+
+        // Pieces of the lane lines of both families that still fit between the passes (about half
+        // a width away from all of them) become passes too: the gores where the two sides meet
+        // are worked, nothing left between them. Returns the new number of first family passes.
+        private static int FillGores(List<Pass> passes, int firstCount, LaneLines lanes1, LaneLines lanes2, List<V2> work, double W, double s)
+        {
+            var fam1 = passes.GetRange(0, firstCount);
+            var fam2 = passes.GetRange(firstCount, passes.Count - firstCount);
+            var all = new List<V2>();
+            foreach (Pass ps in passes)
+                for (int i = 0; i < ps.Pts.Count; i += 2) all.Add(ps.Pts[i]);
+            double minLen = Math.Max(2.0 * W, 5.0);
+            for (int fam = 0; fam < 2; fam++)
+            {
+                LaneLines ll = fam == 0 ? lanes1 : lanes2;
+                var list = fam == 0 ? fam1 : fam2;
+                if (list.Count == 0) continue;
+                for (int lane = 0; lane < 200; lane++)
+                {
+                    List<V2> off = ll.Get(lane);
+                    if (off.Count < 2) break;
+                    foreach (var run in InsideRuns(off, work))
+                        foreach (var piece in RunsWhere(run, p => MinDistTo(all, p) >= 0.45 * W))
+                        {
+                            if (OpenLength(piece) < minLen) continue;
+                            // lane number of the nearest pass of the same side
+                            V2 mid = piece[piece.Count / 2];
+                            Pass near = list[0];
+                            double nd = double.MaxValue;
+                            foreach (Pass o in list)
+                            {
+                                double d = MinDistTo(o.Pts, mid);
+                                if (d < nd) { nd = d; near = o; }
+                            }
+                            var np = new Pass { Lane = near.Lane, Pts = ResampleOpen(piece, s) };
+                            list.Add(np);
+                            for (int i = 0; i < np.Pts.Count; i += 2) all.Add(np.Pts[i]);
+                        }
+                }
+            }
+            passes.Clear();
+            passes.AddRange(fam1);
+            passes.AddRange(fam2);
+            return fam1.Count;
         }
 
         private static double MinDistTo(List<V2> pts, V2 p)
