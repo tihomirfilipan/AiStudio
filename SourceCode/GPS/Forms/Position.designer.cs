@@ -1143,6 +1143,9 @@ namespace AgOpenGPS
                 SendPgnToLoop(p_229.pgn);
             }
 
+            // on a headland track: switch to the other one when it is reached
+            AutoSwitchHeadlandTrack();
+
             //update main window (skipped for the intermediate steps of fast simulation)
             if (!isSimSubStep)
             {

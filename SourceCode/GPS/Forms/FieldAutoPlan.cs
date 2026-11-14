@@ -843,6 +843,50 @@ namespace AgOpenGPS
             Log.EventWriter("Auto field plan: path finished, guidance on " + trk.gArr[best].name);
         }
 
+        private DateTime lastHeadlandSwitchCheck = DateTime.MinValue;
+
+        // Distance from the vehicle to a track's points
+        private double DistanceToTrack(CTrk t)
+        {
+            double best = double.MaxValue;
+            foreach (vec3 p in t.curvePts)
+                best = Math.Min(best, glm.Distance(p.easting, p.northing, pivotAxlePos.easting, pivotAxlePos.northing));
+            return best;
+        }
+
+        /// <summary>
+        /// Guidance on uvratina1 or uvratina2: when the vehicle comes to the other headland (much
+        /// nearer to its track than to the active one), that track becomes the active one.
+        /// Checked once a second.
+        /// </summary>
+        private void AutoSwitchHeadlandTrack()
+        {
+            if (recPath.isDrivingRecordedPath) return;
+            if (trk.idx < 0 || trk.idx >= trk.gArr.Count) return;
+            string cur = trk.gArr[trk.idx].name;
+            if (cur != "uvratina1" && cur != "uvratina2") return;
+            if ((DateTime.Now - lastHeadlandSwitchCheck).TotalSeconds < 1.0) return;
+            lastHeadlandSwitchCheck = DateTime.Now;
+
+            string otherName = cur == "uvratina1" ? "uvratina2" : "uvratina1";
+            int other = trk.gArr.FindIndex(t => t.name == otherName);
+            if (other < 0) return;
+            double dCur = DistanceToTrack(trk.gArr[trk.idx]);
+            double dOther = DistanceToTrack(trk.gArr[other]);
+            double w = Math.Max(1.0, tool.width);
+            // clearly at the other headland: near its track, well away from the active one
+            if (dOther < 3.0 * w && dCur > dOther + 4.0 * w)
+            {
+                trk.gArr[other].isVisible = true;
+                trk.idx = other;
+                curve.isCurveValid = false;
+                ABLine.isABValid = false;
+                yt.ResetYouTurn();
+                PanelUpdateRightAndBottom();
+                Log.EventWriter("Auto field plan: headland reached, guidance on " + otherName);
+            }
+        }
+
         private int AddAutoPlanTrack(List<V2> line, bool second = false, string fixedName = null)
         {
             var des = new List<vec3>(line.Count);
