@@ -251,9 +251,21 @@ namespace AgOpenGPS
             if (addTrack && plan.TrackLine.Count > 2)
             {
                 // the new track becomes the active one: its guide lines lie on the planned passes
-                int ti = AddAutoPlanTrack(plan.TrackLine);
-                // wedge field: a second track along the other long side
-                if (plan.TrackLine2.Count > 2) AddAutoPlanTrack(plan.TrackLine2, true);
+                int ti;
+                if (plan.TrackLine2.Count > 2)
+                {
+                    // wedge field: a track along each long side, Auto_L (left) and Auto_D (right),
+                    // seen along the first track; the ones of an earlier plan are replaced
+                    V2 a = plan.TrackLine[0], b = plan.TrackLine[plan.TrackLine.Count - 1];
+                    V2 m1 = plan.TrackLine[plan.TrackLine.Count / 2], m2 = plan.TrackLine2[plan.TrackLine2.Count / 2];
+                    double cross = (b.E - a.E) * (m2.N - m1.N) - (b.N - a.N) * (m2.E - m1.E);
+                    bool firstIsLeft = cross < 0;   // the second one lies to the right
+                    string firstName = firstIsLeft ? "Auto_L" : "Auto_D";
+                    AddAutoPlanTrack(plan.TrackLine, false, firstName);
+                    AddAutoPlanTrack(plan.TrackLine2, true, firstIsLeft ? "Auto_D" : "Auto_L");
+                    ti = trk.gArr.FindIndex(t => t.name == firstName);
+                }
+                else ti = AddAutoPlanTrack(plan.TrackLine);
                 if (ti >= 0)
                 {
                     trk.idx = ti;
@@ -798,7 +810,7 @@ namespace AgOpenGPS
         }
 
         /// <summary>Adds the first pass line as a new curve track (not activated).</summary>
-        private int AddAutoPlanTrack(List<V2> line, bool second = false)
+        private int AddAutoPlanTrack(List<V2> line, bool second = false, string fixedName = null)
         {
             var des = new List<vec3>(line.Count);
             foreach (V2 p in line) des.Add(new vec3(p.E, p.N, 0));
@@ -830,7 +842,19 @@ namespace AgOpenGPS
             // background, they can be switched visible again in the track list)
             if (!second)
                 foreach (CTrk old in trk.gArr)
-                    if (old.name != null && old.name.StartsWith("Auto plan ")) old.isVisible = false;
+                    if (old.name != null && (old.name.StartsWith("Auto plan ") || old.name == "Auto_L" || old.name == "Auto_D")) old.isVisible = false;
+            // a track with this fixed name from an earlier plan is replaced
+            if (fixedName != null)
+            {
+                track.name = fixedName;
+                for (int i = trk.gArr.Count - 1; i >= 0; i--)
+                {
+                    if (trk.gArr[i].name != fixedName) continue;
+                    trk.gArr.RemoveAt(i);
+                    if (trk.idx == i) trk.idx = -1;
+                    else if (trk.idx > i) trk.idx--;
+                }
+            }
             trk.gArr.Add(track);
             FileSaveTracks();
             Log.EventWriter("Auto field plan: track added " + track.name);
