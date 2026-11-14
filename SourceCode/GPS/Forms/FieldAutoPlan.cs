@@ -460,67 +460,32 @@ namespace AgOpenGPS
             if (idx >= n) idx = n - 1;
 
             int totalPasses = 0, donePasses = 0;
-            int current = -1;
-            for (int i = 0; i < recPathLabels.Count; i++)
+            foreach (RunLabel l in recPathLabels)
             {
-                RunLabel l = recPathLabels[i];
-                if (!l.IsHeadland)
-                {
-                    totalPasses++;
-                    if (l.EndIndex < idx) donePasses++;
-                }
-                if (current < 0 && l.EndIndex >= idx) current = i;
-            }
-
-            string state;
-            string next;
-            bool inRun = current >= 0 && idx >= recPathLabels[current].StartIndex;
-
-            if (!recPath.isDrivingRecordedPath)
-            {
-                state = T("Ready - Play or autosteer", "Spremno - Play ili autopilot");
-                next = current >= 0 ? RunName(recPathLabels[current]) : "-";
-            }
-            else if (recPath.isFollowingDubinsToPath)
-            {
-                state = T("Driving to start", "Prilaz putanji");
-                next = current >= 0 ? RunName(recPathLabels[current]) : "-";
-            }
-            else if (inRun)
-            {
-                state = RunName(recPathLabels[current]);
-                if (!recPathLabels[current].IsHeadland) state += " / " + totalPasses;
-                next = current + 1 < recPathLabels.Count ? RunName(recPathLabels[current + 1]) : T("end", "kraj");
-            }
-            else
-            {
-                state = T("Turn", "Okret");
-                next = current >= 0 ? RunName(recPathLabels[current]) : T("end", "kraj");
+                if (l.IsHeadland) continue;
+                totalPasses++;
+                if (l.EndIndex < idx) donePasses++;
             }
 
             double total = recPathCumLength[n - 1];
             double done = recPathCumLength[idx];
             int percent = total > 0 ? (int)Math.Round(done * 100.0 / total) : 0;
-            double remainingKm = (total - done) / 1000.0;
+            int passNo = Math.Min(totalPasses, donePasses + 1);
 
             string[] lines =
             {
-                T("FIELD PLAN", "PLAN PARCELE"),
-                state,
-                T("Next: ", "Slijedi: ") + next,
-                T("Progress: ", "Napredak: ") + donePasses + "/" + totalPasses + "  " + percent + "%",
-                T("Remaining: ", "Preostalo: ") + remainingKm.ToString("0.0", CultureInfo.InvariantCulture) + " km"
+                T("Pass ", "Prohod ") + passNo + "/" + totalPasses,
+                "km " + (done / 1000.0).ToString("0.0", CultureInfo.InvariantCulture) + "/" + (total / 1000.0).ToString("0.0", CultureInfo.InvariantCulture)
             };
 
-            // Card in the upper left corner, below the mini map (it used to cover the field at the bottom)
-            double size = 0.85;
+            // small card in the upper right corner, below the name of the active track, left of
+            // the zoom buttons
+            double size = 0.9;
             int lineH = 30;
-            int width = 330;
-            int height = lineH * lines.Length + 20;
-            double left = -oglMain.Width / 2.0 + MiniMapLeftOffset;
-            double top = MiniMapTop + (IsMiniMapShown ? MiniMapHeight + 10 : 0);
-            // no room below the mini map: put the card above it
-            if (top + height > oglMain.Height) top = Math.Max(0, MiniMapTop - height - 10);
+            int width = 210;
+            int height = lineH * lines.Length + 16;
+            double left = oglMain.Width / 2.0 - 75 - width;
+            double top = 36;
 
             GL.Color4(0.12, 0.14, 0.17, 0.85);
             GL.Begin(PrimitiveType.Quads);
@@ -539,13 +504,9 @@ namespace AgOpenGPS
             GL.Vertex2(left, top + height);
             GL.End();
 
+            GL.Color3(1.0f, 1.0f, 1.0f);
             for (int i = 0; i < lines.Length; i++)
-            {
-                if (i == 0) GL.Color3(1.0f, 0.84f, 0.31f);
-                else if (i == 1) GL.Color3(1.0f, 1.0f, 1.0f);
-                else GL.Color3(0.82f, 0.85f, 0.88f);
-                font.DrawText(left + 12, top + 8 + i * lineH, lines[i], i == 1 ? size * 1.1 : size);
-            }
+                font.DrawText(left + 12, top + 6 + i * lineH, lines[i], size);
         }
 
         /// <summary>Big "REVERSE" sign while the recorded path goes backwards (driver shifts gear).</summary>
