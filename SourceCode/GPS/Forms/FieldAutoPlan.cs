@@ -252,6 +252,8 @@ namespace AgOpenGPS
             {
                 // the new track becomes the active one: its guide lines lie on the planned passes
                 int ti = AddAutoPlanTrack(plan.TrackLine);
+                // wedge field: a second track along the other long side
+                if (plan.TrackLine2.Count > 2) AddAutoPlanTrack(plan.TrackLine2, true);
                 if (ti >= 0)
                 {
                     trk.idx = ti;
@@ -796,7 +798,7 @@ namespace AgOpenGPS
         }
 
         /// <summary>Adds the first pass line as a new curve track (not activated).</summary>
-        private int AddAutoPlanTrack(List<V2> line)
+        private int AddAutoPlanTrack(List<V2> line, bool second = false)
         {
             var des = new List<vec3>(line.Count);
             foreach (V2 p in line) des.Add(new vec3(p.E, p.N, 0));
@@ -816,7 +818,7 @@ namespace AgOpenGPS
                 ptA = new vec2(des[0].easting, des[0].northing),
                 ptB = new vec2(des[des.Count - 1].easting, des[des.Count - 1].northing),
                 isVisible = true,
-                name = "Auto plan " + Math.Round(glm.toDegrees(heading), 1).ToString(CultureInfo.InvariantCulture) + "\u00B0"
+                name = (second ? "Auto plan 2 " : "Auto plan ") + Math.Round(glm.toDegrees(heading), 1).ToString(CultureInfo.InvariantCulture) + "\u00B0"
             };
 
             // tail extensions like every curve track
@@ -826,8 +828,9 @@ namespace AgOpenGPS
 
             // tracks of earlier plans would not match these passes: kept, but hidden (in the
             // background, they can be switched visible again in the track list)
-            foreach (CTrk old in trk.gArr)
-                if (old.name != null && old.name.StartsWith("Auto plan ")) old.isVisible = false;
+            if (!second)
+                foreach (CTrk old in trk.gArr)
+                    if (old.name != null && old.name.StartsWith("Auto plan ")) old.isVisible = false;
             trk.gArr.Add(track);
             FileSaveTracks();
             Log.EventWriter("Auto field plan: track added " + track.name);

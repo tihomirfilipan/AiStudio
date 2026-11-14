@@ -161,6 +161,9 @@ namespace AgOpenGPS.AutoPlan
         /// <summary>Centre line of the first pass across the whole field, for a guidance track.</summary>
         public List<V2> TrackLine = new List<V2>();
 
+        /// <summary>Wedge field: guidance track of the second half (along the other long side).</summary>
+        public List<V2> TrackLine2 = new List<V2>();
+
         /// <summary>Number of field parts with their own pass direction (1 = not split).</summary>
         public int PartCount = 1;
 
@@ -587,6 +590,8 @@ namespace AgOpenGPS.AutoPlan
                     res.TrackLine = r.TrackLine;
                     first = false;
                 }
+                // a wedge: the second half gets its own track
+                if (partRegions != null && res.TrackLine != r.TrackLine && res.TrackLine2.Count == 0) res.TrackLine2 = r.TrackLine;
                 res.Points.AddRange(r.Points);
                 res.Passes += r.Passes;
                 res.Turns += r.Turns;
@@ -987,6 +992,14 @@ namespace AgOpenGPS.AutoPlan
                         }
                         empty2 = 0;
                         second.Add(ResampleOpen(best, s));
+                    }
+                    // its guidance track (half a width beside its first pass, as the first one)
+                    {
+                        List<V2> tl2 = new LaneLines(ext2, side2, W, (endsOnly ? 0.0 : headWidth) + W, Math.Max(1.5 * R, 10.0), s).Get(0);
+                        List<V2> best2 = null;
+                        foreach (var run in InsideRuns(tl2, fence))
+                            if (best2 == null || run.Count > best2.Count) best2 = run;
+                        if (best2 != null && best2.Count > 2) res.TrackLine2 = best2;
                     }
                     int lastLane = passes.Count > 0 ? passes[passes.Count - 1].Lane : -1;
                     for (int k = second.Count - 1; k >= 0; k--)
