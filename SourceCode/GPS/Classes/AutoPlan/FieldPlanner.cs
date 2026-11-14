@@ -891,6 +891,14 @@ namespace AgOpenGPS.AutoPlan
             List<V2> fence = ResampleLoop(fenceRaw, s);
             if (fence.Count < 10) { res.Error = "Boundary too small"; return; }
 
+            // start in the middle of a wedge: the second long edge goes on over small steps of the
+            // boundary (a notch) up to its real corner, so its passes run along it to the far end
+            if (set.StartFromMiddle && set.SecondEdge != null && set.SecondEdge.Count >= 2)
+            {
+                set = set.Clone();
+                set.SecondEdge = ExtendEdgeAlongFence(fence, set.SecondEdge, set.WorkWidth, s);
+            }
+
             GetBounds(fence, out V2 bbMin, out V2 bbMax);
             double diag = (bbMax - bbMin).Length;
 
@@ -1332,10 +1340,20 @@ namespace AgOpenGPS.AutoPlan
                 {
                     LastPose(path, s, out V2 lastP, out double lastH);
                     double entryH = HeadingOf(pts[0], pts[Math.Min(3, pts.Count - 1)]);
-                    var turn = Connect(lastP, lastH, pts[0], entryH, R, W, s, fenceGrid, transferLoop, set.TurnsAtBoundary);
+                    // two pass families from the middle: a pass ending inside the field (where the
+                    // families meet, not at the headland) turns right there - a straight run on to
+                    // the boundary would work over the passes beside it
+                    bool atBoundary = set.TurnsAtBoundary;
+                    if (atBoundary && set.StartFromMiddle && set.SecondEdge != null)
+                    {
+                        if (CrossesOtherPasses(lastP, lastH, AheadEdgeDistance(fenceGrid, lastP, lastH, 150.0), passes, st.Pass, order[i - 1].Pass, W)
+                            || CrossesOtherPasses(pts[0], entryH + Math.PI, AheadEdgeDistance(fenceGrid, pts[0], entryH + Math.PI, 150.0), passes, st.Pass, order[i - 1].Pass, W))
+                            atBoundary = false;
+                    }
+                    var turn = Connect(lastP, lastH, pts[0], entryH, R, W, s, fenceGrid, transferLoop, atBoundary);
                     if (turn == null) { res.Error = "Turn could not be built"; return; }
                     if (CountOutside(turn, fenceGrid) > 0) res.TurnsLeavingField++;
-                    if (set.TurnsAtBoundary)
+                    if (atBoundary)
                     {
                         // the straight run on to the edge and back is worked too (sections stay on
                         // until the vehicle starts to turn), so only a narrow strip is left unworked
@@ -3972,6 +3990,66 @@ namespace AgOpenGPS.AutoPlan
             var result = new List<List<V2>>();
             foreach (var m in merged) result.Add(line.GetRange(m[0], m[1] - m[0] + 1));
             return result;
+        }
+
+        // An edge (a piece of the boundary) continued along the boundary at both ends as long as
+        // the boundary keeps about its direction; steps across it (a notch) shorter than two work
+        // widths are passed over
+        private static List<V2> ExtendEdgeAlongFence(List<V2> fence, List<V2> edge, double W, double s)
+        {
+            int n = fence.Count;
+            V2 ed = Dir(edge[0], edge[edge.Count - 1]);
+            int iA = NearestIndex(fence, edge[0]), iB = NearestIndex(fence, edge[edge.Count - 1]);
+            // the way round the boundary from the first to the last point of the edge
+            int step = ((iB - iA + n) % n) <= n / 2 ? 1 : -1;
+            var result = new List<V2>();
+            int w = Math.Max(2, (int)Math.Ceiling(3.0 / s));
+            List<V2> Walk(int from, int dir, V2 along)
+            {
+                var add = new List<V2>();
+                int off = 0, i = from;
+                for (int c = 0; c < n / 2; c++)
+                {
+                    i = ((i + dir) % n + n) % n;
+                    V2 d = Dir(fence[((i - dir * w) % n + n) % n], fence[i]);
+                    bool onWay = d.E * along.E + d.N * along.N > 0.5;   // under 60 degrees
+                    add.Add(fence[i]);
+                    off = onWay ? 0 : off + 1;
+                    if (off * s > 2.0 * W) { add.RemoveRange(add.Count - off, off); break; }
+                }
+                // not ending in a step across
+                while (add.Count > 1)
+                {
+                    V2 d = Dir(add[add.Count - 2], add[add.Count - 1]);
+                    if (d.E * along.E + d.N * along.N > 0.5) break;
+                    add.RemoveAt(add.Count - 1);
+                }
+                return add;
+            }
+            List<V2> before = Walk(iA, -step, new V2(-ed.E, -ed.N));
+            List<V2> after = Walk(iB, step, ed);
+            before.Reverse();
+            result.AddRange(before);
+            result.AddRange(edge);
+            result.AddRange(after);
+            return result;
+        }
+
+        // A straight run from p in direction h over the given length comes closer than most of a
+        // work width to a pass other than the two given ones
+        private static bool CrossesOtherPasses(V2 p, double h, double length, List<Pass> passes, Pass a, Pass b, double W)
+        {
+            V2 d = new V2(Math.Sin(h), Math.Cos(h));
+            for (double t = W; t <= length; t += 2.0)
+            {
+                V2 q = p + d * t;
+                foreach (Pass ps in passes)
+                {
+                    if (ps == a || ps == b) continue;
+                    if (MinDistTo(ps.Pts, q) < 0.8 * W) return true;
+                }
+            }
+            return false;
         }
 
         private static double MinDistTo(List<V2> pts, V2 p)
