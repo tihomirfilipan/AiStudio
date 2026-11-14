@@ -1168,8 +1168,30 @@ namespace AgOpenGPS.AutoPlan
             if (slantFirst != null) order.Insert(0, slantFirst);
             if (set.StartFromMiddle && firstFamilyCount > 0 && firstFamilyCount < passes.Count)
             {
-                order = MiddleOutOrder(passes, firstFamilyCount, startPos);
-                orderName = "from the middle out";
+                // every family from its pass at the middle out to its long edge, ordered (skipping
+                // passes where the turns need it) like a field of its own
+                var f1 = passes.GetRange(0, firstFamilyCount);
+                var f2 = passes.GetRange(firstFamilyCount, passes.Count - firstFamilyCount);
+                Pass m1 = f1[0], m2 = f2[0];
+                foreach (Pass ps in f1) if (ps.Lane > m1.Lane) m1 = ps;
+                foreach (Pass ps in f2) if (ps.Lane < m2.Lane) m2 = ps;
+                double Near(Pass ps) => Math.Min((ps.A - startPos).Length, (ps.B - startPos).Length);
+                bool secondFirst = Near(m2) < Near(m1);
+                var firstFam = secondFirst ? f2 : f1;
+                var lastFam = secondFirst ? f1 : f2;
+                Pass mFirst = secondFirst ? m2 : m1, mLast = secondFirst ? m1 : m2;
+                bool rev0 = (mFirst.B - startPos).Length < (mFirst.A - startPos).Length;
+                EntryPose(mFirst, rev0, out V2 sp0, out double sh0);
+                List<Step> o1 = ChooseOrder(firstFam, R, W, fenceGrid, sp0, sh0, s, transferLoop, orderMode, out string n1,
+                    set.HeadlandReverseTurns || wedgeKTurns, mFirst);
+                ExitPose(o1[o1.Count - 1], out V2 ep, out double eh);
+                bool rev1 = (mLast.B - ep).Length < (mLast.A - ep).Length;
+                EntryPose(mLast, rev1, out V2 sp1, out double sh1);
+                List<Step> o2 = ChooseOrder(lastFam, R, W, fenceGrid, sp1, sh1, s, transferLoop, orderMode, out string n2,
+                    set.HeadlandReverseTurns || wedgeKTurns, mLast);
+                order = new List<Step>(o1);
+                order.AddRange(o2);
+                orderName = "from the middle out, " + n1;
             }
 
             res.OrderDescription = orderName;
@@ -2215,31 +2237,6 @@ namespace AgOpenGPS.AutoPlan
         }
 
         // Exit pose of a pass driven in the given direction
-        // Two pass families (lanes numbered across the field, the first family before the
-        // second): from the middle out to one long edge, then from the middle out to the other one.
-        // The family whose middle pass is nearer to the start goes first; every pass starts at the
-        // end nearer to where the previous one ended.
-        private static List<Step> MiddleOutOrder(List<Pass> passes, int firstCount, V2 startPos)
-        {
-            var f1 = passes.GetRange(0, firstCount);
-            var f2 = passes.GetRange(firstCount, passes.Count - firstCount);
-            f1.Sort((a, b) => b.Lane.CompareTo(a.Lane));   // middle first
-            f2.Sort((a, b) => a.Lane.CompareTo(b.Lane));
-            double D(Pass ps, V2 p) => Math.Min((ps.A - p).Length, (ps.B - p).Length);
-            var seq = new List<Pass>();
-            if (D(f2[0], startPos) < D(f1[0], startPos)) { seq.AddRange(f2); seq.AddRange(f1); }
-            else { seq.AddRange(f1); seq.AddRange(f2); }
-            var order = new List<Step>();
-            V2 at = startPos;
-            foreach (Pass ps in seq)
-            {
-                bool rev = (ps.B - at).Length < (ps.A - at).Length;
-                order.Add(new Step { Pass = ps, Reverse = rev });
-                at = rev ? ps.A : ps.B;
-            }
-            return order;
-        }
-
         private static void ExitPose(Step st, out V2 p, out double h)
         {
             if (!st.Reverse) { p = st.Pass.B; h = Mod2Pi(st.Pass.HeadingB + Math.PI); }
@@ -2260,7 +2257,8 @@ namespace AgOpenGPS.AutoPlan
         /// length, plus a big penalty for turns leaving the boundary, wins.
         /// </summary>
         private static List<Step> ChooseOrder(List<Pass> passes, double R, double W, PolygonTester fence,
-            V2 startPos, double startHeading, double s, List<V2> transferLoop, int orderMode, out string name, bool reverseTurns = false)
+            V2 startPos, double startHeading, double s, List<V2> transferLoop, int orderMode, out string name, bool reverseTurns = false,
+            Pass mustStart = null)
         {
             // weight of the lane penalty: 1e6 = strictly neighbour passes, small = skipping allowed
             double[] weights = orderMode == 1 ? new[] { 1e6 }
@@ -2272,7 +2270,7 @@ namespace AgOpenGPS.AutoPlan
 
             // Start at the first or last lane, at the end closest to the vehicle
             var starts = new List<Step>();
-            foreach (Pass ps in new[] { passes[0], passes[passes.Count - 1] })
+            foreach (Pass ps in mustStart != null ? new[] { mustStart } : new[] { passes[0], passes[passes.Count - 1] })
             {
                 starts.Add(new Step { Pass = ps, Reverse = false });
                 starts.Add(new Step { Pass = ps, Reverse = true });
@@ -2391,6 +2389,7 @@ namespace AgOpenGPS.AutoPlan
                                     EntryPose(plan[k].Pass, true, out V2 pb, out double _);
                                     plan[k].Reverse = (pb - ep).Length < (pa - ep).Length;
                                 }
+                                if (mustStart != null && plan[0].Pass != mustStart) continue;
                                 EntryPose(plan[0].Pass, plan[0].Reverse, out V2 sp, out double sh);
                                 double sc = ScoreOrder(plan) + DubinsLength(startPos, startHeading, sp, sh, R);
                                 if (variant == 3) sc *= 0.85;   // preferred when about as good
@@ -2408,7 +2407,7 @@ namespace AgOpenGPS.AutoPlan
             // A pass cut short by a long side (it ends in the middle of the field, no headland
             // there) is driven first, from that end to its end at the headland; the others follow
             // from there, so nothing is driven empty
-            if (bestPlan != null && bestPlan.Count >= 3)
+            if (bestPlan != null && bestPlan.Count >= 3 && mustStart == null)
             {
                 var byLane = new Dictionary<int, Pass>();
                 foreach (Pass ps in passes) byLane[ps.Lane] = ps;

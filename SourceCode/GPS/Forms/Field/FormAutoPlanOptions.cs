@@ -24,7 +24,7 @@ namespace AgOpenGPS.Forms.Field
         private readonly PictureTile tileEnds, tileAllAround;
         private readonly PictureTile tileTurnsEdge, tileTurnsShort, tileTurnsReverse;
         private readonly PictureTile tileOrderAuto, tileOrderNeighbour, tileOrderSkip;
-        private readonly PictureTile tileWorkHeadland, tileExtraPass, tileAddTrack, tileAvoidWorked, tileSplit, tileSlant, tileWedge;
+        private readonly PictureTile tileWorkHeadland, tileExtraPass, tileAddTrack, tileAvoidWorked, tileSplit, tileSlant, tileWedge, tileMiddle;
 
         // live preview
         private readonly List<V2> fence;
@@ -205,15 +205,20 @@ namespace AgOpenGPS.Forms.Field
             tileSlant.Selected = set.setAutoPlan_slantPass;
             tileWedge = new PictureTile(T("Wedge field (gores in the middle)", "Parcela u klin (oklinci u sredini)"), DrawWedge);
             tileWedge.Selected = set.setAutoPlan_wedgeField;
+            tileMiddle = new PictureTile(T("Start in the middle", "Početak iz sredine"), DrawStartMiddle);
+            tileMiddle.Selected = set.setAutoPlan_startMiddle;
             AddGroup(extras, T("Extras (tap to switch on/off)", "Dodatno (dodir uključi/isključi)"), false, -1,
-                tileWorkHeadland, tileExtraPass, tileAddTrack, tileAvoidWorked, tileSplit, tileSlant, tileWedge);
+                tileWorkHeadland, tileExtraPass, tileAddTrack, tileAvoidWorked, tileSplit, tileSlant, tileWedge, tileMiddle);
+            // a wedge field starts in the middle (can be switched off again); after the group's own
+            // click handler, so the wedge tile is already switched
+            tileWedge.Click += (s, e) => { if (tileWedge.Selected) tileMiddle.Selected = true; };
             root.Controls.Add(extras);
 
             // every change redraws the preview (after a short pause)
             previewTimer = new Timer { Interval = 450 };
             previewTimer.Tick += (s, e) => { previewTimer.Stop(); StartPreview(); };
             foreach (PictureTile t in new[] { tilePath, tileGuidance, tileEnds, tileAllAround, tileTurnsEdge, tileTurnsShort, tileTurnsReverse,
-                tileOrderAuto, tileOrderNeighbour, tileOrderSkip, tileWorkHeadland, tileExtraPass, tileAddTrack, tileAvoidWorked, tileSplit, tileSlant, tileWedge })
+                tileOrderAuto, tileOrderNeighbour, tileOrderSkip, tileWorkHeadland, tileExtraPass, tileAddTrack, tileAvoidWorked, tileSplit, tileSlant, tileWedge, tileMiddle })
                 t.Click += (s, e) => OptionsChanged();
             nudWidth.ValueChanged += (s, e) => OptionsChanged();
             nudRadius.ValueChanged += (s, e) => OptionsChanged();
@@ -337,6 +342,7 @@ namespace AgOpenGPS.Forms.Field
                 SplitField = tileSplit.Selected,
                 SlantEdgePass = tileSlant.Selected,
                 WedgeField = tileWedge.Selected,
+                StartFromMiddle = tileMiddle.Selected,
                 ReferenceEdge = edgeIndex >= 0 ? new List<V2>(edges[edgeIndex]) : pickedEdge
             };
         }
@@ -358,6 +364,7 @@ namespace AgOpenGPS.Forms.Field
             tileSplit.Selected = false;
             tileSlant.Selected = false;
             tileWedge.Selected = false;
+            tileMiddle.Selected = false;
             edgeIndex = -1;
             OptionsChanged();
         }
@@ -427,6 +434,7 @@ namespace AgOpenGPS.Forms.Field
             set.setAutoPlan_splitField = tileSplit.Selected;
             set.setAutoPlan_slantPass = tileSlant.Selected;
             set.setAutoPlan_wedgeField = tileWedge.Selected;
+            set.setAutoPlan_startMiddle = tileMiddle.Selected;
             set.Save();
 
             DialogResult = DialogResult.OK;
@@ -619,6 +627,22 @@ namespace AgOpenGPS.Forms.Field
                 }
             using (var p = new Pen(Color.FromArgb(255, 105, 180), 2f) { DashStyle = DashStyle.Dash })
                 g.DrawLine(p, cx, r.Top + 4, cx, r.Bottom - 4);
+        }
+
+        private static void DrawStartMiddle(Graphics g, Rectangle r)
+        {
+            // start on the middle pass, then out to one side, then from the middle to the other
+            Field(g, r);
+            int cx = (r.Left + r.Right) / 2;
+            using (Pen p = P(Color.FromArgb(150, CPass), 1.3f))
+                for (int i = -4; i <= 4; i++) g.DrawLine(p, cx + i * 9, r.Bottom - 12, cx + i * 9, r.Top + 12);
+            using (var b = new SolidBrush(Color.FromArgb(255, 105, 180))) g.FillEllipse(b, cx - 5, r.Bottom - 17, 10, 10);
+            using (Pen p = P(Color.FromArgb(255, 105, 180), 3f))
+            {
+                p.CustomEndCap = new AdjustableArrowCap(4, 4);
+                g.DrawLine(p, cx + 6, (r.Top + r.Bottom) / 2, r.Right - 14, (r.Top + r.Bottom) / 2);
+                g.DrawLine(p, cx - 6, (r.Top + r.Bottom) / 2, r.Left + 14, (r.Top + r.Bottom) / 2);
+            }
         }
 
         private static void DrawSlantPass(Graphics g, Rectangle r)
