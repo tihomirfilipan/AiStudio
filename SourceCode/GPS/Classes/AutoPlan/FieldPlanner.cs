@@ -885,7 +885,7 @@ namespace AgOpenGPS.AutoPlan
             List<V2> work = null;
             if (endsOnly)
             {
-                endRunId = ClassifyEnds(fence, lanesEnds, W, diag, s);
+                endRunId = ClassifyEnds(fence, lanesEnds, W, diag, s, set.SecondEdge);
                 bool anyEnd = false, anySide = false;
                 foreach (int id in endRunId) { if (id >= 0) anyEnd = true; else anySide = true; }
                 if (anyEnd && anySide)
@@ -1505,7 +1505,20 @@ namespace AgOpenGPS.AutoPlan
         /// For every boundary point: -1 if it is part of a long side (roughly parallel to the passes),
         /// otherwise the number of the end (0, 1, ...) it belongs to.
         /// </summary>
-        private static int[] ClassifyEnds(List<V2> fence, LaneLines lanes, double W, double diag, double s)
+        private static double DistToPolyline(List<V2> line, V2 p)
+        {
+            double best = double.MaxValue;
+            for (int i = 0; i + 1 < line.Count; i++)
+            {
+                V2 a = line[i], e = line[i + 1] - a;
+                double l2 = e.E * e.E + e.N * e.N;
+                double u = l2 > 1e-12 ? Math.Max(0, Math.Min(1, ((p.E - a.E) * e.E + (p.N - a.N) * e.N) / l2)) : 0;
+                best = Math.Min(best, (a + e * u - p).Length);
+            }
+            return best;
+        }
+
+        private static int[] ClassifyEnds(List<V2> fence, LaneLines lanes, double W, double diag, double s, List<V2> secondSide = null)
         {
             // The ends are where passes run into the boundary: lay out passes over the whole
             // field (no headland) and mark the boundary around every pass end.
@@ -1550,6 +1563,8 @@ namespace AgOpenGPS.AutoPlan
                         if (!isEnd[i]) continue;
                         V2 ed = Dir(fence[((i - w) % n + n) % n], fence[(i + w) % n]);
                         if (Math.Abs(ed.E * ld.E + ed.N * ld.N) > 0.99) isEnd[i] = false;
+                        // (a wedge: the second long side itself, its passes follow it)
+                        else if (secondSide != null && DistToPolyline(secondSide, fence[i]) < 1.0) isEnd[i] = false;
                     }
                 }
             }
