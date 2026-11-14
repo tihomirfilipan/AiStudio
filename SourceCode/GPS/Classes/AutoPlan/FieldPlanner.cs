@@ -1219,6 +1219,7 @@ namespace AgOpenGPS.AutoPlan
                 order = new List<Step>();
                 var done = new HashSet<Pass>();
                 V2 at = startPos;
+                var inFirst = new HashSet<Pass>(f1);
                 void AddStep(Pass ps)
                 {
                     if (done.Contains(ps)) return;
@@ -1226,6 +1227,19 @@ namespace AgOpenGPS.AutoPlan
                     bool rev = (ps.B - at).Length < (ps.A - at).Length;
                     order.Add(new Step { Pass = ps, Reverse = rev });
                     at = rev ? ps.A : ps.B;
+                    // it ends in the field where the two sides meet: on into the pass of the other
+                    // side that ends there too (a V, turned at its tip), then the order goes on
+                    ExitPose(order[order.Count - 1], out V2 ep, out double eh);
+                    if (AheadEdgeDistance(fenceGrid, ep, Mod2Pi(eh + Math.PI), 150.0) <= headWidth + 2.0 * R + 2.0 * W) return;
+                    Pass partner = null;
+                    double pd = 3.0 * W;
+                    foreach (Pass o in passes)
+                    {
+                        if (done.Contains(o) || inFirst.Contains(o) == inFirst.Contains(ps)) continue;
+                        double d = Math.Min((o.A - ep).Length, (o.B - ep).Length);
+                        if (d < pd) { pd = d; partner = o; }
+                    }
+                    if (partner != null) AddStep(partner);
                 }
                 AddStep(famA[0]);
                 int kA = 1, kB = 0;
@@ -1318,13 +1332,17 @@ namespace AgOpenGPS.AutoPlan
                         }
                     }
                 }
-                if (i > 0 && wedgeKTurns)
+                if (i > 0 && (wedgeKTurns || (set.StartFromMiddle && set.SecondEdge != null)))
                 {
                     LastPose(path, s, out V2 lp, out double lh);
                     double eh = HeadingOf(pts[0], pts[Math.Min(3, pts.Count - 1)]);
                     V2 dd = pts[0] - lp;
                     double lat = Math.Abs(dd.E * Math.Cos(lh) - dd.N * Math.Sin(lh));
-                    if (lat < 2.0 * R - 0.5 && Math.Abs(AngleDiff(eh, lh + Math.PI)) < 0.3)
+                    // (from the middle: also at the tip of a V where the two sides meet, inside the
+                    // field, close together but at an angle)
+                    bool vTip = set.StartFromMiddle && set.SecondEdge != null && dd.Length < 2.0 * R + W
+                        && AheadEdgeDistance(fenceGrid, lp, lh, 150.0) > headWidth + 2.0 * R + 2.0 * W;
+                    if ((lat < 2.0 * R - 0.5 && Math.Abs(AngleDiff(eh, lh + Math.PI)) < 0.3) || vTip)
                     {
                         // the three point turn may start a bit earlier on the pass (up to two radii)
                         List<ReverseManeuver.Pose> man = null;
