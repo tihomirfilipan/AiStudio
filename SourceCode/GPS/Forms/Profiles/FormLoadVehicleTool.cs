@@ -380,12 +380,22 @@ namespace AgOpenGPS.Forms.Profiles
             buttonLoad.Enabled = vehicleChanged || toolChanged;
         }
 
-        private void buttonLoad_Click(object sender, EventArgs e)
+        private async void buttonLoad_Click(object sender, EventArgs e)
         {
+            // an open field is saved and closed, and opened again with the new vehicle / tool
+            bool reopenField = false;
             if (_formGPS.isJobStarted)
             {
-                _formGPS.TimedMessageBox(2000, gStr.gsFieldIsOpen, gStr.gsCloseFieldFirst);
-                return;
+                if (FormDialog.ShowQuestion(gStr.gsFieldIsOpen,
+                    "Polje je otvoreno. Spremiti i zatvoriti polje, učitati novi stroj i ponovno otvoriti polje?") != DialogResult.OK)
+                    return;
+                await _formGPS.FileSaveEverythingBeforeClosingField();
+                reopenField = !_formGPS.isJobStarted;
+                if (!reopenField)
+                {
+                    _formGPS.TimedMessageBox(2000, gStr.gsFieldIsOpen, gStr.gsCloseFieldFirst);
+                    return;
+                }
             }
 
             bool vehicleChanged = _selectedVehicle != null && _selectedVehicle != RegistrySettings.vehicleProfileName;
@@ -442,6 +452,7 @@ namespace AgOpenGPS.Forms.Profiles
 
                 _formGPS.TimedMessageBox(2500, gStr.gsLoad, msg);
                 Close();
+                if (reopenField) await _formGPS.FileOpenField("Resume");
             }
         }
 
