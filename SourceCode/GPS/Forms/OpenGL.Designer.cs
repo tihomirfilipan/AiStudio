@@ -498,6 +498,8 @@ namespace AgOpenGPS
 
                     if (trk.idx > -1 && !ct.isContourBtnOn) DrawTrackInfo();
 
+                    DrawActiveTrackName();
+
                     DrawPlanMiniMap();
                     DrawAutoPlanCard();
                     DrawReverseHint();
@@ -2421,6 +2423,22 @@ namespace AgOpenGPS
             GL.Color4(0.9, 0.9, 0.9, 0.8);
 
             font.DrawText(start, down, dire, textSize);
+        }
+
+        // Name of the active guidance track in the top right corner
+        private void DrawActiveTrackName()
+        {
+            if (!isJobStarted || trk.idx < 0 || trk.idx >= trk.gArr.Count) return;
+            string name = trk.gArr[trk.idx].name;
+            if (string.IsNullOrEmpty(name)) return;
+
+            double size = 1.0;
+            int width = (int)(18 * size * name.Length);
+            int x = oglMain.Width / 2 - 75 - width;
+            int y = isDebugOn ? 32 : 8;
+
+            GL.Color3(0.98f, 0.92f, 0.45f);
+            font.DrawText(x, y, name, size);
         }
 
         private void DrawCompassText()
