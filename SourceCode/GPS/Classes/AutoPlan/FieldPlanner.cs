@@ -4080,7 +4080,7 @@ namespace AgOpenGPS.AutoPlan
                 {
                     i = ((i + dir) % n + n) % n;
                     V2 d = Dir(fence[((i - dir * w) % n + n) % n], fence[i]);
-                    bool onWay = d.E * along.E + d.N * along.N > 0.5;   // under 60 degrees
+                    bool onWay = d.E * along.E + d.N * along.N > 0.8;   // under about 37 degrees
                     add.Add(fence[i]);
                     off = onWay ? 0 : off + 1;
                     if (off * s > 2.0 * W) { add.RemoveRange(add.Count - off, off); break; }
@@ -4089,7 +4089,7 @@ namespace AgOpenGPS.AutoPlan
                 while (add.Count > 1)
                 {
                     V2 d = Dir(add[add.Count - 2], add[add.Count - 1]);
-                    if (d.E * along.E + d.N * along.N > 0.5) break;
+                    if (d.E * along.E + d.N * along.N > 0.8) break;
                     add.RemoveAt(add.Count - 1);
                 }
                 return add;
@@ -4206,7 +4206,8 @@ namespace AgOpenGPS.AutoPlan
         }
 
         // Ends of passes lying inside the field (more than "inside" from the boundary ahead) grow
-        // along their lane line up to the end of the work area (they may cross other passes)
+        // up to the end of the work area along their lane line, straight on where the line bends
+        // away (they may cross another pass)
         private static void ExtendInsideEnds(List<Pass> passes, Dictionary<Pass, List<V2>> laneOf, List<V2> work, PolygonTester fence,
             double W, double s, double inside)
         {
@@ -4220,17 +4221,61 @@ namespace AgOpenGPS.AutoPlan
             }
             foreach (Pass ps in growers)
             {
+                // straight on in the direction of the end (the lane line may bend away there)
+                int back = Math.Max(3, Math.Min(ps.Pts.Count - 1, (int)Math.Ceiling(W / s)));
+                double hA = HeadingOf(ps.Pts[back], ps.Pts[0]), hB = HeadingOf(ps.Pts[ps.Pts.Count - 1 - back], ps.Pts[ps.Pts.Count - 1]);
+                List<V2> Straight(V2 from, double h)
+                {
+                    var add = new List<V2>();
+                    V2 d = new V2(Math.Sin(h), Math.Cos(h));
+                    for (double t = s; t < 400.0; t += s)
+                    {
+                        V2 q = from + d * t;
+                        if (!inWork.Inside(q)) break;
+                        add.Add(q);
+                    }
+                    return add;
+                }
+                // or along the lane line: the one running less over the other passes
                 List<V2> line = laneOf[ps];
-                int a = NearestIndex(line, ps.A), b = NearestIndex(line, ps.B);
-                bool forward = a <= b;
-                int lo = Math.Min(a, b), hi = Math.Max(a, b);
-                double hA = HeadingOf(ps.Pts[3], ps.Pts[0]), hB = HeadingOf(ps.Pts[ps.Pts.Count - 4], ps.Pts[ps.Pts.Count - 1]);
-                bool growLo = AheadEdgeDistance(fence, forward ? ps.A : ps.B, forward ? hA : hB, 150.0) > inside;
-                bool growHi = AheadEdgeDistance(fence, forward ? ps.B : ps.A, forward ? hB : hA, 150.0) > inside;
-                if (growLo) while (lo > 0 && inWork.Inside(line[lo - 1])) lo--;
-                if (growHi) while (hi < line.Count - 1 && inWork.Inside(line[hi + 1])) hi++;
-                List<V2> pts = line.GetRange(lo, hi - lo + 1);
-                if (!forward) pts.Reverse();
+                int ia = NearestIndex(line, ps.A), ib = NearestIndex(line, ps.B);
+                int stepA = ia <= ib ? -1 : 1;
+                List<V2> AlongLane(int from, int step)
+                {
+                    var add = new List<V2>();
+                    for (int k = from + step; k >= 0 && k < line.Count; k += step)
+                    {
+                        if (!inWork.Inside(line[k])) break;
+                        add.Add(line[k]);
+                    }
+                    return add;
+                }
+                // the lane line, unless it bends more than about 20 degrees away from the end and
+                // straight on runs into no other pass
+                List<V2> Better(List<V2> straight, List<V2> lane, double h)
+                {
+                    V2 d = new V2(Math.Sin(h), Math.Cos(h));
+                    bool bends = false;
+                    for (int k = 1; k < lane.Count && !bends; k++)
+                    {
+                        V2 ld = Dir(lane[k - 1], lane[k]);
+                        if (ld.E * d.E + ld.N * d.N < 0.94) bends = true;
+                    }
+                    if (!bends) return lane;
+                    foreach (V2 q in straight)
+                        foreach (Pass o in passes)
+                            if (o != ps && MinDistTo(o.Pts, q) < 0.3 * W) return lane;
+                    return straight;
+                }
+                var pts = new List<V2>();
+                if (AheadEdgeDistance(fence, ps.A, hA, 150.0) > inside)
+                {
+                    List<V2> head = Better(Straight(ps.A, hA), AlongLane(ia, stepA), hA);
+                    head.Reverse();
+                    pts.AddRange(head);
+                }
+                pts.AddRange(ps.Pts);
+                if (AheadEdgeDistance(fence, ps.B, hB, 150.0) > inside) pts.AddRange(Better(Straight(ps.B, hB), AlongLane(ib, -stepA), hB));
                 ps.Pts = ResampleOpen(pts, s);
             }
             // the grown ends are cut back where they run over another pass (no double work)
