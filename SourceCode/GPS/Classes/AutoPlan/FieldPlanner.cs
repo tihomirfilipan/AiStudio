@@ -1341,7 +1341,7 @@ namespace AgOpenGPS.AutoPlan
                         }
                     }
                 }
-                if (i > 0 && (wedgeKTurns || (set.StartFromMiddle && set.SecondEdge != null)))
+                if (i > 0 && wedgeKTurns)
                 {
                     LastPose(path, s, out V2 lp, out double lh);
                     double eh = HeadingOf(pts[0], pts[Math.Min(3, pts.Count - 1)]);
@@ -1390,6 +1390,39 @@ namespace AgOpenGPS.AutoPlan
                             atBoundary = false;
                     }
                     var turn = Connect(lastP, lastH, pts[0], entryH, R, W, s, fenceGrid, transferLoop, atBoundary);
+                    // from the middle, no reversing: a turn looping round itself (the two passes end
+                    // too close together) starts earlier on the grown end of the previous pass
+                    // (sections are off there anyway) - or the next pass is entered later on its
+                    // grown start
+                    if (turn != null && set.StartFromMiddle && set.SecondEdge != null && TurnRotation(turn) > 1.3 * Math.PI)
+                    {
+                        Pass prev = order[i - 1].Pass;
+                        double room = 0;
+                        for (int k = path.Count - 1; k > 0 && room < 60.0; k--)
+                        {
+                            room += Math.Sqrt(Sq(path[k].E - path[k - 1].E) + Sq(path[k].N - path[k - 1].N));
+                            if (prev.OrigA.HasValue || prev.Extra)
+                            {
+                                V2 q = new V2(path[k - 1].E, path[k - 1].N);
+                                // not before the original end of the previous pass
+                                if (!prev.Extra && (Math.Min((q - prev.OrigA.Value).Length, (q - prev.OrigB.Value).Length) < 1.0)) break;
+                            }
+                            else break;
+                            if (room < 3.0) continue;
+                            var tail = new List<PlanPoint>(path.GetRange(0, k));
+                            LastPose(tail, s, out V2 p2, out double h2);
+                            var t2 = Connect(p2, h2, pts[0], entryH, R, W, s, fenceGrid, transferLoop, false);
+                            if (t2 != null && TurnRotation(t2) < 1.3 * Math.PI)
+                            {
+                                path.RemoveRange(k, path.Count - k);
+                                lastP = p2;
+                                lastH = h2;
+                                turn = t2;
+                                atBoundary = false;
+                                break;
+                            }
+                        }
+                    }
                     if (turn == null) { res.Error = "Turn could not be built"; return; }
                     if (CountOutside(turn, fenceGrid) > 0) res.TurnsLeavingField++;
                     if (atBoundary)
@@ -4190,6 +4223,15 @@ namespace AgOpenGPS.AutoPlan
             result.AddRange(edge);
             result.AddRange(after);
             return result;
+        }
+
+        // Total turning of a line (radians, all bends added up)
+        private static double TurnRotation(List<V2> line)
+        {
+            double rot = 0;
+            for (int k = 2; k < line.Count; k++)
+                rot += Math.Abs(AngleDiff(HeadingOf(line[k - 1], line[k]), HeadingOf(line[k - 2], line[k - 1])));
+            return rot;
         }
 
         // A straight run from p in direction h over the given length comes closer than most of a
