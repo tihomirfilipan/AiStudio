@@ -266,6 +266,11 @@ namespace AgOpenGPS
                     ti = trk.gArr.FindIndex(t => t.name == firstName);
                 }
                 else ti = AddAutoPlanTrack(plan.TrackLine);
+                CTrk activeTrack = ti >= 0 ? trk.gArr[ti] : null;
+                // tracks along the headlands: uvratina1, uvratina2 (replacing earlier ones)
+                for (int h = 0; h < plan.HeadlandTracks.Count && h < 2; h++)
+                    AddAutoPlanTrack(plan.HeadlandTracks[h], true, "uvratina" + (h + 1));
+                if (activeTrack != null) ti = trk.gArr.IndexOf(activeTrack);
                 if (ti >= 0)
                 {
                     trk.idx = ti;

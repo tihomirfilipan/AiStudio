@@ -164,6 +164,13 @@ namespace AgOpenGPS.AutoPlan
         /// <summary>Wedge field: guidance track of the second half (along the other long side).</summary>
         public List<V2> TrackLine2 = new List<V2>();
 
+        /// <summary>
+        /// Guidance tracks along the headlands at the ends (the two longest ends), one tool width
+        /// in from the boundary: AgOpenGPS puts the guide lines half a width beside a track, so
+        /// they lie on the headland passes.
+        /// </summary>
+        public List<List<V2>> HeadlandTracks = new List<List<V2>>();
+
         /// <summary>Number of field parts with their own pass direction (1 = not split).</summary>
         public int PartCount = 1;
 
@@ -553,6 +560,7 @@ namespace AgOpenGPS.AutoPlan
                 var r = new FieldPlanResult();
                 BuildInternal(part, ps, pos, heading, r);
                 if (r.Gores.Count > 0) goresOf[parts.IndexOf(part)] = r.Gores;
+                res.HeadlandTracks.AddRange(r.HeadlandTracks);
                 if (r.SectionLine.Count > 0) res.PartSectionLines.Add(r.SectionLine);
                 if (!r.Ok || r.Points.Count < 2) continue;
 
@@ -605,6 +613,8 @@ namespace AgOpenGPS.AutoPlan
                 pos = new V2(last.E, last.N);
                 heading = last.Heading;
             }
+            res.HeadlandTracks.Sort((a, b) => OpenLength(b).CompareTo(OpenLength(a)));
+            if (res.HeadlandTracks.Count > 2) res.HeadlandTracks.RemoveRange(2, res.HeadlandTracks.Count - 2);
             if (goresOf.Count > 0) AddGores(goresOf, midO, midN, set, R, W, s, fullGrid, loop, res);
             if (res.Points.Count < 2) { res.Error = "No passes fit inside the field"; return; }
 
@@ -1238,6 +1248,7 @@ namespace AgOpenGPS.AutoPlan
                 AppendPoints(path, pts, true, i > 0);
             }
             res.Passes = order.Count;
+            if (endsOnly && endRunId != null) res.HeadlandTracks = EndTracks(fence, endRunId, W, s);
             // with worked headland: before the headland laps (the last pass, not the last lap)
             if (set.WorkHeadland && (set.TurnsAtBoundary || set.HeadlandReverseTurns)) ExtendFirstAndLast(path, fenceGrid, R + W * 0.5 + 0.3, s, R);
 
@@ -3643,6 +3654,45 @@ namespace AgOpenGPS.AutoPlan
         /// Offset a counter clockwise loop inwards. Points closer than the distance to the original
         /// loop (cut corners) are removed.
         /// </summary>
+        // Tracks along the ends: every end run of the boundary moved in by one tool width
+        // (straight on a little past both of its ends), the two longest ones
+        private static List<List<V2>> EndTracks(List<V2> fence, int[] endRunId, double W, double s)
+        {
+            int n = fence.Count;
+            var runs = new Dictionary<int, List<int>>();
+            int start = Array.IndexOf(endRunId, -1);
+            if (start < 0) return new List<List<V2>>();
+            for (int c = 1; c <= n; c++)
+            {
+                int i = (start + c) % n;
+                int id = endRunId[i];
+                if (id < 0) continue;
+                if (!runs.TryGetValue(id, out var l)) runs[id] = l = new List<int>();
+                l.Add(i);
+            }
+            var tester = new PolygonTester(fence);
+            var result = new List<List<V2>>();
+            foreach (var kv in runs)
+            {
+                List<int> idx = kv.Value;
+                if (idx.Count < 3) continue;
+                var line = new List<V2>();
+                foreach (int i in idx)
+                {
+                    V2 d = Dir(fence[(i - 2 + n) % n], fence[(i + 2) % n]);
+                    V2 inN = new V2(-d.N, d.E);   // counter clockwise boundary: inside on the left
+                    V2 p = fence[i] + inN * W;
+                    if (!tester.Inside(p)) p = fence[i] - inN * W;
+                    line.Add(p);
+                }
+                line = SmoothOpen(ResampleOpen(line, s), 5, 2);
+                if (line.Count >= 3 && OpenLength(line) > 2.0 * W) result.Add(line);
+            }
+            result.Sort((a, b) => OpenLength(b).CompareTo(OpenLength(a)));
+            if (result.Count > 2) result.RemoveRange(2, result.Count - 2);
+            return result;
+        }
+
         private static List<V2> InsetLoop(List<V2> loop, double dist, double s)
         {
             int n = loop.Count;
