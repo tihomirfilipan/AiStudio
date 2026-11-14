@@ -28,6 +28,7 @@ namespace AgOpenGPS.AutoPlan
         public bool IsHeadland; // working point on a headland lap or headland strip
         public bool IsReverse;  // reached driving backwards (Heading is still where the vehicle faces)
         public bool IsExtra;    // a short extra pass filling a strip (numbered after the pass before it: "3a")
+        public bool IsPassGap;  // on a pass, but sections off: the ground there is worked already
     }
 
     /// <summary>Label for one working run of a path (pass number or headland lap).</summary>
@@ -1438,6 +1439,34 @@ namespace AgOpenGPS.AutoPlan
                     path[k] = pp;
                 }
             }
+            // from the middle: where a pass runs over ground already worked by the passes before it
+            // (the whole tool width) the sections are off - the pass still goes on to the headland
+            if (set.StartFromMiddle && set.SecondEdge != null)
+            {
+                var donePts = new List<V2>();
+                for (int i = 0; i < order.Count; i++)
+                {
+                    int end = i + 1 < order.Count ? stepStart[i + 1] : path.Count;
+                    for (int k = stepStart[i]; k < end && k < path.Count; k++)
+                    {
+                        if (!path[k].IsWork || donePts.Count == 0) continue;
+                        V2 q = new V2(path[k].E, path[k].N);
+                        V2 nb = new V2(path[Math.Min(path.Count - 1, k + 1)].E, path[Math.Min(path.Count - 1, k + 1)].N);
+                        V2 pb = new V2(path[Math.Max(0, k - 1)].E, path[Math.Max(0, k - 1)].N);
+                        V2 d = Dir(pb, nb);
+                        V2 nrm = new V2(-d.N, d.E);
+                        bool covered = true;
+                        foreach (double t in new[] { -0.45, -0.2, 0.0, 0.2, 0.45 })
+                            if (MinDistTo(donePts, q + nrm * (t * W)) > 0.5 * W) { covered = false; break; }
+                        if (!covered) continue;
+                        PlanPoint pp = path[k];
+                        pp.IsWork = false;
+                        pp.IsPassGap = true;
+                        path[k] = pp;
+                    }
+                    foreach (V2 q in order[i].Pass.Pts) donePts.Add(q);
+                }
+            }
             res.Passes = order.Count;
             // tracks along the headland: only at the pass ends when the headland is set only
             // there, one closed loop around the field when the headland runs all around
@@ -1693,7 +1722,7 @@ namespace AgOpenGPS.AutoPlan
             {
                 if (!pts[i].IsWork) { i++; continue; }
                 int start = i;
-                while (i < pts.Count && pts[i].IsWork) i++;
+                while (i < pts.Count && (pts[i].IsWork || pts[i].IsPassGap)) i++;
                 int end = i - 1;
                 if (end - start < 2) continue;
 
@@ -4267,31 +4296,6 @@ namespace AgOpenGPS.AutoPlan
                 if (AheadEdgeDistance(fence, ps.B, hB, 150.0) > inside) pts.AddRange(Better(Straight(ps.B, hB), AlongLane(ib, -stepA), hB));
                 ps.Pts = ResampleOpen(pts, s);
             }
-            // the grown ends are cut back where they run over another pass (no double work)
-            // the whole tool width at q (driving in direction d) is already worked by other passes
-            bool Double(Pass ps, V2 q, V2 d)
-            {
-                V2 nrm = new V2(-d.N, d.E);
-                foreach (double t in new[] { -0.45, -0.2, 0.0, 0.2, 0.45 })
-                {
-                    V2 x = q + nrm * (t * W);
-                    bool covered = false;
-                    foreach (Pass o in passes)
-                        if (o != ps && MinDistTo(o.Pts, x) <= 0.5 * W) { covered = true; break; }
-                    if (!covered) return false;
-                }
-                return true;
-            }
-            for (int round = 0; round < 3; round++)
-                foreach (Pass ps in growers)
-                {
-                    List<V2> pts = ps.Pts;
-                    int a = 0, b = pts.Count - 1;
-                    // (the grown ends: whatever is already worked there is cut off)
-                    while (a < b - 4 && Double(ps, pts[a], Dir(pts[a], pts[a + 1]))) a++;
-                    while (b > a + 4 && Double(ps, pts[b], Dir(pts[b - 1], pts[b]))) b--;
-                    if (a > 0 || b < pts.Count - 1) ps.Pts = pts.GetRange(a, b - a + 1);
-                }
         }
 
         // Strips between a pass of each side running beside each other a bit more than a width
