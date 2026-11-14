@@ -1266,30 +1266,6 @@ namespace AgOpenGPS.AutoPlan
                     order.Insert(first, new Step { Pass = extra, Reverse = rev });
                     first++;
                 }
-                // the first pass after them is reached through the middle of the field: it starts
-                // where it crosses the middle pass of the other side (no driving out to the headland
-                // and back over ground the other side works)
-                if (first > 0 && first < order.Count)
-                {
-                    Step st0 = order[first];
-                    bool inFirstFamily = passes.IndexOf(st0.Pass) < firstFamilyCount;
-                    List<V2> p0 = new List<V2>(st0.Pass.Pts);
-                    if (st0.Reverse) p0.Reverse();
-                    // the middle pass of the other side
-                    Pass o = inFirstFamily ? passes[firstFamilyCount] : passes[firstFamilyCount - 1];
-                    int cut = -1;
-                    for (int k = 0; k < p0.Count && cut < 0; k++)
-                    {
-                        int ko = NearestIndex(o.Pts, p0[k]);
-                        if (ko > 1 && ko < o.Pts.Count - 2 && (o.Pts[ko] - p0[k]).Length < 1.0) cut = k;
-                    }
-                    if (cut > 0 && p0.Count - cut > 4)
-                    {
-                        p0 = p0.GetRange(cut, p0.Count - cut);
-                        if (st0.Reverse) p0.Reverse();
-                        st0.Pass.Pts = p0;
-                    }
-                }
             }
 
             var path = new List<PlanPoint>();
@@ -1837,8 +1813,6 @@ namespace AgOpenGPS.AutoPlan
                 }
 
                 double gap = Math.Sqrt(Sq(pts[end].E - pts[start].E) + Sq(pts[end].N - pts[start].N));
-                bool extra = false;
-                for (int k = start; k <= end && !extra; k++) extra = pts[k].IsExtra;
                 bool isLoop = (len > 50.0 && gap < len * 0.05) || pts[m].IsHeadland;
                 labels.Add(new RunLabel
                 {
@@ -1848,9 +1822,7 @@ namespace AgOpenGPS.AutoPlan
                     IsHeadland = isLoop,
                     StartIndex = start,
                     EndIndex = end,
-                    Text = isLoop ? "U" + (++lap)
-                        : extra ? pass.ToString(System.Globalization.CultureInfo.InvariantCulture) + "a"
-                        : (++pass).ToString(System.Globalization.CultureInfo.InvariantCulture)
+                    Text = isLoop ? "U" + (++lap) : (++pass).ToString(System.Globalization.CultureInfo.InvariantCulture)
                 });
             }
             return labels;
