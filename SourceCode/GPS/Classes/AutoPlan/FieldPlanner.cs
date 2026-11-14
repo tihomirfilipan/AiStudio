@@ -27,6 +27,7 @@ namespace AgOpenGPS.AutoPlan
         public bool IsWork;
         public bool IsHeadland; // working point on a headland lap or headland strip
         public bool IsReverse;  // reached driving backwards (Heading is still where the vehicle faces)
+        public bool IsExtra;    // a short extra pass filling a strip (numbered after the pass before it: "3a")
     }
 
     /// <summary>Label for one working run of a path (pass number or headland lap).</summary>
@@ -1248,7 +1249,34 @@ namespace AgOpenGPS.AutoPlan
             // along their lane line up to the headland - after the order is set, so the order and
             // the directions stay the same
             if (nearFirst != null && firstFamilyCount > 0)
+            {
                 ExtendInsideEnds(passes, laneOf, work, fenceGrid, W, s, headWidth + R + 0.5 * W + 5.0);
+                // strips left between a pass of each side: one more pass along their middle, put
+                // in where it adds the shortest drive (the other passes keep order and direction)
+                double Link(Step from, Step to)
+                {
+                    ExitPose(from, out V2 ep, out double eh);
+                    EntryPose(to.Pass, to.Reverse, out V2 np, out double nh);
+                    List<V2> c = Connect(ep, eh, np, nh, R, W, s, fenceGrid, transferLoop, set.TurnsAtBoundary);
+                    return c == null ? 1e7 : OpenLength(c) + 1000.0 * CountOutside(c, fenceGrid);
+                }
+                foreach (var (strip, pa, pb) in MiddleStrips(passes, firstFamilyCount, W, s))
+                {
+                    var extra = new Pass { Lane = pa.Lane, Pts = strip, Extra = true };
+                    int bestAt = order.Count;
+                    bool bestRev = false;
+                    double bestCost = double.MaxValue;
+                    for (int at = 1; at <= order.Count; at++)
+                        for (int r = 0; r < 2; r++)
+                        {
+                            var x = new Step { Pass = extra, Reverse = r == 1 };
+                            double cost = Link(order[at - 1], x);
+                            if (at < order.Count) cost += Link(x, order[at]) - Link(order[at - 1], order[at]);
+                            if (cost < bestCost) { bestCost = cost; bestAt = at; bestRev = r == 1; }
+                        }
+                    order.Insert(bestAt, new Step { Pass = extra, Reverse = bestRev });
+                }
+            }
 
             var path = new List<PlanPoint>();
             // farthest point from the boundary where a pass still runs straight at a turn: the
@@ -1282,8 +1310,10 @@ namespace AgOpenGPS.AutoPlan
                 double d0 = AheadEdgeDistance(fenceGrid, a0, h0, 100.0);
                 if (d0 < 100.0) NoteStraightEnd(a0, d0);
             }
+            var stepStart = new int[order.Count];
             for (int i = 0; i < order.Count; i++)
             {
+                stepStart[i] = path.Count;
                 Step st = order[i];
                 List<V2> pts = st.Pass.Pts;
                 if (st.Reverse) { pts = new List<V2>(pts); pts.Reverse(); }
@@ -1404,6 +1434,19 @@ namespace AgOpenGPS.AutoPlan
                     res.Turns++;
                 }
                 AppendPoints(path, pts, true, i > 0);
+            }
+            // the work of an extra strip pass is marked (its label: "3a" after pass 3)
+            for (int i = 0; i < order.Count; i++)
+            {
+                if (!order[i].Pass.Extra) continue;
+                int end = i + 1 < order.Count ? stepStart[i + 1] : path.Count;
+                for (int k = stepStart[i]; k < end && k < path.Count; k++)
+                {
+                    if (!path[k].IsWork) continue;
+                    PlanPoint pp = path[k];
+                    pp.IsExtra = true;
+                    path[k] = pp;
+                }
             }
             res.Passes = order.Count;
             // tracks along the headland: only at the pass ends when the headland is set only
@@ -1678,6 +1721,8 @@ namespace AgOpenGPS.AutoPlan
                 }
 
                 double gap = Math.Sqrt(Sq(pts[end].E - pts[start].E) + Sq(pts[end].N - pts[start].N));
+                bool extra = false;
+                for (int k = start; k <= end && !extra; k++) extra = pts[k].IsExtra;
                 bool isLoop = (len > 50.0 && gap < len * 0.05) || pts[m].IsHeadland;
                 labels.Add(new RunLabel
                 {
@@ -1687,7 +1732,9 @@ namespace AgOpenGPS.AutoPlan
                     IsHeadland = isLoop,
                     StartIndex = start,
                     EndIndex = end,
-                    Text = isLoop ? "U" + (++lap) : (++pass).ToString(System.Globalization.CultureInfo.InvariantCulture)
+                    Text = isLoop ? "U" + (++lap)
+                        : extra ? pass.ToString(System.Globalization.CultureInfo.InvariantCulture) + "a"
+                        : (++pass).ToString(System.Globalization.CultureInfo.InvariantCulture)
                 });
             }
             return labels;
@@ -2292,6 +2339,8 @@ namespace AgOpenGPS.AutoPlan
         {
             public int Lane;
             public List<V2> Pts;
+            // a short pass along the middle of a strip left between two passes
+            public bool Extra;
             public V2 A => Pts[0];
             public V2 B => Pts[Pts.Count - 1];
             public double HeadingA => HeadingOf(Pts[0], Pts[Math.Min(3, Pts.Count - 1)]);
@@ -4156,8 +4205,7 @@ namespace AgOpenGPS.AutoPlan
         }
 
         // Ends of passes lying inside the field (more than "inside" from the boundary ahead) grow
-        // along their lane line up to the end of the work area; they stop most of a width before
-        // another pass, but not before another pass growing too (two of them may cross)
+        // along their lane line up to the end of the work area (they may cross other passes)
         private static void ExtendInsideEnds(List<Pass> passes, Dictionary<Pass, List<V2>> laneOf, List<V2> work, PolygonTester fence,
             double W, double s, double inside)
         {
@@ -4178,22 +4226,44 @@ namespace AgOpenGPS.AutoPlan
                 double hA = HeadingOf(ps.Pts[3], ps.Pts[0]), hB = HeadingOf(ps.Pts[ps.Pts.Count - 4], ps.Pts[ps.Pts.Count - 1]);
                 bool growLo = AheadEdgeDistance(fence, forward ? ps.A : ps.B, forward ? hA : hB, 150.0) > inside;
                 bool growHi = AheadEdgeDistance(fence, forward ? ps.B : ps.A, forward ? hB : hA, 150.0) > inside;
-                bool Free(V2 q)
-                {
-                    if (!inWork.Inside(q)) return false;
-                    foreach (Pass o in passes)
-                    {
-                        if (o == ps || growers.Contains(o)) continue;
-                        if (MinDistTo(o.Pts, q) < 0.8 * W) return false;
-                    }
-                    return true;
-                }
-                if (growLo) while (lo > 0 && Free(line[lo - 1])) lo--;
-                if (growHi) while (hi < line.Count - 1 && Free(line[hi + 1])) hi++;
+                if (growLo) while (lo > 0 && inWork.Inside(line[lo - 1])) lo--;
+                if (growHi) while (hi < line.Count - 1 && inWork.Inside(line[hi + 1])) hi++;
                 List<V2> pts = line.GetRange(lo, hi - lo + 1);
                 if (!forward) pts.Reverse();
                 ps.Pts = ResampleOpen(pts, s);
             }
+        }
+
+        // Strips between a pass of each side running beside each other a bit more than a width
+        // apart (left unworked): the middle line of each such strip, with the two passes beside it
+        private static List<(List<V2> strip, Pass a, Pass b)> MiddleStrips(List<Pass> passes, int firstCount, double W, double s)
+        {
+            var result = new List<(List<V2>, Pass, Pass)>();
+            double minLen = Math.Max(2.0 * W, 5.0);
+            for (int ia = 0; ia < firstCount; ia++)
+                for (int ib = firstCount; ib < passes.Count; ib++)
+                {
+                    Pass pa = passes[ia], pb = passes[ib];
+                    var mids = new List<V2>();
+                    var strips = new List<List<V2>>();
+                    foreach (V2 q in pa.Pts)
+                    {
+                        int k = NearestIndex(pb.Pts, q);
+                        V2 o = pb.Pts[k];
+                        double d = (o - q).Length;
+                        V2 m = (q + o) * 0.5;
+                        bool ok = d > 1.1 * W && d < 2.0 * W && k > 0 && k < pb.Pts.Count - 1;
+                        if (ok)
+                            foreach (Pass other in passes)
+                                if (other != pa && other != pb && MinDistTo(other.Pts, m) < 0.45 * W) { ok = false; break; }
+                        if (ok) mids.Add(m);
+                        else if (mids.Count > 0) { strips.Add(mids); mids = new List<V2>(); }
+                    }
+                    if (mids.Count > 0) strips.Add(mids);
+                    foreach (var st in strips)
+                        if (OpenLength(st) >= minLen) result.Add((ResampleOpen(SmoothOpen(ResampleOpen(st, s), 3, 2), s), pa, pb));
+                }
+            return result;
         }
 
         private static double MinDistTo(List<V2> pts, V2 p)
