@@ -740,7 +740,8 @@ namespace AgOpenGPS.AutoPlan
                 path.InsertRange(first, add);
                 last += add.Count;
             }
-            // end: on along the last pass
+            // end: on along the last pass (not an extra strip pass: it ends inside the field)
+            if (!path[last].IsExtra)
             {
                 V2 a = new V2(path[last].E, path[last].N), b = new V2(path[last - 1].E, path[last - 1].N);
                 double h = HeadingOf(b, a);
@@ -4232,6 +4233,31 @@ namespace AgOpenGPS.AutoPlan
                 if (!forward) pts.Reverse();
                 ps.Pts = ResampleOpen(pts, s);
             }
+            // the grown ends are cut back where they run over another pass (no double work)
+            // the whole tool width at q (driving in direction d) is already worked by other passes
+            bool Double(Pass ps, V2 q, V2 d)
+            {
+                V2 nrm = new V2(-d.N, d.E);
+                foreach (double t in new[] { -0.45, -0.2, 0.0, 0.2, 0.45 })
+                {
+                    V2 x = q + nrm * (t * W);
+                    bool covered = false;
+                    foreach (Pass o in passes)
+                        if (o != ps && MinDistTo(o.Pts, x) <= 0.5 * W) { covered = true; break; }
+                    if (!covered) return false;
+                }
+                return true;
+            }
+            for (int round = 0; round < 3; round++)
+                foreach (Pass ps in growers)
+                {
+                    List<V2> pts = ps.Pts;
+                    int a = 0, b = pts.Count - 1;
+                    // (the grown ends: whatever is already worked there is cut off)
+                    while (a < b - 4 && Double(ps, pts[a], Dir(pts[a], pts[a + 1]))) a++;
+                    while (b > a + 4 && Double(ps, pts[b], Dir(pts[b - 1], pts[b]))) b--;
+                    if (a > 0 || b < pts.Count - 1) ps.Pts = pts.GetRange(a, b - a + 1);
+                }
         }
 
         // Strips between a pass of each side running beside each other a bit more than a width
