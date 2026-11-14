@@ -1168,30 +1168,44 @@ namespace AgOpenGPS.AutoPlan
             if (slantFirst != null) order.Insert(0, slantFirst);
             if (set.StartFromMiddle && firstFamilyCount > 0 && firstFamilyCount < passes.Count)
             {
-                // every family from its pass at the middle out to its long edge, ordered (skipping
-                // passes where the turns need it) like a field of its own
+                // from the middle out, one pass on each side in turn: middle pass of one side,
+                // middle pass of the other side, the next one of the first side, ... (every turn
+                // goes over the middle to the other side, wider each time, no loops); the passes
+                // left over when one side has none any more follow in their own order
                 var f1 = passes.GetRange(0, firstFamilyCount);
                 var f2 = passes.GetRange(firstFamilyCount, passes.Count - firstFamilyCount);
-                Pass m1 = f1[0], m2 = f2[0];
-                foreach (Pass ps in f1) if (ps.Lane > m1.Lane) m1 = ps;
-                foreach (Pass ps in f2) if (ps.Lane < m2.Lane) m2 = ps;
+                f1.Sort((a, b) => b.Lane.CompareTo(a.Lane));   // middle first
+                f2.Sort((a, b) => a.Lane.CompareTo(b.Lane));
                 double Near(Pass ps) => Math.Min((ps.A - startPos).Length, (ps.B - startPos).Length);
-                bool secondFirst = Near(m2) < Near(m1);
+                bool secondFirst = Near(f2[0]) < Near(f1[0]);
                 var firstFam = secondFirst ? f2 : f1;
                 var lastFam = secondFirst ? f1 : f2;
-                Pass mFirst = secondFirst ? m2 : m1, mLast = secondFirst ? m1 : m2;
-                bool rev0 = (mFirst.B - startPos).Length < (mFirst.A - startPos).Length;
-                EntryPose(mFirst, rev0, out V2 sp0, out double sh0);
-                List<Step> o1 = ChooseOrder(firstFam, R, W, fenceGrid, sp0, sh0, s, transferLoop, orderMode, out string n1,
-                    set.HeadlandReverseTurns || wedgeKTurns, mFirst);
-                ExitPose(o1[o1.Count - 1], out V2 ep, out double eh);
-                bool rev1 = (mLast.B - ep).Length < (mLast.A - ep).Length;
-                EntryPose(mLast, rev1, out V2 sp1, out double sh1);
-                List<Step> o2 = ChooseOrder(lastFam, R, W, fenceGrid, sp1, sh1, s, transferLoop, orderMode, out string n2,
-                    set.HeadlandReverseTurns || wedgeKTurns, mLast);
-                order = new List<Step>(o1);
-                order.AddRange(o2);
-                orderName = "from the middle out, " + n1;
+                order = new List<Step>();
+                V2 at = startPos;
+                int pairs = Math.Min(firstFam.Count, lastFam.Count);
+                void AddStep(Pass ps)
+                {
+                    bool rev = (ps.B - at).Length < (ps.A - at).Length;
+                    order.Add(new Step { Pass = ps, Reverse = rev });
+                    at = rev ? ps.A : ps.B;
+                }
+                for (int k = 0; k < pairs; k++)
+                {
+                    AddStep(firstFam[k]);
+                    AddStep(lastFam[k]);
+                }
+                var rest = firstFam.Count > pairs ? firstFam.GetRange(pairs, firstFam.Count - pairs)
+                    : lastFam.GetRange(pairs, lastFam.Count - pairs);
+                if (rest.Count > 0)
+                {
+                    rest.Sort((a, b) => a.Lane.CompareTo(b.Lane));
+                    Pass restMid = firstFam.Count > pairs ? firstFam[pairs] : lastFam[pairs];
+                    ExitPose(order[order.Count - 1], out V2 ep, out double eh);
+                    List<Step> o = ChooseOrder(rest, R, W, fenceGrid, ep, eh, s, transferLoop, orderMode, out string _,
+                        set.HeadlandReverseTurns || wedgeKTurns, restMid);
+                    order.AddRange(o);
+                }
+                orderName = "from the middle out, both sides in turn";
             }
 
             res.OrderDescription = orderName;
