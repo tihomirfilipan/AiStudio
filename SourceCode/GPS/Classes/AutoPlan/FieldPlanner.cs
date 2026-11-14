@@ -3670,22 +3670,41 @@ namespace AgOpenGPS.AutoPlan
                 if (!runs.TryGetValue(id, out var l)) runs[id] = l = new List<int>();
                 l.Add(i);
             }
-            var tester = new PolygonTester(fence);
+            // a clean offset of the whole boundary (no crossings at the corners), cut to the part
+            // next to each end
+            List<V2> inset = InsetLoop(fence, W, s);
             var result = new List<List<V2>>();
+            if (inset == null || inset.Count < 10) return result;
+            int m = inset.Count;
+            var idOf = new int[m];
+            for (int k = 0; k < m; k++)
+            {
+                // the boundary point it belongs to: nearest one
+                idOf[k] = endRunId[NearestIndex(fence, inset[k])];
+            }
             foreach (var kv in runs)
             {
-                List<int> idx = kv.Value;
-                if (idx.Count < 3) continue;
-                var line = new List<V2>();
-                foreach (int i in idx)
+                int id = kv.Key;
+                // longest run of the inset loop (cyclic) next to this end
+                int bestStart = -1, bestLen = 0;
+                int startK = Array.FindIndex(idOf, v => v != id);
+                if (startK < 0) continue;
+                int curStart = -1, curLen = 0;
+                for (int c = 1; c <= m; c++)
                 {
-                    V2 d = Dir(fence[(i - 2 + n) % n], fence[(i + 2) % n]);
-                    V2 inN = new V2(-d.N, d.E);   // counter clockwise boundary: inside on the left
-                    V2 p = fence[i] + inN * W;
-                    if (!tester.Inside(p)) p = fence[i] - inN * W;
-                    line.Add(p);
+                    int k = (startK + c) % m;
+                    if (idOf[k] == id)
+                    {
+                        if (curLen == 0) curStart = k;
+                        curLen++;
+                        if (curLen > bestLen) { bestLen = curLen; bestStart = curStart; }
+                    }
+                    else curLen = 0;
                 }
-                line = SmoothOpen(ResampleOpen(line, s), 5, 2);
+                if (bestLen < 3) continue;
+                var line = new List<V2>(bestLen);
+                for (int c = 0; c < bestLen; c++) line.Add(inset[(bestStart + c) % m]);
+                line = ResampleOpen(line, s);
                 if (line.Count >= 3 && OpenLength(line) > 2.0 * W) result.Add(line);
             }
             result.Sort((a, b) => OpenLength(b).CompareTo(OpenLength(a)));
