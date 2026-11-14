@@ -815,6 +815,34 @@ namespace AgOpenGPS
         }
 
         /// <summary>Adds the first pass line as a new curve track (not activated).</summary>
+        /// <summary>
+        /// After the recorded path of a plan is finished: the nearer of the headland tracks
+        /// (uvratina1 / uvratina2) becomes the active guidance line.
+        /// </summary>
+        public void SwitchToNearestHeadlandTrack()
+        {
+            int best = -1;
+            double bestDist = double.MaxValue;
+            for (int i = 0; i < trk.gArr.Count; i++)
+            {
+                CTrk t = trk.gArr[i];
+                if (t.name != "uvratina1" && t.name != "uvratina2") continue;
+                foreach (vec3 p in t.curvePts)
+                {
+                    double d = glm.Distance(p.easting, p.northing, pivotAxlePos.easting, pivotAxlePos.northing);
+                    if (d < bestDist) { bestDist = d; best = i; }
+                }
+            }
+            if (best < 0) return;
+            trk.gArr[best].isVisible = true;
+            trk.idx = best;
+            curve.isCurveValid = false;
+            ABLine.isABValid = false;
+            yt.ResetYouTurn();
+            PanelUpdateRightAndBottom();
+            Log.EventWriter("Auto field plan: path finished, guidance on " + trk.gArr[best].name);
+        }
+
         private int AddAutoPlanTrack(List<V2> line, bool second = false, string fixedName = null)
         {
             var des = new List<vec3>(line.Count);

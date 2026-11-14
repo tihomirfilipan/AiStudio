@@ -258,6 +258,8 @@ namespace AgOpenGPS
                 else
                 {
                     StopDrivingRecordedPath();
+                    // the plan is done: guidance goes on with the nearer headland track
+                    mf.SwitchToNearestHeadlandTrack();
                     return;
 
                     //create the dubins path based on start and goal to start trip home
