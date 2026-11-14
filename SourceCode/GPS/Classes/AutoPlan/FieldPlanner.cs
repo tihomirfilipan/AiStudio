@@ -988,6 +988,9 @@ namespace AgOpenGPS.AutoPlan
                 };
             }
 
+            // the whole lane line of every pass (two families: grown on to where they meet)
+            var laneOf = new Dictionary<Pass, List<V2>>();
+
             // --- Passes ---
             LaneLines lanes = endsOnly ? lanesEnds : new LaneLines(refExt, side, W, headWidth + W * 0.5, minRadius, s);
             var passes = new List<Pass>();
@@ -1039,6 +1042,7 @@ namespace AgOpenGPS.AutoPlan
                     }
                 }
                 passes.Add(new Pass { Lane = lane, Pts = ResampleOpen(best, s) });
+                if (nearFirst != null) laneOf[passes[passes.Count - 1]] = off;
             }
 
             int firstFamilyCount = -1;
@@ -1056,6 +1060,7 @@ namespace AgOpenGPS.AutoPlan
                     double side2 = PointInPolygon(fence, ref2[m2] + ln2 * (W * 0.5)) ? 1.0 : -1.0;
                     var lanes2 = new LaneLines(ext2, side2, W, (endsOnly ? 0.0 : headWidth) + W * 0.5, Math.Max(1.5 * R, 10.0), s);
                     var second = new List<List<V2>>();
+                    var secondLines = new List<List<V2>>();
                     var firstPts = new List<V2>();
                     foreach (Pass fp in passes) firstPts.AddRange(fp.Pts);
                     int empty2 = 0;
@@ -1086,6 +1091,7 @@ namespace AgOpenGPS.AutoPlan
                         }
                         empty2 = 0;
                         second.Add(ResampleOpen(best, s));
+                        secondLines.Add(off);
                     }
                     // its guidance track (half a width beside its first pass, as the first one)
                     {
@@ -1098,7 +1104,13 @@ namespace AgOpenGPS.AutoPlan
                     firstFamilyCount = passes.Count;
                     int lastLane = passes.Count > 0 ? passes[passes.Count - 1].Lane : -1;
                     for (int k = second.Count - 1; k >= 0; k--)
+                    {
                         passes.Add(new Pass { Lane = lastLane + 1 + (second.Count - 1 - k), Pts = second[k] });
+                        if (nearFirst != null) laneOf[passes[passes.Count - 1]] = secondLines[k];
+                    }
+                    // passes ending where the two families meet go on along their lane line up to
+                    // the passes of the other side (to the crossing, no gap between them)
+                    if (nearFirst != null && firstFamilyCount > 0) JoinFamilies(passes, firstFamilyCount, laneOf, work, W, s);
                 }
             }
 
@@ -4050,6 +4062,67 @@ namespace AgOpenGPS.AutoPlan
                 }
             }
             return false;
+        }
+
+        // Grows the passes of two families along their lane lines, a point at a time on every
+        // pass in turn, as long as they stay in the work area and most of a width away from the
+        // other family's passes: both sides reach the line where they meet
+        private static void JoinFamilies(List<Pass> passes, int firstCount, Dictionary<Pass, List<V2>> laneOf, List<V2> work, double W, double s)
+        {
+            var inWork = new PolygonTester(work);
+            var grow = new List<(Pass ps, List<V2> line, int a, int b, int fam)>();
+            for (int k = 0; k < passes.Count; k++)
+            {
+                if (!laneOf.TryGetValue(passes[k], out List<V2> line)) continue;
+                int a = NearestIndex(line, passes[k].Pts[0]), b = NearestIndex(line, passes[k].Pts[passes[k].Pts.Count - 1]);
+                if (a > b) { int t = a; a = b; b = t; }
+                grow.Add((passes[k], line, a, b, k < firstCount ? 0 : 1));
+            }
+            var cur = new List<V2>[grow.Count];
+            for (int g = 0; g < grow.Count; g++) cur[g] = grow[g].line.GetRange(grow[g].a, grow[g].b - grow[g].a + 1);
+            bool Free(V2 q, int fam)
+            {
+                if (!inWork.Inside(q)) return false;
+                for (int g = 0; g < grow.Count; g++)
+                {
+                    if (grow[g].fam == fam) continue;
+                    if (MinDistTo(cur[g], q) < 0.8 * W) return false;
+                }
+                return true;
+            }
+            var a0 = new int[grow.Count];
+            var b0 = new int[grow.Count];
+            var openA = new bool[grow.Count];
+            var openB = new bool[grow.Count];
+            for (int g = 0; g < grow.Count; g++) { a0[g] = grow[g].a; b0[g] = grow[g].b; openA[g] = true; openB[g] = true; }
+            int stepPts = Math.Max(1, (int)Math.Round(2.0 / s));
+            for (bool any = true; any;)
+            {
+                any = false;
+                for (int g = 0; g < grow.Count; g++)
+                {
+                    var line = grow[g].line;
+                    if (openA[g])
+                    {
+                        int na = a0[g] - stepPts;
+                        if (na >= 0 && Free(line[na], grow[g].fam)) { a0[g] = na; cur[g] = line.GetRange(a0[g], b0[g] - a0[g] + 1); any = true; }
+                        else openA[g] = false;
+                    }
+                    if (openB[g])
+                    {
+                        int nb = b0[g] + stepPts;
+                        if (nb < line.Count && Free(line[nb], grow[g].fam)) { b0[g] = nb; cur[g] = line.GetRange(a0[g], b0[g] - a0[g] + 1); any = true; }
+                        else openB[g] = false;
+                    }
+                }
+            }
+            for (int g = 0; g < grow.Count; g++)
+            {
+                List<V2> pts = cur[g];
+                // same direction as before
+                if ((pts[0] - grow[g].ps.Pts[0]).Length > (pts[pts.Count - 1] - grow[g].ps.Pts[0]).Length) pts.Reverse();
+                grow[g].ps.Pts = ResampleOpen(pts, s);
+            }
         }
 
         private static double MinDistTo(List<V2> pts, V2 p)
