@@ -1482,6 +1482,8 @@ namespace AgOpenGPS.AutoPlan
                 }
                 bool Grown(Pass sp, int k)
                 {
+                    // (an extra strip pass gives way everywhere)
+                    if (sp.Extra) return true;
                     if (!sp.OrigA.HasValue) return false;
                     V2 q = new V2(path[k].E, path[k].N);
                     int ip = NearestIndex(sp.Pts, q);
