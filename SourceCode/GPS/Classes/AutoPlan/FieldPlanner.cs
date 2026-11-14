@@ -1463,32 +1463,63 @@ namespace AgOpenGPS.AutoPlan
                     path[k] = pp;
                 }
             }
-            // from the middle: where a pass runs over ground already worked by the passes before it
-            // (the whole tool width) the sections are off - the pass still goes on to the headland
+            // from the middle: the grown parts of passes work only ground no other pass works -
+            // first they give way to the passes driven later (last to first, the last one always
+            // works), then to the ground already worked before them
             if (set.StartFromMiddle && set.SecondEdge != null)
             {
-                var donePts = new List<V2>();
+                bool Covered(List<V2> worked, int k)
+                {
+                    if (worked.Count == 0) return false;
+                    V2 q = new V2(path[k].E, path[k].N);
+                    V2 nb = new V2(path[Math.Min(path.Count - 1, k + 1)].E, path[Math.Min(path.Count - 1, k + 1)].N);
+                    V2 pb = new V2(path[Math.Max(0, k - 1)].E, path[Math.Max(0, k - 1)].N);
+                    V2 d = Dir(pb, nb);
+                    V2 nrm = new V2(-d.N, d.E);
+                    foreach (double t in new[] { -0.45, -0.2, 0.0, 0.2, 0.45 })
+                        if (MinDistTo(worked, q + nrm * (t * W)) > 0.5 * W) return false;
+                    return true;
+                }
+                bool Grown(Pass sp, int k)
+                {
+                    if (!sp.OrigA.HasValue) return false;
+                    V2 q = new V2(path[k].E, path[k].N);
+                    int ip = NearestIndex(sp.Pts, q);
+                    if ((sp.Pts[ip] - q).Length >= 1.0) return false;
+                    int ia = NearestIndex(sp.Pts, sp.OrigA.Value), ib = NearestIndex(sp.Pts, sp.OrigB.Value);
+                    return ip < Math.Min(ia, ib) || ip > Math.Max(ia, ib);
+                }
+                void Off(int k)
+                {
+                    PlanPoint pp = path[k];
+                    pp.IsWork = false;
+                    pp.IsPassGap = true;
+                    path[k] = pp;
+                }
+                int StepEnd(int i) => i + 1 < order.Count ? stepStart[i + 1] : path.Count;
+                var later = new List<V2>();
+                for (int i = order.Count - 1; i >= 0; i--)
+                {
+                    var mine = new List<V2>();
+                    for (int k = stepStart[i]; k < StepEnd(i) && k < path.Count; k++)
+                    {
+                        if (!path[k].IsWork) continue;
+                        if (Grown(order[i].Pass, k) && Covered(later, k)) Off(k);
+                        else if (k % 2 == 0) mine.Add(new V2(path[k].E, path[k].N));
+                    }
+                    later.AddRange(mine);
+                }
+                var before = new List<V2>();
                 for (int i = 0; i < order.Count; i++)
                 {
-                    int end = i + 1 < order.Count ? stepStart[i + 1] : path.Count;
-                    for (int k = stepStart[i]; k < end && k < path.Count; k++)
+                    var mine = new List<V2>();
+                    for (int k = stepStart[i]; k < StepEnd(i) && k < path.Count; k++)
                     {
-                        if (!path[k].IsWork || donePts.Count == 0) continue;
-                        V2 q = new V2(path[k].E, path[k].N);
-                        V2 nb = new V2(path[Math.Min(path.Count - 1, k + 1)].E, path[Math.Min(path.Count - 1, k + 1)].N);
-                        V2 pb = new V2(path[Math.Max(0, k - 1)].E, path[Math.Max(0, k - 1)].N);
-                        V2 d = Dir(pb, nb);
-                        V2 nrm = new V2(-d.N, d.E);
-                        bool covered = true;
-                        foreach (double t in new[] { -0.45, -0.2, 0.0, 0.2, 0.45 })
-                            if (MinDistTo(donePts, q + nrm * (t * W)) > 0.5 * W) { covered = false; break; }
-                        if (!covered) continue;
-                        PlanPoint pp = path[k];
-                        pp.IsWork = false;
-                        pp.IsPassGap = true;
-                        path[k] = pp;
+                        if (!path[k].IsWork) continue;
+                        if (Grown(order[i].Pass, k) && Covered(before, k)) Off(k);
+                        else if (k % 2 == 0) mine.Add(new V2(path[k].E, path[k].N));
                     }
-                    foreach (V2 q in order[i].Pass.Pts) donePts.Add(q);
+                    before.AddRange(mine);
                 }
             }
             res.Passes = order.Count;
@@ -2384,6 +2415,8 @@ namespace AgOpenGPS.AutoPlan
             public List<V2> Pts;
             // a short pass along the middle of a strip left between two passes
             public bool Extra;
+            // ends before they were grown on (the part beyond them is the grown part)
+            public V2? OrigA, OrigB;
             public V2 A => Pts[0];
             public V2 B => Pts[Pts.Count - 1];
             public double HeadingA => HeadingOf(Pts[0], Pts[Math.Min(3, Pts.Count - 1)]);
@@ -4253,6 +4286,9 @@ namespace AgOpenGPS.AutoPlan
         private static void ExtendInsideEnds(List<Pass> passes, Dictionary<Pass, List<V2>> laneOf, List<V2> work, PolygonTester fence,
             double W, double s, double inside)
         {
+            var origA = new Dictionary<Pass, V2>();
+            var origB = new Dictionary<Pass, V2>();
+            foreach (Pass ps in passes) { origA[ps] = ps.A; origB[ps] = ps.B; }
             var inWork = new PolygonTester(work);
             var growers = new HashSet<Pass>();
             foreach (Pass ps in passes)
@@ -4320,6 +4356,7 @@ namespace AgOpenGPS.AutoPlan
                 if (AheadEdgeDistance(fence, ps.B, hB, 150.0) > inside) pts.AddRange(Better(Straight(ps.B, hB), AlongLane(ib, -stepA), hB));
                 ps.Pts = ResampleOpen(pts, s);
             }
+            foreach (Pass ps in growers) { ps.OrigA = origA[ps]; ps.OrigB = origB[ps]; }
         }
 
         // Strips between a pass of each side running beside each other a bit more than a width
