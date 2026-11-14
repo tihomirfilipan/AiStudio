@@ -4254,7 +4254,7 @@ namespace AgOpenGPS.AutoPlan
                     bool onWay = d.E * along.E + d.N * along.N > 0.8;   // under about 37 degrees
                     add.Add(fence[i]);
                     off = onWay ? 0 : off + 1;
-                    if (off * s > 2.0 * W) { add.RemoveRange(add.Count - off, off); break; }
+                    if (off * s > Math.Max(2.0 * W, 20.0)) { add.RemoveRange(add.Count - off, off); break; }
                 }
                 // not ending in a step across
                 while (add.Count > 1)
