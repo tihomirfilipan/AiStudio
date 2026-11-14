@@ -1394,7 +1394,20 @@ namespace AgOpenGPS.AutoPlan
                     // too close together) starts earlier on the grown end of the previous pass
                     // (sections are off there anyway) - or the next pass is entered later on its
                     // grown start
+                    // from the middle, no reversing: passes ending too close together for a plain
+                    // turn get one bulb at the headland (no figure of eight)
+                    bool bulbDone = false;
                     if (turn != null && set.StartFromMiddle && set.SecondEdge != null && TurnRotation(turn) > 1.3 * Math.PI)
+                    {
+                        var bulb = DubinsPath(lastP, lastH, pts[0], entryH, R, s);
+                        if (bulb != null && bulb.Count > 2 && CountOutside(bulb, fenceGrid) == 0 && TurnRotation(bulb) < 1.95 * Math.PI)
+                        {
+                            turn = bulb;
+                            atBoundary = false;
+                            bulbDone = true;
+                        }
+                    }
+                    if (!bulbDone && turn != null && set.StartFromMiddle && set.SecondEdge != null && TurnRotation(turn) > 1.3 * Math.PI)
                     {
                         Pass prev = order[i - 1].Pass;
                         double room = 0;
