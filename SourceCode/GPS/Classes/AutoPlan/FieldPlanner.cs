@@ -1248,7 +1248,10 @@ namespace AgOpenGPS.AutoPlan
                 AppendPoints(path, pts, true, i > 0);
             }
             res.Passes = order.Count;
-            if (endsOnly && endRunId != null) res.HeadlandTracks = EndTracks(fence, endRunId, W, s);
+            // tracks along the headlands at the pass ends: made for every plan, also when the
+            // headland runs all around the field
+            int[] trackEnds = endRunId ?? ClassifyEnds(fence, lanesEnds, W, diag, s, set.SecondEdge);
+            if (trackEnds != null) res.HeadlandTracks = EndTracks(fence, trackEnds, W, s);
             // with worked headland: before the headland laps (the last pass, not the last lap)
             if (set.WorkHeadland && (set.TurnsAtBoundary || set.HeadlandReverseTurns)) ExtendFirstAndLast(path, fenceGrid, R + W * 0.5 + 0.3, s, R);
 
