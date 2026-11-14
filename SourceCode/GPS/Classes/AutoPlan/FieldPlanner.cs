@@ -1397,14 +1397,50 @@ namespace AgOpenGPS.AutoPlan
                     // from the middle, no reversing: passes ending too close together for a plain
                     // turn get one bulb at the headland (no figure of eight)
                     bool bulbDone = false;
-                    if (turn != null && set.StartFromMiddle && set.SecondEdge != null && TurnRotation(turn) > 1.3 * Math.PI)
+                    // from the middle, no reversing: passes ending too close together for a plain
+                    // turn - the grown end goes straight on (not bending towards the next pass) up to
+                    // the boundary and turns there
+                    if (turn != null && set.StartFromMiddle && set.SecondEdge != null && TurnRotation(turn) > 1.3 * Math.PI
+                        && order[i - 1].Pass.OrigA.HasValue)
                     {
-                        var bulb = DubinsPath(lastP, lastH, pts[0], entryH, R, s);
-                        if (bulb != null && bulb.Count > 2 && CountOutside(bulb, fenceGrid) == 0 && TurnRotation(bulb) < 1.95 * Math.PI)
+                        Pass prev = order[i - 1].Pass;
+                        int kEnd = -1;
+                        for (int k = path.Count - 1; k >= 0; k--)
                         {
-                            turn = bulb;
-                            atBoundary = false;
-                            bulbDone = true;
+                            V2 q = new V2(path[k].E, path[k].N);
+                            if (Math.Min((q - prev.OrigA.Value).Length, (q - prev.OrigB.Value).Length) < 1.0) { kEnd = k; break; }
+                        }
+                        if (kEnd > 5)
+                        {
+                            // aim at the point two radii beside the start of the next pass (on the
+                            // side of this pass): from there a plain turn into it fits
+                            V2 e0 = new V2(path[kEnd].E, path[kEnd].N);
+                            double hu = entryH + Math.PI;
+                            V2 right = new V2(Math.Cos(hu), -Math.Sin(hu));
+                            double sideOf = ((e0 - pts[0]).E * right.E + (e0 - pts[0]).N * right.N) >= 0 ? 1.0 : -1.0;
+                            V2 aim = pts[0] + right * (sideOf * 2.0 * R);
+                            double h0 = HeadingOf(e0, aim);
+                            V2 d0 = new V2(Math.Sin(h0), Math.Cos(h0));
+                            double len = (aim - e0).Length;
+                            var run = new List<V2>();
+                            for (double t = s; t <= len; t += s) run.Add(e0 + d0 * t);
+                            if (run.Count > 2 && CountOutside(run, fenceGrid) == 0)
+                            {
+                                V2 p3 = run[run.Count - 1];
+                                var t3 = Connect(p3, h0, pts[0], entryH, R, W, s, fenceGrid, transferLoop, true);
+                                if (t3 != null && TurnRotation(t3) < 1.3 * Math.PI)
+                                {
+                                    path.RemoveRange(kEnd + 1, path.Count - kEnd - 1);
+                                    // driven with the sections off: the ground there is the other passes'
+                                    AppendPoints(path, run, false, true);
+                                    lastP = p3;
+                                    lastH = h0;
+                                    turn = t3;
+                                    // (the whole turn without work: no extra piece of pass)
+                                    atBoundary = false;
+                                    bulbDone = true;
+                                }
+                            }
                         }
                     }
                     if (!bulbDone && turn != null && set.StartFromMiddle && set.SecondEdge != null && TurnRotation(turn) > 1.3 * Math.PI)
