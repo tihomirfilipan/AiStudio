@@ -1246,11 +1246,24 @@ namespace AgOpenGPS.AutoPlan
                 orderName = "from the middle, halves in turn, out " + jump + " and back";
             }
 
-            res.OrderDescription = orderName;
             // from the middle: passes ending inside the field (where the two sides meet) go on
             // along their lane line up to the headland - after the order is set, so the order and
             // the directions stay the same
-            if (nearFirst != null && firstFamilyCount > 0)
+            // narrow tool (a turn needs more than one and a half widths): the order is searched
+            // for the least driving without work, the turns are made straight from it
+            bool narrowMiddle = nearFirst != null && firstFamilyCount > 0 && 2.0 * R > 1.5 * W;
+            Dictionary<int, List<V2>> directTurns = null;
+            if (narrowMiddle)
+            {
+                var origPts = new Dictionary<Pass, List<V2>>();
+                foreach (Pass ps in passes) origPts[ps] = new List<V2>(ps.Pts);
+                ExtendInsideEnds(passes, laneOf, work, fenceGrid, W, s, headWidth + R + 0.5 * W + 5.0);
+                TrimGrownEnds(passes, origPts, W);
+                foreach (Pass ps in passes) { ps.OrigA = null; ps.OrigB = null; }
+                order = OptimiseMiddleOrder(passes, R, W, fenceGrid, startPos, out directTurns);
+                orderName = "from the middle, searched order";
+            }
+            else if (nearFirst != null && firstFamilyCount > 0)
             {
                 ExtendInsideEnds(passes, laneOf, work, fenceGrid, W, s, headWidth + R + 0.5 * W + 5.0);
                 // strips left between a pass of each side (in the middle of the field): one more
@@ -1268,6 +1281,7 @@ namespace AgOpenGPS.AutoPlan
                 }
             }
 
+            res.OrderDescription = orderName;
             var path = new List<PlanPoint>();
             // farthest point from the boundary where a pass still runs straight at a turn: the
             // sections' switch line goes there, so every pass reaches it (a straight end)
@@ -1309,6 +1323,14 @@ namespace AgOpenGPS.AutoPlan
                 List<V2> pts = st.Pass.Pts;
                 if (st.Reverse) { pts = new List<V2>(pts); pts.Reverse(); }
 
+                if (i > 0 && directTurns != null && directTurns.TryGetValue(i, out List<V2> dturn))
+                {
+                    AppendPoints(path, dturn, false, true);
+                    if (CountOutside(dturn, fenceGrid) > 0) res.TurnsLeavingField++;
+                    res.Turns++;
+                    AppendPoints(path, pts, true, true);
+                    continue;
+                }
                 if (i > 0 && set.HeadlandReverseTurns)
                 {
                     LastPose(path, s, out V2 lastP, out double lastH);
@@ -1524,7 +1546,7 @@ namespace AgOpenGPS.AutoPlan
             // from the middle: the grown parts of passes work only ground no other pass works -
             // they stop working at a crossing with a pass driven later, and where the ground was
             // worked before them
-            if (set.StartFromMiddle && set.SecondEdge != null)
+            if (set.StartFromMiddle && set.SecondEdge != null && directTurns == null)
             {
                 bool Covered(List<V2> worked, int k)
                 {
@@ -3815,6 +3837,26 @@ namespace AgOpenGPS.AutoPlan
             return SolveDubins(p0, h0, p1, h1, R, out DubinsSolution sol) ? sol.Length * R : double.MaxValue / 4;
         }
 
+        /// <summary>Points of every Dubins path (all six words that exist), excluding the start point.</summary>
+        public static List<List<V2>> DubinsAllPaths(V2 p0, double h0, V2 p1, double h1, double R, double spacing)
+        {
+            var all = new List<List<V2>>();
+            double th0 = ToTheta(h0), th1 = ToTheta(h1);
+            double dx = p1.E - p0.E, dy = p1.N - p0.N;
+            double d = Math.Sqrt(dx * dx + dy * dy) / R;
+            double theta = d > 1e-9 ? Mod2Pi(Math.Atan2(dy, dx)) : 0;
+            double a = Mod2Pi(th0 - theta), b = Mod2Pi(th1 - theta);
+            double sa = Math.Sin(a), sb = Math.Sin(b), ca = Math.Cos(a), cb = Math.Cos(b), cab = Math.Cos(a - b);
+            for (int type = 0; type < 6; type++)
+            {
+                if (!DubinsWord(type, d, a, b, sa, sb, ca, cb, cab, out double t, out double pp, out double q)) continue;
+                Simulate(p0, th0, R, type, t, pp, q, out V2 endP, out double endTh);
+                if ((endP - p1).Length > 0.05 * Math.Max(1.0, R) || Math.Abs(AngleDiff(endTh, th1)) > 0.02) continue;
+                all.Add(PathFromSolution(p0, h0, p1, new DubinsSolution { T = t, P = pp, Q = q, Type = type }, R, spacing));
+            }
+            return all;
+        }
+
         /// <summary>Points of the shortest Dubins path, excluding the start point, including the goal.</summary>
         public static List<V2> DubinsPath(V2 p0, double h0, V2 p1, double h1, double R, double spacing)
         {
@@ -4272,6 +4314,205 @@ namespace AgOpenGPS.AutoPlan
             result.AddRange(edge);
             result.AddRange(after);
             return result;
+        }
+
+        // Points of passes in a grid of cells, for "which passes are near" tests
+        private class PassGrid
+        {
+            private readonly double cell;
+            private readonly Dictionary<long, List<(V2 p, int id)>> cells = new Dictionary<long, List<(V2 p, int id)>>();
+            public PassGrid(double cellSize) { cell = Math.Max(1.0, cellSize); }
+            private static long Key(int x, int y) => ((long)x << 32) ^ (uint)y;
+            public void Add(V2 p, int id)
+            {
+                long k = Key((int)Math.Floor(p.E / cell), (int)Math.Floor(p.N / cell));
+                if (!cells.TryGetValue(k, out var l)) cells[k] = l = new List<(V2, int)>();
+                l.Add((p, id));
+            }
+            // ids of the passes with a point nearer than r (r at most one cell)
+            public void Near(V2 q, double r, HashSet<int> into)
+            {
+                int cx = (int)Math.Floor(q.E / cell), cy = (int)Math.Floor(q.N / cell);
+                for (int x = cx - 1; x <= cx + 1; x++)
+                    for (int y = cy - 1; y <= cy + 1; y++)
+                        if (cells.TryGetValue(Key(x, y), out var l))
+                            foreach (var e in l)
+                                if (Sq(e.p.E - q.E) + Sq(e.p.N - q.N) < r * r) into.Add(e.id);
+            }
+        }
+
+        // Grown ends are cut back where they come closer than most of a width to another pass
+        // (as it was before growing): no double work
+        private static void TrimGrownEnds(List<Pass> passes, Dictionary<Pass, List<V2>> orig, double W)
+        {
+            var grid = new PassGrid(W);
+            for (int i = 0; i < passes.Count; i++)
+                foreach (V2 q in DensifyOpen(orig[passes[i]], 0.7)) grid.Add(q, i);
+            var near = new HashSet<int>();
+            for (int i = 0; i < passes.Count; i++)
+            {
+                Pass ps = passes[i];
+                List<V2> o = orig[ps], pts = ps.Pts;
+                if (pts.Count == o.Count) continue;
+                int a = NearestIndex(pts, o[0]), b = NearestIndex(pts, o[o.Count - 1]);
+                int lo = Math.Min(a, b), hi = Math.Max(a, b);
+                bool NearOther(V2 q)
+                {
+                    near.Clear();
+                    grid.Near(q, 0.8 * W, near);
+                    near.Remove(i);
+                    return near.Count > 0;
+                }
+                int from = lo, to = hi;
+                while (from > 0 && !NearOther(pts[from - 1])) from--;
+                while (to < pts.Count - 1 && !NearOther(pts[to + 1])) to++;
+                ps.Pts = pts.GetRange(from, to - from + 1);
+            }
+        }
+
+        // Order of the passes (from the middle, narrow tool) with the least driving without work:
+        // every turn is the best Dubins path between the pass ends (no reversing); driving over
+        // passes already worked costs much more than over the empty field; searched by annealing.
+        // Turns alternate between the two ends of the passes (the end nearer to the start and
+        // the far end).
+        private static List<Step> OptimiseMiddleOrder(List<Pass> passes, double R, double W, PolygonTester fence,
+            V2 startPos, out Dictionary<int, List<V2>> turns)
+        {
+            int n = passes.Count;
+            var grid = new PassGrid(W);
+            for (int i = 0; i < n; i++)
+                foreach (V2 q in DensifyOpen(passes[i].Pts, 0.7)) grid.Add(q, i);
+            // A is the low end (nearer to the start) of the pass, or B
+            var aLow = new bool[n];
+            for (int i = 0; i < n; i++) aLow[i] = (passes[i].A - startPos).Length <= (passes[i].B - startPos).Length;
+            V2 EndAt(int i, bool high) => (high == aLow[i]) ? passes[i].B : passes[i].A;
+            // heading leaving pass i at its end (driving towards that end)
+            double HeadOut(int i, bool high)
+            {
+                List<V2> p = passes[i].Pts;
+                bool atB = high == aLow[i];
+                return atB ? HeadingOf(p[Math.Max(0, p.Count - 4)], p[p.Count - 1]) : HeadingOf(p[Math.Min(3, p.Count - 1)], p[0]);
+            }
+            var cache = new Dictionary<long, List<(double len, int outside, Dictionary<int, int> over, List<V2> path)>>();
+            var hs = new HashSet<int>();
+            List<(double len, int outside, Dictionary<int, int> over, List<V2> path)> Cands(int i, int j, bool high)
+            {
+                long key = ((long)i * 4096 + j) * 2 + (high ? 1 : 0);
+                if (cache.TryGetValue(key, out var c)) return c;
+                V2 p0 = EndAt(i, high), p1 = EndAt(j, high);
+                double h0 = HeadOut(i, high), h1 = Mod2Pi(HeadOut(j, high) + Math.PI);
+                c = new List<(double, int, Dictionary<int, int>, List<V2>)>();
+                foreach (var path in DubinsAllPaths(p0, h0, p1, h1, R, 1.0))
+                {
+                    int outside = 0;
+                    var over = new Dictionary<int, int>();
+                    for (int k = 0; k < path.Count; k++)
+                    {
+                        if (!fence.Clear(path[k])) outside++;
+                        if (k < 3 || k > path.Count - 4) continue;
+                        hs.Clear();
+                        grid.Near(path[k], 0.45 * W, hs);
+                        foreach (int id in hs)
+                            if (id != i && id != j) over[id] = over.TryGetValue(id, out int v) ? v + 1 : 1;
+                    }
+                    var full = new List<V2> { p0 };
+                    full.AddRange(path);
+                    c.Add((OpenLength(full), outside, over, full));
+                }
+                cache[key] = c;
+                return c;
+            }
+            // the first pass is driven from its low end up; the turns alternate high, low, ...
+            var done = new bool[n];
+            double Eval(int[] seq, List<List<V2>> keep)
+            {
+                double total = 0;
+                Array.Clear(done, 0, n);
+                for (int k = 0; k + 1 < seq.Length; k++)
+                {
+                    done[seq[k]] = true;
+                    bool high = k % 2 == 0;
+                    double best = double.MaxValue;
+                    List<V2> bp = null;
+                    foreach (var c in Cands(seq[k], seq[k + 1], high))
+                    {
+                        int pen = 0;
+                        foreach (var kv in c.over) if (done[kv.Key]) pen += kv.Value;
+                        double cost = c.len + c.outside * 500.0 + pen * 6.0;
+                        if (cost < best) { best = cost; bp = c.path; }
+                    }
+                    if (bp == null) best = 1e7;
+                    total += best;
+                    keep?.Add(bp);
+                }
+                return total;
+            }
+            // start: passes by distance from the start, then searched
+            var cur = new int[n];
+            {
+                var byDist = new List<int>();
+                for (int i = 0; i < n; i++) byDist.Add(i);
+                byDist.Sort((x, y) => Math.Min((passes[x].A - startPos).Length, (passes[x].B - startPos).Length)
+                    .CompareTo(Math.Min((passes[y].A - startPos).Length, (passes[y].B - startPos).Length)));
+                for (int i = 0; i < n; i++) cur[i] = byDist[i];
+            }
+            var rnd = new Random(1);
+            double cc = Eval(cur, null);
+            int[] bestSeq = (int[])cur.Clone();
+            double bestCost = cc;
+            double T = 200.0;
+            var watch = System.Diagnostics.Stopwatch.StartNew();
+            var trial = new int[n];
+            while (watch.ElapsedMilliseconds < 8000 && n > 2)
+            {
+                Array.Copy(cur, trial, n);
+                int a = rnd.Next(n), b = rnd.Next(n);
+                if (a == b) continue;
+                if (a > b) { int t = a; a = b; b = t; }
+                double r = rnd.NextDouble();
+                if (r < 0.4) Array.Reverse(trial, a, b - a + 1);
+                else if (r < 0.7) { int t = trial[a]; trial[a] = trial[b]; trial[b] = t; }
+                else
+                {
+                    int x = trial[a];
+                    Array.Copy(trial, a + 1, trial, a, b - a);
+                    trial[b] = x;
+                }
+                double nc = Eval(trial, null);
+                if (nc < cc || rnd.NextDouble() < Math.Exp((cc - nc) / T))
+                {
+                    Array.Copy(trial, cur, n);
+                    cc = nc;
+                    if (cc < bestCost) { bestCost = cc; bestSeq = (int[])cur.Clone(); }
+                }
+                T = Math.Max(1.0, T * 0.9995);
+            }
+            var paths = new List<List<V2>>();
+            Eval(bestSeq, paths);
+            var order = new List<Step>();
+            turns = new Dictionary<int, List<V2>>();
+            for (int k = 0; k < n; k++)
+            {
+                int i = bestSeq[k];
+                bool up = k % 2 == 0;   // from the low end to the high end
+                bool reverse = up ? !aLow[i] : aLow[i];
+                order.Add(new Step { Pass = passes[i], Reverse = reverse });
+                if (k > 0 && paths[k - 1] != null) turns[k] = paths[k - 1];
+            }
+            return order;
+        }
+
+        private static List<V2> DensifyOpen(List<V2> line, double step)
+        {
+            var r = new List<V2>();
+            for (int k = 1; k < line.Count; k++)
+            {
+                V2 a = line[k - 1], b = line[k];
+                int m = Math.Max(1, (int)Math.Ceiling((b - a).Length / step));
+                for (int t = 0; t < m; t++) r.Add(a + (b - a) * ((double)t / m));
+            }
+            if (line.Count > 0) r.Add(line[line.Count - 1]);
+            return r;
         }
 
         // Total turning of a line (radians, all bends added up)
