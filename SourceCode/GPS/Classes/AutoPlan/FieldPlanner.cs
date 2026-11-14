@@ -226,6 +226,19 @@ namespace AgOpenGPS.AutoPlan
                     BuildParts(parts, fence, set, startPos, startHeading, res, wedgeRefs, wedgeRegions, midO, midN);
                 else
                     BuildInternal(fence, set, startPos, startHeading, res);
+
+                // a wedge or split field with no plan (halves too narrow for the tool): the whole
+                // field as one
+                if ((set.WedgeField || set.SplitField) && (!res.Ok || res.Points.Count < 2))
+                {
+                    FieldPlanSettings one = set.Clone();
+                    one.WedgeField = false;
+                    one.SplitField = false;
+                    one.StartFromMiddle = false;
+                    var plain = new FieldPlanResult();
+                    BuildInternal(fence, one, startPos, startHeading, plain);
+                    if (plain.Ok && plain.Points.Count >= 2) res = plain;
+                }
             }
             catch (Exception ex)
             {
