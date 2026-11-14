@@ -1168,28 +1168,47 @@ namespace AgOpenGPS.AutoPlan
             if (slantFirst != null) order.Insert(0, slantFirst);
             if (set.StartFromMiddle && firstFamilyCount > 0 && firstFamilyCount < passes.Count)
             {
-                // every half on its own, passes counted from the middle (1) out to the edge (k):
-                // 1, k, 2, k-1, 3, ... - the turns get narrower each time and never cross; first
-                // the half nearer to the start, then the other one
+                // passes of each half counted from the middle (1, 2, ...): start on the middle
+                // pass of one half, then the halves in turn, on each one out to the pass "jump"
+                // further and back to the next one at the middle (A1, B1+j, B1, A2+j, A2, B2+j,
+                // B2, ...); every turn is at least "jump" passes wide
                 var f1 = passes.GetRange(0, firstFamilyCount);
                 var f2 = passes.GetRange(firstFamilyCount, passes.Count - firstFamilyCount);
                 f1.Sort((a, b) => b.Lane.CompareTo(a.Lane));   // middle first
                 f2.Sort((a, b) => a.Lane.CompareTo(b.Lane));
                 double Near(Pass ps) => Math.Min((ps.A - startPos).Length, (ps.B - startPos).Length);
                 bool secondFirst = Near(f2[0]) < Near(f1[0]);
+                var famA = secondFirst ? f2 : f1;
+                var famB = secondFirst ? f1 : f2;
+                int jump = Math.Max(3, (int)Math.Ceiling(2.0 * R / W - 1e-6));
                 order = new List<Step>();
+                var done = new HashSet<Pass>();
                 V2 at = startPos;
-                foreach (var fam in secondFirst ? new[] { f2, f1 } : new[] { f1, f2 })
+                void AddStep(Pass ps)
                 {
-                    for (int lo = 0, hi = fam.Count - 1, c = 0; lo <= hi; c++)
-                    {
-                        Pass ps = c % 2 == 0 ? fam[lo++] : fam[hi--];
-                        bool rev = (ps.B - at).Length < (ps.A - at).Length;
-                        order.Add(new Step { Pass = ps, Reverse = rev });
-                        at = rev ? ps.A : ps.B;
-                    }
+                    if (done.Contains(ps)) return;
+                    done.Add(ps);
+                    bool rev = (ps.B - at).Length < (ps.A - at).Length;
+                    order.Add(new Step { Pass = ps, Reverse = rev });
+                    at = rev ? ps.A : ps.B;
                 }
-                orderName = "from the middle, 1 - k, 2 - k-1 in each half";
+                AddStep(famA[0]);
+                int kA = 1, kB = 0;
+                bool sideB = true;
+                for (int guard = 0; done.Count < passes.Count && guard < 4 * passes.Count; guard++, sideB = !sideB)
+                {
+                    var fam = sideB ? famB : famA;
+                    int k = sideB ? kB : kA;
+                    while (k < fam.Count && done.Contains(fam[k])) k++;
+                    if (k < fam.Count)
+                    {
+                        if (k + jump < fam.Count) AddStep(fam[k + jump]);
+                        AddStep(fam[k]);
+                        k++;
+                    }
+                    if (sideB) kB = k; else kA = k;
+                }
+                orderName = "from the middle, halves in turn, out " + jump + " and back";
             }
 
             res.OrderDescription = orderName;
