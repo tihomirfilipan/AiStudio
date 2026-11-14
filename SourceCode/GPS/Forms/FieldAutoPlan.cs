@@ -268,8 +268,20 @@ namespace AgOpenGPS
                 else ti = AddAutoPlanTrack(plan.TrackLine);
                 CTrk activeTrack = ti >= 0 ? trk.gArr[ti] : null;
                 // tracks along the headlands: uvratina1, uvratina2 (replacing earlier ones)
+                // headland all around: one closed track uvratina1 around the whole field
                 for (int h = 0; h < plan.HeadlandTracks.Count && h < 2; h++)
-                    AddAutoPlanTrack(plan.HeadlandTracks[h], true, "uvratina" + (h + 1));
+                    AddAutoPlanTrack(plan.HeadlandTracks[h], true, "uvratina" + (h + 1), plan.HeadlandTrackClosed);
+                // a second headland track of an earlier plan does not belong to this one
+                if (plan.HeadlandTracks.Count < 2)
+                {
+                    for (int i = trk.gArr.Count - 1; i >= 0; i--)
+                    {
+                        if (trk.gArr[i].name != "uvratina2" || trk.gArr[i] == activeTrack) continue;
+                        trk.gArr.RemoveAt(i);
+                        if (trk.idx == i) trk.idx = -1;
+                        else if (trk.idx > i) trk.idx--;
+                    }
+                }
                 if (activeTrack != null) ti = trk.gArr.IndexOf(activeTrack);
                 if (ti >= 0)
                 {
@@ -291,11 +303,22 @@ namespace AgOpenGPS
                 ApplyPlanHeadland(plan.SectionLine);
                 planHeadlandDashed = true;
             }
-            else if (cboxIsSectionControlled.Checked)
+            else
             {
-                cboxIsSectionControlled.Checked = false;
-                cboxIsSectionControlled_Click(cboxIsSectionControlled, EventArgs.Empty);
-                Log.EventWriter("Auto field plan: section control by headland switched off (plan works the headland)");
+                // a field without a headland gets one from the plan: only at the pass ends or
+                // all around, as set in the plan
+                if (bnd.bndList.Count > 0 && bnd.bndList[0].hdLine.Count == 0
+                    && plan.WorkAreaIsWholeField && SetHeadlandLine(plan.WorkArea))
+                {
+                    if (!bnd.isHeadlandOn) btnHeadlandOnOff.PerformClick();
+                    Log.EventWriter("Auto field plan: field had no headland, headland made from the plan");
+                }
+                if (cboxIsSectionControlled.Checked)
+                {
+                    cboxIsSectionControlled.Checked = false;
+                    cboxIsSectionControlled_Click(cboxIsSectionControlled, EventArgs.Empty);
+                    Log.EventWriter("Auto field plan: section control by headland switched off (plan works the headland)");
+                }
             }
 
             recPath.StopDrivingRecordedPath();
@@ -887,7 +910,7 @@ namespace AgOpenGPS
             }
         }
 
-        private int AddAutoPlanTrack(List<V2> line, bool second = false, string fixedName = null)
+        private int AddAutoPlanTrack(List<V2> line, bool second = false, string fixedName = null, bool closed = false)
         {
             var des = new List<vec3>(line.Count);
             foreach (V2 p in line) des.Add(new vec3(p.E, p.N, 0));
@@ -902,7 +925,7 @@ namespace AgOpenGPS
 
             var track = new CTrk
             {
-                mode = TrackMode.Curve,
+                mode = closed ? TrackMode.bndCurve : TrackMode.Curve,
                 heading = heading,
                 ptA = new vec2(des[0].easting, des[0].northing),
                 ptB = new vec2(des[des.Count - 1].easting, des[des.Count - 1].northing),
@@ -911,7 +934,8 @@ namespace AgOpenGPS
             };
 
             // tail extensions like every curve track
-            curve.AddFirstLastPoints(ref des);
+            // (a closed loop around the field has none)
+            if (!closed) curve.AddFirstLastPoints(ref des);
             CABCurve.CalculateHeadings(ref des);
             track.curvePts.AddRange(des);
 
@@ -1009,11 +1033,10 @@ namespace AgOpenGPS
             return Math.Sqrt(best);
         }
 
-        private void ApplyPlanHeadland(List<V2> work)
+        /// <summary>Sets the app's headland line of the outer boundary to a closed loop and saves it.</summary>
+        private bool SetHeadlandLine(List<V2> work)
         {
-            planHeadlandDashed = false;
-            planDashCache = null;
-            if (work == null || work.Count < 10 || bnd.bndList.Count == 0) return;
+            if (work == null || work.Count < 10 || bnd.bndList.Count == 0) return false;
 
             var hd = bnd.bndList[0].hdLine;
             hd.Clear();
@@ -1026,6 +1049,14 @@ namespace AgOpenGPS
                 hd.Add(new vec3(a.E, a.N, heading));
             }
             FileSaveHeadland();
+            return true;
+        }
+
+        private void ApplyPlanHeadland(List<V2> work)
+        {
+            planHeadlandDashed = false;
+            planDashCache = null;
+            if (!SetHeadlandLine(work)) return;
 
             if (!bnd.isHeadlandOn) btnHeadlandOnOff.PerformClick();
             if (!cboxIsSectionControlled.Checked)

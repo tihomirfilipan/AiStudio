@@ -151,6 +151,8 @@ namespace AgOpenGPS.AutoPlan
 
         // For debugging / visualisation
         public List<V2> WorkArea = new List<V2>();
+        // false when the field was planned in parts: WorkArea is then the first part only
+        public bool WorkAreaIsWholeField = true;
         /// <summary>
         /// Line where the sections switch at the pass ends (the turns' room from the boundary),
         /// only at the ends; long sides stay on the boundary. Empty when the plan works the headland.
@@ -170,6 +172,8 @@ namespace AgOpenGPS.AutoPlan
         /// they lie on the headland passes.
         /// </summary>
         public List<List<V2>> HeadlandTracks = new List<List<V2>>();
+        // true: the headland runs all around and HeadlandTracks holds one closed loop
+        public bool HeadlandTrackClosed;
 
         /// <summary>Number of field parts with their own pass direction (1 = not split).</summary>
         public int PartCount = 1;
@@ -560,7 +564,7 @@ namespace AgOpenGPS.AutoPlan
                 var r = new FieldPlanResult();
                 BuildInternal(part, ps, pos, heading, r);
                 if (r.Gores.Count > 0) goresOf[parts.IndexOf(part)] = r.Gores;
-                res.HeadlandTracks.AddRange(r.HeadlandTracks);
+                if (!r.HeadlandTrackClosed) res.HeadlandTracks.AddRange(r.HeadlandTracks);
                 if (r.SectionLine.Count > 0) res.PartSectionLines.Add(r.SectionLine);
                 if (!r.Ok || r.Points.Count < 2) continue;
 
@@ -595,6 +599,7 @@ namespace AgOpenGPS.AutoPlan
                 {
                     res.ReferenceEdge = r.ReferenceEdge;
                     res.WorkArea = r.WorkArea;
+                    res.WorkAreaIsWholeField = parts.Count < 2;
                     res.TrackLine = r.TrackLine;
                     first = false;
                 }
@@ -615,6 +620,17 @@ namespace AgOpenGPS.AutoPlan
             }
             res.HeadlandTracks.Sort((a, b) => OpenLength(b).CompareTo(OpenLength(a)));
             if (res.HeadlandTracks.Count > 2) res.HeadlandTracks.RemoveRange(2, res.HeadlandTracks.Count - 2);
+            if (set.HeadlandOnLongSides)
+            {
+                // headland all around: one closed track around the whole field
+                List<V2> ring = InsetLoop(full, W, s);
+                res.HeadlandTracks.Clear();
+                if (ring != null && ring.Count >= 10)
+                {
+                    res.HeadlandTracks.Add(ring);
+                    res.HeadlandTrackClosed = true;
+                }
+            }
             if (goresOf.Count > 0) AddGores(goresOf, midO, midN, set, R, W, s, fullGrid, loop, res);
             if (res.Points.Count < 2) { res.Error = "No passes fit inside the field"; return; }
 
@@ -1248,10 +1264,21 @@ namespace AgOpenGPS.AutoPlan
                 AppendPoints(path, pts, true, i > 0);
             }
             res.Passes = order.Count;
-            // tracks along the headlands at the pass ends: made for every plan, also when the
-            // headland runs all around the field
-            int[] trackEnds = endRunId ?? ClassifyEnds(fence, lanesEnds, W, diag, s, set.SecondEdge);
-            if (trackEnds != null) res.HeadlandTracks = EndTracks(fence, trackEnds, W, s);
+            // tracks along the headland: only at the pass ends when the headland is set only
+            // there, one closed loop around the field when the headland runs all around
+            if (endsOnly)
+            {
+                if (endRunId != null) res.HeadlandTracks = EndTracks(fence, endRunId, W, s);
+            }
+            else
+            {
+                List<V2> loop = InsetLoop(fence, W, s);
+                if (loop != null && loop.Count >= 10)
+                {
+                    res.HeadlandTracks = new List<List<V2>> { loop };
+                    res.HeadlandTrackClosed = true;
+                }
+            }
             // with worked headland: before the headland laps (the last pass, not the last lap)
             if (set.WorkHeadland && (set.TurnsAtBoundary || set.HeadlandReverseTurns)) ExtendFirstAndLast(path, fenceGrid, R + W * 0.5 + 0.3, s, R);
 
