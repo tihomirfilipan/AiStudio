@@ -1108,9 +1108,6 @@ namespace AgOpenGPS.AutoPlan
                         passes.Add(new Pass { Lane = lastLane + 1 + (second.Count - 1 - k), Pts = second[k] });
                         if (nearFirst != null) laneOf[passes[passes.Count - 1]] = secondLines[k];
                     }
-                    // passes ending where the two families meet go on along their lane line up to
-                    // the passes of the other side (to the crossing, no gap between them)
-                    if (nearFirst != null && firstFamilyCount > 0) JoinFamilies(passes, firstFamilyCount, laneOf, work, W, s);
                 }
             }
 
@@ -1247,6 +1244,11 @@ namespace AgOpenGPS.AutoPlan
             }
 
             res.OrderDescription = orderName;
+            // from the middle: passes ending inside the field (where the two sides meet) go on
+            // along their lane line up to the headland - after the order is set, so the order and
+            // the directions stay the same
+            if (nearFirst != null && firstFamilyCount > 0)
+                ExtendInsideEnds(passes, laneOf, work, fenceGrid, W, s, headWidth + R + 0.5 * W + 5.0);
 
             var path = new List<PlanPoint>();
             // farthest point from the boundary where a pass still runs straight at a turn: the
@@ -4150,6 +4152,47 @@ namespace AgOpenGPS.AutoPlan
                 // same direction as before
                 if ((pts[0] - grow[g].ps.Pts[0]).Length > (pts[pts.Count - 1] - grow[g].ps.Pts[0]).Length) pts.Reverse();
                 grow[g].ps.Pts = ResampleOpen(pts, s);
+            }
+        }
+
+        // Ends of passes lying inside the field (more than "inside" from the boundary ahead) grow
+        // along their lane line up to the end of the work area; they stop most of a width before
+        // another pass, but not before another pass growing too (two of them may cross)
+        private static void ExtendInsideEnds(List<Pass> passes, Dictionary<Pass, List<V2>> laneOf, List<V2> work, PolygonTester fence,
+            double W, double s, double inside)
+        {
+            var inWork = new PolygonTester(work);
+            var growers = new HashSet<Pass>();
+            foreach (Pass ps in passes)
+            {
+                if (!laneOf.ContainsKey(ps) || ps.Pts.Count < 4) continue;
+                double hA = HeadingOf(ps.Pts[3], ps.Pts[0]), hB = HeadingOf(ps.Pts[ps.Pts.Count - 4], ps.Pts[ps.Pts.Count - 1]);
+                if (AheadEdgeDistance(fence, ps.A, hA, 150.0) > inside || AheadEdgeDistance(fence, ps.B, hB, 150.0) > inside) growers.Add(ps);
+            }
+            foreach (Pass ps in growers)
+            {
+                List<V2> line = laneOf[ps];
+                int a = NearestIndex(line, ps.A), b = NearestIndex(line, ps.B);
+                bool forward = a <= b;
+                int lo = Math.Min(a, b), hi = Math.Max(a, b);
+                double hA = HeadingOf(ps.Pts[3], ps.Pts[0]), hB = HeadingOf(ps.Pts[ps.Pts.Count - 4], ps.Pts[ps.Pts.Count - 1]);
+                bool growLo = AheadEdgeDistance(fence, forward ? ps.A : ps.B, forward ? hA : hB, 150.0) > inside;
+                bool growHi = AheadEdgeDistance(fence, forward ? ps.B : ps.A, forward ? hB : hA, 150.0) > inside;
+                bool Free(V2 q)
+                {
+                    if (!inWork.Inside(q)) return false;
+                    foreach (Pass o in passes)
+                    {
+                        if (o == ps || growers.Contains(o)) continue;
+                        if (MinDistTo(o.Pts, q) < 0.8 * W) return false;
+                    }
+                    return true;
+                }
+                if (growLo) while (lo > 0 && Free(line[lo - 1])) lo--;
+                if (growHi) while (hi < line.Count - 1 && Free(line[hi + 1])) hi++;
+                List<V2> pts = line.GetRange(lo, hi - lo + 1);
+                if (!forward) pts.Reverse();
+                ps.Pts = ResampleOpen(pts, s);
             }
         }
 
