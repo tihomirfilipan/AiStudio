@@ -1219,7 +1219,6 @@ namespace AgOpenGPS.AutoPlan
                 order = new List<Step>();
                 var done = new HashSet<Pass>();
                 V2 at = startPos;
-                var inFirst = new HashSet<Pass>(f1);
                 void AddStep(Pass ps)
                 {
                     if (done.Contains(ps)) return;
@@ -1227,19 +1226,6 @@ namespace AgOpenGPS.AutoPlan
                     bool rev = (ps.B - at).Length < (ps.A - at).Length;
                     order.Add(new Step { Pass = ps, Reverse = rev });
                     at = rev ? ps.A : ps.B;
-                    // it ends in the field where the two sides meet: on into the pass of the other
-                    // side that ends there too (a V, turned at its tip), then the order goes on
-                    ExitPose(order[order.Count - 1], out V2 ep, out double eh);
-                    if (AheadEdgeDistance(fenceGrid, ep, Mod2Pi(eh + Math.PI), 150.0) <= headWidth + 2.0 * R + 2.0 * W) return;
-                    Pass partner = null;
-                    double pd = 3.0 * W;
-                    foreach (Pass o in passes)
-                    {
-                        if (done.Contains(o) || inFirst.Contains(o) == inFirst.Contains(ps)) continue;
-                        double d = Math.Min((o.A - ep).Length, (o.B - ep).Length);
-                        if (d < pd) { pd = d; partner = o; }
-                    }
-                    if (partner != null) AddStep(partner);
                 }
                 AddStep(famA[0]);
                 int kA = 1, kB = 0;
@@ -4082,8 +4068,8 @@ namespace AgOpenGPS.AutoPlan
             return false;
         }
 
-        // Grows the passes of two families along their lane lines, a point at a time on every
-        // pass in turn, as long as they stay in the work area and most of a width away from the
+        // Grows the passes of two families along their lane lines, pair by pair from the middle
+        // out (a point at a time on both passes of a pair in turn), as long as they stay in the work area and most of a width away from the
         // other family's passes: both sides reach the line where they meet
         private static void JoinFamilies(List<Pass> passes, int firstCount, Dictionary<Pass, List<V2>> laneOf, List<V2> work, double W, double s)
         {
@@ -4126,23 +4112,35 @@ namespace AgOpenGPS.AutoPlan
             var openB = new bool[grow.Count];
             for (int g = 0; g < grow.Count; g++) { a0[g] = grow[g].a; b0[g] = grow[g].b; openA[g] = true; openB[g] = true; }
             int stepPts = Math.Max(1, (int)Math.Round(2.0 / s));
-            for (bool any = true; any;)
+            // pairs from the middle out: the innermost pass of each side first, both grown until
+            // they meet, then the next pair, ...
+            var side1 = new List<int>();
+            var side2 = new List<int>();
+            for (int g = 0; g < grow.Count; g++) (grow[g].fam == 0 ? side1 : side2).Add(g);
+            side1.Reverse();   // first family: the middle pass is the last one
+            for (int pair = 0; pair < Math.Max(side1.Count, side2.Count); pair++)
             {
-                any = false;
-                for (int g = 0; g < grow.Count; g++)
+                var group = new List<int>();
+                if (pair < side1.Count) group.Add(side1[pair]);
+                if (pair < side2.Count) group.Add(side2[pair]);
+                for (bool any = true; any;)
                 {
-                    var line = grow[g].line;
-                    if (openA[g])
+                    any = false;
+                    foreach (int g in group)
                     {
-                        int na = a0[g] - stepPts;
-                        if (na >= 0 && Free(line[na], Dir(line[a0[g]], line[na]), grow[g].fam)) { a0[g] = na; cur[g] = line.GetRange(a0[g], b0[g] - a0[g] + 1); any = true; }
-                        else openA[g] = false;
-                    }
-                    if (openB[g])
-                    {
-                        int nb = b0[g] + stepPts;
-                        if (nb < line.Count && Free(line[nb], Dir(line[b0[g]], line[nb]), grow[g].fam)) { b0[g] = nb; cur[g] = line.GetRange(a0[g], b0[g] - a0[g] + 1); any = true; }
-                        else openB[g] = false;
+                        var line = grow[g].line;
+                        if (openA[g])
+                        {
+                            int na = a0[g] - stepPts;
+                            if (na >= 0 && Free(line[na], Dir(line[a0[g]], line[na]), grow[g].fam)) { a0[g] = na; cur[g] = line.GetRange(a0[g], b0[g] - a0[g] + 1); any = true; }
+                            else openA[g] = false;
+                        }
+                        if (openB[g])
+                        {
+                            int nb = b0[g] + stepPts;
+                            if (nb < line.Count && Free(line[nb], Dir(line[b0[g]], line[nb]), grow[g].fam)) { b0[g] = nb; cur[g] = line.GetRange(a0[g], b0[g] - a0[g] + 1); any = true; }
+                            else openB[g] = false;
+                        }
                     }
                 }
             }
