@@ -334,7 +334,30 @@ namespace AgOpenGPS
                 sectionLine ? FieldPlanner.ExtendWorkStraight(plan.Points, tool.width) : plan.Points, toolBehind);
             Log.EventWriter("Auto field plan: section switching shifted by " + toolBehind.ToString("0.0", CultureInfo.InvariantCulture) + " m");
 
-            foreach (PlanPoint p in planPoints)
+            // a trailed implement cuts the inside of a curve: the tractor drives its path shifted to the
+            // outside by L * L * curvature / 2 (L = hitch length behind the pivot), so the implement
+            // covers the planned pass; the offset follows the curvature of the planned path
+            double trailL = tool.isToolTrailing ? tool.trailingHitchLength : 0.0;
+            var shifted = new List<PlanPoint>(planPoints.Count);
+            for (int k = 0; k < planPoints.Count; k++)
+            {
+                PlanPoint p = planPoints[k];
+                if (trailL > 0.5 && planPoints.Count > 2)
+                {
+                    int ka = Math.Max(0, k - 2), kb = Math.Min(planPoints.Count - 1, k + 2);
+                    double dh = FieldPlanner.AngleDiff(planPoints[kb].Heading, planPoints[ka].Heading);
+                    double arc = Math.Max(0.5, Math.Sqrt(Math.Pow(planPoints[kb].E - planPoints[ka].E, 2) + Math.Pow(planPoints[kb].N - planPoints[ka].N, 2)));
+                    double kappa = dh / arc;
+                    double delta = trailL * trailL * kappa / 2.0;
+                    // left normal of the heading (sin h, cos h): turning right (kappa > 0) the outside is left
+                    double nE = -Math.Cos(p.Heading), nN = Math.Sin(p.Heading);
+                    p.E += nE * delta;
+                    p.N += nN * delta;
+                }
+                shifted.Add(p);
+            }
+
+            foreach (PlanPoint p in shifted)
             {
                 double speed = p.IsReverse ? AutoPlanReverseSpeed
                     : !p.IsWork ? AutoPlanTurnSpeed : (p.IsHeadland ? AutoPlanHeadlandSpeed : AutoPlanWorkSpeed);
