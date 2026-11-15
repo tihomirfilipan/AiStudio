@@ -168,8 +168,24 @@ namespace AgOpenGPS.Forms.Field
                 FlatStyle = FlatStyle.Flat,
                 Margin = new Padding(3, 5, 3, 10)
             };
-            btnRace.Click += (s, e) => SelectRace();
+            btnRace.Click += (s, e) =>
+            {
+                if (raceSelected)
+                {
+                    raceSelected = false;
+                    btnRace.Text = T("RACE AI: OFF (click to enable)", "RACE AI: ISKLJUČEN (klikni za uključivanje)");
+                    btnRace.BackColor = Color.FromArgb(69, 79, 87);
+                    OptionsChanged();
+                }
+                else
+                {
+                    SelectRace();
+                    btnRace.Text = T("RACE AI: ON (click to disable)", "RACE AI: UKLJUČEN (klikni za isključivanje)");
+                    btnRace.BackColor = Color.FromArgb(27, 110, 65);
+                }
+            };
             root.Controls.Add(btnRace);
+            btnRace.Text = T("RACE AI: OFF (click to enable)", "RACE AI: ISKLJUČEN (klikni za uključivanje)");
 
 
             var numbers = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = new Padding(0, 0, 0, 4) };
@@ -367,6 +383,8 @@ namespace AgOpenGPS.Forms.Field
         private void Recommended()
         {
             raceSelected = false;
+            btnRace.Text = T("RACE AI: OFF (click to enable)", "RACE AI: ISKLJUČEN (klikni za uključivanje)");
+            btnRace.BackColor = Color.FromArgb(69, 79, 87);
             nudWidth.Value = (decimal)appWidth;
             nudRadius.Value = (decimal)appRadius;
             nudLaps.Value = 0;
