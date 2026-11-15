@@ -380,6 +380,24 @@ namespace AgOpenGPS
             int top = currentPositonIndex + 5;
             if (top > ptCount) top = ptCount;
 
+            // a change of driving direction (cusp of a three point turn) just ahead: the path
+            // comes back next to itself there, so the closest point must not jump onto the next
+            // part before the cusp is reached; once it is reached the search starts after it
+            for (int t = currentPositonIndex; t < top - 1; t++)
+            {
+                if ((recList[t].speed < 0) == (recList[t + 1].speed < 0)) continue;
+                int pr = Math.Max(0, t - 1);
+                double tx = recList[t].easting - recList[pr].easting, tz = recList[t].northing - recList[pr].northing;
+                double ax = pivotAxlePosRP.easting - recList[t].easting, az = pivotAxlePosRP.northing - recList[t].northing;
+                if (pr == t || (ax * tx) + (az * tz) >= 0 || (ax * ax) + (az * az) < 0.09)
+                {
+                    currentPositonIndex = t + 1;
+                    top = Math.Min(ptCount, currentPositonIndex + 5);
+                }
+                else top = t + 1;
+                break;
+            }
+
             for (int t = currentPositonIndex; t < top; t++)
             {
                 dist = ((pivotAxlePosRP.easting - recList[t].easting) * (pivotAxlePosRP.easting - recList[t].easting))
@@ -485,8 +503,44 @@ namespace AgOpenGPS
             bool goalFound = false;
             int lastIdx = -1;
 
+            bool partReverse = recList[A].speed < 0;
             for (int i = ReverseHeading ? B : A; i < ptCount && i >= 0; i += count)
             {
+                // the driving direction changes here (cusp of a three point turn): the goal point
+                // must not run on to the next part, which comes back beside this one and turned
+                // the wheels the other way before the cusp. It goes on past the cusp along the
+                // curve being driven, so the steering is held up to the stop
+                if (count == 1 && i > 1 && (recList[i].speed < 0) != partReverse)
+                {
+                    int c2 = i - 1, c1 = Math.Max(0, i - 2), c0 = Math.Max(0, i - 3);
+                    double h2 = Math.Atan2(recList[c2].northing - recList[c1].northing, recList[c2].easting - recList[c1].easting);
+                    double h1 = Math.Atan2(recList[c1].northing - recList[c0].northing, recList[c1].easting - recList[c0].easting);
+                    double segLen = glm.Distance(recList[c2].easting, recList[c2].northing, recList[c1].easting, recList[c1].northing);
+                    double kappa = 0;
+                    if (c0 != c1 && segLen > 0.01)
+                    {
+                        double dh = h2 - h1;
+                        while (dh > Math.PI) dh -= glm.twoPI;
+                        while (dh < -Math.PI) dh += glm.twoPI;
+                        kappa = dh / segLen;
+                    }
+                    if (c1 == c2) break;
+                    double rem = goalPointDistance - distSoFar - Math.Sqrt(((start.easting - recList[c2].easting) * (start.easting - recList[c2].easting))
+                        + ((start.northing - recList[c2].northing) * (start.northing - recList[c2].northing)));
+                    if (rem < 0) rem = 0;
+                    if (Math.Abs(kappa) < 1e-4)
+                    {
+                        goalPointRP.easting = recList[c2].easting + (Math.Cos(h2) * rem);
+                        goalPointRP.northing = recList[c2].northing + (Math.Sin(h2) * rem);
+                    }
+                    else
+                    {
+                        goalPointRP.easting = recList[c2].easting + ((Math.Sin(h2 + (kappa * rem)) - Math.Sin(h2)) / kappa);
+                        goalPointRP.northing = recList[c2].northing - ((Math.Cos(h2 + (kappa * rem)) - Math.Cos(h2)) / kappa);
+                    }
+                    goalFound = true;
+                    break;
+                }
                 lastIdx = i;
                 // used for calculating the length squared of next segment.
                 double tempDist = Math.Sqrt((start.easting - recList[i].easting) * (start.easting - recList[i].easting)
