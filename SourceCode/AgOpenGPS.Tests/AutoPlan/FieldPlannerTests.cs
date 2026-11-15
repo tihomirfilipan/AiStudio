@@ -356,6 +356,31 @@ namespace AgOpenGPS.Tests.AutoPlan
         }
 
         [Test]
+        public void ReverseManeuver_CountsForwardReverseTransitions()
+        {
+            var fence = Rectangle(100, 100);
+            Func<V2, bool> inside = p => FieldPlanner.PointInPolygon(fence, p);
+            var path = ReverseManeuver.KTurn(
+                new V2(40, 40), 0,
+                new V2(46, 40), Math.PI,
+                4, 0.5, inside, false);
+
+            Assert.That(path, Is.Not.Null);
+            Assert.That(ReverseManeuver.CountDirectionChanges(path), Is.EqualTo(2));
+        }
+
+        [Test]
+        public void ReverseManeuver_RejectsInvalidDirectionChangeBudget()
+        {
+            var result = ReverseManeuver.Find(
+                new V2(40, 40), 0,
+                new V2(46, 40), Math.PI,
+                4, 0.5, p => true, 1000, -1);
+
+            Assert.That(result, Is.Null);
+        }
+
+        [Test]
         public void SplitField_LShapeGetsTwoPartsWithOwnDirection()
         {
             var parts = FieldPlanner.SplitAtBends(LShape());
