@@ -81,6 +81,9 @@ namespace AgOpenGPS.AutoPlan
         /// </summary>
         public bool HeadlandReverseTurns = false;
 
+        /// <summary>Maximum number of forward/reverse direction changes in one searched manoeuvre.</summary>
+        public int MaxDirectionChanges = 5;
+
         /// <summary>Turns and transfers never drive over worked passes (only headland and the outer pass tracks).</summary>
         public bool AvoidWorked = false;
 
@@ -865,7 +868,7 @@ namespace AgOpenGPS.AutoPlan
                     PlanPoint l = res.Points[res.Points.Count - 1];
                     double h1 = HeadingOf(pts[0], pts[Math.Min(3, pts.Count - 1)]);
                     var man = ReverseManeuver.KTurn(new V2(l.E, l.N), l.Heading, pts[0], h1, R, s, fullGrid.Clear, false)
-                        ?? ReverseManeuver.Find(new V2(l.E, l.N), l.Heading, pts[0], h1, R, s, fullGrid.Clear);
+                        ?? ReverseManeuver.Find(new V2(l.E, l.N), l.Heading, pts[0], h1, R, s, fullGrid.Clear, 60000, set.MaxDirectionChanges);
                     if (man != null)
                     {
                         AddManoeuvre(res, man);
