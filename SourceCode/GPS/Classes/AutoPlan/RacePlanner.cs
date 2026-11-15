@@ -16,6 +16,7 @@ namespace AgOpenGPS.AutoPlan
             FieldPlanSettings settings = input.Clone();
             settings.WedgeField = true;
             settings.StartFromMiddle = true;
+            settings.RequireMiddleWedge = true;
             settings.SplitField = false;
             settings.HeadlandReverseTurns = false;
             settings.AvoidWorked = true;
@@ -24,6 +25,8 @@ namespace AgOpenGPS.AutoPlan
 
             FieldPlanResult result = FieldPlanner.Build(boundary, settings, start, heading);
             if (!result.Ok) return result;
+            if (result.PartCount < 2 && (result.Gores == null || result.Gores.Count == 0))
+                return Fail("RACE: central wedge geometry was not generated");
             if (result.Points == null || result.Points.Count < 2 ||
                 result.TurnsLeavingField != 0 || result.SkippedPieces != 0)
                 return Fail("RACE: incomplete plan or turn outside field");
