@@ -5,6 +5,7 @@ on:
     branches:
       - develop
       - feature/universal-maneuver-planner
+      - feature/race-ai-v2
   pull_request:
 
 env:
