@@ -39,6 +39,7 @@ namespace AgOpenGPS.Forms.Field
         private int version, planVersion = -1;
         private readonly double appWidth, appRadius;
         private bool raceSelected;
+        private Button raceButton;
 
         /// <summary>Also add the first pass line as a new curve track.</summary>
         public bool AddTrack => tileAddTrack.Selected || GuidanceMode;
@@ -184,6 +185,7 @@ namespace AgOpenGPS.Forms.Field
                     btnRace.BackColor = Color.FromArgb(27, 110, 65);
                 }
             };
+            raceButton = btnRace;
             root.Controls.Add(btnRace);
             btnRace.Text = T("RACE AI: OFF (click to enable)", "RACE AI: ISKLJUČEN (klikni za uključivanje)");
 
@@ -383,8 +385,8 @@ namespace AgOpenGPS.Forms.Field
         private void Recommended()
         {
             raceSelected = false;
-            btnRace.Text = T("RACE AI: OFF (click to enable)", "RACE AI: ISKLJUČEN (klikni za uključivanje)");
-            btnRace.BackColor = Color.FromArgb(69, 79, 87);
+            raceButton.Text = T("RACE AI: OFF (click to enable)", "RACE AI: ISKLJUČEN (klikni za uključivanje)");
+            raceButton.BackColor = Color.FromArgb(69, 79, 87);
             nudWidth.Value = (decimal)appWidth;
             nudRadius.Value = (decimal)appRadius;
             nudLaps.Value = 0;
