@@ -402,7 +402,9 @@ namespace AgOpenGPS
                 GL.End();
 
                 if (label.IsHeadland) GL.Color3(0.82f, 0.84f, 0.86f);
-                else GL.Color3(1.0f, 0.84f, 0.31f);
+                else if (i == current) GL.Color3(1.0f, 0.84f, 0.31f);
+                else if (i == current + 1) GL.Color3(1.0f, 1.0f, 1.0f);
+                else GL.Color3(0.60f, 0.62f, 0.65f);
                 font.DrawText3D(label.E, label.N, label.Text, camHeading, PassNumberSize, true);
             }
             GL.PointSize(1.0f);
@@ -507,59 +509,6 @@ namespace AgOpenGPS
             GL.Color3(1.0f, 1.0f, 1.0f);
             for (int i = 0; i < lines.Length; i++)
                 font.DrawText(left + 12, top + 6 + i * lineH, lines[i], size);
-        }
-
-        /// <summary>
-        /// Pass numbers in one line ahead of the vehicle on the main screen: the current
-        /// pass yellow, the next one white, the following ones grey. Shown while driving the plan.
-        /// </summary>
-        private void DrawPassStrip()
-        {
-            if (!recPath.isDrivingRecordedPath || recPathLabels.Count == 0) return;
-            if (!UpdateRecPathLabels()) return;
-
-            int idx = recPath.isFollowingRecPath ? recPath.currentPositonIndex : 0;
-            int current = -1;
-            for (int i = 0; i < recPathLabels.Count; i++)
-                if (!recPathLabels[i].IsHeadland && recPathLabels[i].EndIndex >= idx) { current = i; break; }
-            if (current < 0) return;
-
-            var items = new List<(string text, int kind)>();   // kind: 0 current, 1 next, 2 later
-            for (int i = current, k = 0; i < recPathLabels.Count && k < 7; i++)
-            {
-                if (recPathLabels[i].IsHeadland) continue;
-                items.Add((recPathLabels[i].Text, k == 0 ? 0 : (k == 1 ? 1 : 2)));
-                k++;
-            }
-            if (items.Count == 0) return;
-
-            double size = 1.6;
-            double gap = 4 * size;
-            double charW = AgOpenGPS.Core.DrawLib.Font.CharXSpacing * size;
-            double total = 0;
-            foreach (var it in items) total += it.text.Length * charW + gap;
-            double x = -total / 2.0;
-            // on the main screen, just ahead of the vehicle (centre of the view, above it)
-            double y = oglMain.Height * 0.5 - 80;
-            x = -total / 2.0;
-
-            GL.Enable(EnableCap.Blend);
-            GL.Color4(0.12, 0.14, 0.17, 0.80);
-            GL.Begin(PrimitiveType.Quads);
-            GL.Vertex2(x - 12, y - 6);
-            GL.Vertex2(x + total + 12, y - 6);
-            GL.Vertex2(x + total + 12, y + size * AgOpenGPS.Core.DrawLib.Font.GlyphHeight + 6);
-            GL.Vertex2(x - 12, y + size * AgOpenGPS.Core.DrawLib.Font.GlyphHeight + 6);
-            GL.End();
-
-            foreach (var it in items)
-            {
-                if (it.kind == 0) GL.Color3(1.0f, 0.84f, 0.31f);
-                else if (it.kind == 1) GL.Color3(1.0f, 1.0f, 1.0f);
-                else GL.Color3(0.60f, 0.62f, 0.65f);
-                font.DrawText(x, y, it.text, size);
-                x += it.text.Length * charW + gap;
-            }
         }
 
         /// <summary>Big "REVERSE" sign while the recorded path goes backwards (driver shifts gear).</summary>
