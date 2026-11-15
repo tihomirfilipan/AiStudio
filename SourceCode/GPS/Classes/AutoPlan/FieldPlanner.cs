@@ -1351,7 +1351,9 @@ namespace AgOpenGPS.AutoPlan
                             V2 pj = new V2(path[j].E, path[j].N);
                             if ((pj - lastP).Length > 2.0 * R) break;
                             if (j < path.Count - 1 && AheadEdgeDistance(fenceGrid, pj, lastH, 100.0) > lineRev + 0.5) break;
-                            man = ReverseManeuver.KTurn(pj, lastH, pts[0], entryH, R, s, fenceGrid.Clear);
+                            // KLV1 first; the K-turn where KLV1 does not fit
+                            man = ReverseManeuver.KLV1(pj, lastH, pts[0], entryH, R, s, fenceGrid.Clear)
+                                ?? ReverseManeuver.KTurn(pj, lastH, pts[0], entryH, R, s, fenceGrid.Clear);
                             if (man != null) { cut = j + 1; break; }
                         }
                         if (man == null) man = ReverseManeuver.Find(lastP, lastH, pts[0], entryH, R, s, fenceGrid.Clear);

@@ -115,6 +115,92 @@ namespace AgOpenGPS.AutoPlan
             return null;
         }
 
+        /// <summary>
+        /// KLV1: forward arc of radius R turning away from the next pass (angle acos(L/2R)), then a
+        /// reversing arc of the same radius turning the other way, which brings the vehicle onto
+        /// the next pass facing against the first pass; then straight forward into the pass.
+        /// The reversing arc ends at the same height as the forward arc's cusp reach (2R sin a),
+        /// so the room needed equals KTurnReach. Null when the passes are not side by side, closer
+        /// than two radii, or it does not fit inside.
+        /// </summary>
+        public static List<Pose> KLV1(V2 p0, double h0, V2 p1, double h1, double R, double spacing, Func<V2, bool> inside,
+            bool nearBoundary = true)
+        {
+            double dh = Math.IEEERemainder(h1 - h0 - Math.PI, 2.0 * Math.PI);
+            if (Math.Abs(dh) > (nearBoundary ? 0.2 : 0.5)) return null;
+            V2 d = new V2(Math.Sin(h0), Math.Cos(h0));
+            V2 r = new V2(Math.Cos(h0), -Math.Sin(h0));        // to the right of the heading
+            V2 rel = p1 - p0;
+            double along = rel.E * d.E + rel.N * d.N;
+            double lat = rel.E * r.E + rel.N * r.N;
+            double L = Math.Abs(lat);
+            if (L >= 2.0 * R - 0.01 || (nearBoundary && L < 0.5)) return null;
+            V2 d1 = new V2(Math.Sin(h1), Math.Cos(h1));
+            V2 ahead = p1 + d1 * 5.0 - p0;
+            double sideLat = L >= 0.5 ? lat : ahead.E * r.E + ahead.N * r.N;
+            if (Math.Abs(sideLat) < 1e-6) return null;
+            V2 u = r * Math.Sign(sideLat);                      // towards the next pass
+            double alpha = Math.Acos(L / (2.0 * R));            // forward arc, under 90 degrees
+            double yc = 2.0 * R * Math.Sin(alpha);              // height of the reversing arc's top
+            double step = Math.Max(0.2, spacing);
+            int Steps(double len) => Math.Max(2, (int)Math.Ceiling(len / step));
+
+            // local frame: x away from the next pass (next pass at x = -L), y along the pass
+            List<Pose> Make(double e)
+            {
+                V2 a0 = p0 + d * e;
+                V2 Wp(double x, double y) => a0 + u * (-x) + d * y;
+                var pts = new List<Pose>();
+                void Add(V2 p, bool rev) { pts.Add(new Pose { P = p, Reverse = rev }); }
+                Add(p0, false);
+                int n = Steps(e);
+                for (int i = 1; i <= n && e > 1e-6; i++) Add(p0 + d * (e * i / n), false);
+                // forward arc away from the next pass, centre (R, 0)
+                n = Steps(R * alpha);
+                for (int i = 1; i <= n; i++)
+                {
+                    double t = alpha * i / n;
+                    Add(Wp(R - R * Math.Cos(t), R * Math.Sin(t)), false);
+                }
+                // reversing arc of the same radius, centre (R - L, yc), from the cusp round to the next pass
+                double cx = R - L, cy = yc;
+                double ph0 = -alpha, ph1 = -Math.PI;
+                n = Steps(R * (ph0 - ph1));
+                for (int i = 1; i <= n; i++)
+                {
+                    double ph = ph0 + (ph1 - ph0) * i / n;
+                    Add(Wp(cx + R * Math.Cos(ph), cy + R * Math.Sin(ph)), true);
+                }
+                // straight forward into the next pass, facing against the first pass
+                V2 q = Wp(-L, yc);
+                V2 toP = p1 - q;
+                if (toP.E * d1.E + toP.N * d1.N < -0.01) return null;
+                double len = toP.Length;
+                n = Steps(len);
+                for (int i = 1; i <= n; i++) Add(q + toP * (i / (double)n), false);
+                foreach (Pose pp in pts) if (!inside(pp.P)) return null;
+                return pts;
+            }
+
+            // the cusp must come before the next pass starts: e >= along - yc
+            double eMin = Math.Max(0.0, along - yc);
+            if (!nearBoundary)
+            {
+                for (double e = eMin; e <= eMin + 40.0; e += 0.5)
+                {
+                    List<Pose> k = Make(e);
+                    if (k != null) return k;
+                }
+                return null;
+            }
+            for (double e = eMin + 40.0; e >= eMin - 1e-9; e -= 0.5)
+            {
+                List<Pose> k = Make(e);
+                if (k != null) return k;
+            }
+            return null;
+        }
+
         /// <summary>Room the three point turn needs past its start (towards the boundary).</summary>
         public static double KTurnReach(double W, double R)
         {
