@@ -1675,7 +1675,16 @@ namespace AgOpenGPS.AutoPlan
                 // (three point turns all start at the same distance: one line for every end)
                 bool fixedLine = set.HeadlandLineDistance > 0;
                 if (fixedLine) lineDist = set.HeadlandLineDistance;
-                List<V2> line = InsetEnds(fence, endRunId, lineDist, s, default, 0.0, set.HeadlandReverseTurns || fixedLine ? null : byEnd, edgeKey, true);
+                // every end gets its own headland width: the one its turns measured, never less than the
+                // room a reversing turn needs (an end with a slanted or narrow corner needs more)
+                var perEnd = new Dictionary<int, double>();
+                if (set.HeadlandReverseTurns && !fixedLine)
+                {
+                    foreach (var kv in straightEndByEnd) perEnd[kv.Key] = Math.Max(lineDist, kv.Value + 0.3);
+                    if (perEnd.Count == 0) perEnd = null;
+                }
+                List<V2> line = InsetEnds(fence, endRunId, lineDist, s, default, 0.0,
+                    perEnd ?? (set.HeadlandReverseTurns || fixedLine ? null : byEnd), edgeKey, true);
                 if (line != null && line.Count >= 10)
                 {
                     res.SectionLine = line;
