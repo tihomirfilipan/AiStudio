@@ -698,6 +698,24 @@ namespace AgOpenGPS
             return len > 50.0 && gap < len * 0.05;
         }
 
+        // Hue (0..360, red = warm) to RGB, full saturation and brightness
+        private static void HsvToRgb(double hue, out float r, out float g, out float b)
+        {
+            double h = (hue % 360) / 60.0;
+            int k = (int)Math.Floor(h);
+            double f = h - k;
+            double q = 1 - f;
+            switch (k)
+            {
+                case 0: r = 1; g = (float)f; b = 0; break;
+                case 1: r = (float)q; g = 1; b = 0; break;
+                case 2: r = 0; g = 1; b = (float)f; break;
+                case 3: r = 0; g = (float)q; b = 1; break;
+                case 4: r = (float)f; g = 0; b = 1; break;
+                default: r = 1; g = 0; b = (float)q; break;
+            }
+        }
+
         public void DrawRecordedLine()
         {
             int ptCount = recList.Count;
@@ -725,16 +743,29 @@ namespace AgOpenGPS
                 if (activeRun >= 0) { nextRun = r; break; }
             }
 
-            // the turn between the active pass and the next one is white too
+            // the turn between the active pass and the next one is light blue
             int turnRun = -1;
             if (activeRun >= 0 && nextRun >= 0)
                 for (int r = activeRun + 1; r < nextRun; r++) if (!runs[r].work) turnRun = r;
 
+            // turns coloured by their order along the path: warm colours first, cooler later
+            int turnCount = 0;
+            foreach (var t in runs) if (!t.work) turnCount++;
+            int turnNo = 0;
+
             for (int r = 0; r < runs.Count; r++)
             {
                 var run = runs[r];
-                if (r == activeRun) { GL.LineWidth(2); GL.Color3(0.98f, 0.92f, 0.46f); }
-                else if (r == nextRun || r == turnRun) { GL.LineWidth(2); GL.Color3(1.0f, 1.0f, 1.0f); }
+                if (r == activeRun) { GL.LineWidth(4); GL.Color3(0.98f, 0.92f, 0.46f); }
+                else if (r == nextRun) { GL.LineWidth(4); GL.Color3(1.0f, 1.0f, 1.0f); }
+                else if (r == turnRun) { GL.LineWidth(3); GL.Color3(0.60f, 0.90f, 1.0f); }
+                else if (!run.work)
+                {
+                    double hue = turnCount > 1 ? 280.0 * turnNo / (turnCount - 1) : 0;
+                    turnNo++;
+                    HsvToRgb(hue, out float rr, out float gg, out float bb);
+                    GL.LineWidth(2.5f); GL.Color3(rr, gg, bb);
+                }
                 else { GL.LineWidth(1.5f); GL.Color3(0.55f, 0.57f, 0.60f); }
 
                 GL.Begin(PrimitiveType.LineStrip);
@@ -742,7 +773,7 @@ namespace AgOpenGPS
                 GL.End();
             }
 
-            // reverse parts of turns: dashed, grey (not the colour of the next pass)
+            // reverse parts of turns: dashed, light grey
             GL.LineWidth(3);
             GL.Color3(0.80f, 0.80f, 0.82f);
             GL.Enable(EnableCap.LineStipple);
