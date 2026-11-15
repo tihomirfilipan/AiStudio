@@ -346,10 +346,13 @@ namespace AgOpenGPS
                 PlanPoint p = planPoints[k];
                 if (trailL > 0.5 && planPoints.Count > 2)
                 {
-                    int ka = Math.Max(0, k - 2), kb = Math.Min(planPoints.Count - 1, k + 2);
+                    // curvature over +-3 points, smoothed: straight parts (and parts with a gentle bend)
+                    // get no shift, so the passes beside each other keep their spacing there
+                    int ka = Math.Max(0, k - 3), kb = Math.Min(planPoints.Count - 1, k + 3);
                     double dh = FieldPlanner.AngleDiff(planPoints[kb].Heading, planPoints[ka].Heading);
                     double arc = Math.Max(0.5, Math.Sqrt(Math.Pow(planPoints[kb].E - planPoints[ka].E, 2) + Math.Pow(planPoints[kb].N - planPoints[ka].N, 2)));
                     double kappa = dh / arc;
+                    if (Math.Abs(kappa) < 1.0 / 40.0) kappa = 0.0;
                     double delta = trailL * trailL * kappa / 2.0;
                     // left normal of the heading (sin h, cos h): turning right (kappa > 0) the outside is left
                     double nE = -Math.Cos(p.Heading), nN = Math.Sin(p.Heading);
