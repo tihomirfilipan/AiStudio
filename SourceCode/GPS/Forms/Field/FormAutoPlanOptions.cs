@@ -155,9 +155,9 @@ namespace AgOpenGPS.Forms.Field
                     T("turning radius ", "radijus okretanja ") + Fmt(turnRadius) + " m."
             };
             root.Controls.Add(info);
-            var btnRaceljnjak = new Button
+            var btnRace = new Button
             {
-                Text = T("RAČELJNJAK - central gores (forward only)", "RAČELJNJAK - oklinci u sredini (samo naprijed)"),
+                Text = T("RACE - central gores (forward only)", "RACE - oklinci u sredini (samo naprijed)"),
                 AutoSize = true,
                 MinimumSize = new Size(440, 48),
                 BackColor = Color.FromArgb(27, 110, 65),
@@ -165,8 +165,8 @@ namespace AgOpenGPS.Forms.Field
                 FlatStyle = FlatStyle.Flat,
                 Margin = new Padding(3, 5, 3, 10)
             };
-            btnRaceljnjak.Click += (s, e) => SelectRaceljnjak();
-            root.Controls.Add(btnRaceljnjak);
+            btnRace.Click += (s, e) => SelectRace();
+            root.Controls.Add(btnRace);
 
 
             var numbers = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = new Padding(0, 0, 0, 4) };
@@ -386,7 +386,7 @@ namespace AgOpenGPS.Forms.Field
         /// One-click preset for central gores. The preview remains authoritative:
         /// the geometry engine must still find feasible forward-only connections.
         /// </summary>
-        private void SelectRaceljnjak()
+        private void SelectRace()
         {
             nudWidth.Value = 3.00m;
             nudRadius.Value = 5.6m;
