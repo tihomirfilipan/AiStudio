@@ -237,7 +237,7 @@ namespace AgOpenGPS.AutoPlan
                                         overlap = true;
                                         break;
                                     }
-                            }
+                                }
                                 if (overlap) break;
                             }
                         }
