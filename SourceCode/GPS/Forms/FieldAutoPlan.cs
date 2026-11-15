@@ -157,6 +157,7 @@ namespace AgOpenGPS
             FieldPlanSettings settings;
             FieldPlanResult plan;
             bool addTrack, guidanceMode, raceSelected;
+            RaceAiOptions aiOptions = null;
             using (var form = new Forms.Field.FormAutoPlanOptions(tool.width, tool.overlap, yt.youTurnRadius,
                 fence, new V2(start.E, start.N), start.Heading, refEdge))
             {
@@ -166,6 +167,7 @@ namespace AgOpenGPS
                 addTrack = form.AddTrack;
                 guidanceMode = form.GuidanceMode;
                 raceSelected = form.RaceSelected;
+                aiOptions = form.AiOptions;
             }
 
             if (plan == null)
@@ -175,7 +177,7 @@ namespace AgOpenGPS
                 {
                     Cursor.Current = Cursors.WaitCursor;
                     plan = raceSelected
-                        ? RacePlanner.Build(fence, settings, new V2(start.E, start.N), start.Heading)
+                        ? RacePlanner.Build(fence, settings, new V2(start.E, start.N), start.Heading, aiOptions)
                         : FieldPlanner.Build(fence, settings, new V2(start.E, start.N), start.Heading);
                 }
                 finally
