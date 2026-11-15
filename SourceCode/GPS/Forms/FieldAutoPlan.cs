@@ -356,8 +356,11 @@ namespace AgOpenGPS
                     double delta = trailL * trailL * kappa / 2.0;
                     // left normal of the heading (sin h, cos h): turning right (kappa > 0) the outside is left
                     double nE = -Math.Cos(p.Heading), nN = Math.Sin(p.Heading);
-                    p.E += nE * delta;
-                    p.N += nN * delta;
+                    // reverse parts: the heading stored there is the nose (motion + 180 degrees), so the
+                    // normal of the driving direction is the opposite one
+                    double dir = p.IsReverse ? -1.0 : 1.0;
+                    p.E += nE * delta * dir;
+                    p.N += nN * delta * dir;
                 }
                 shifted.Add(p);
             }
