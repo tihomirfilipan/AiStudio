@@ -363,6 +363,32 @@ namespace AgOpenGPS
 
         private const double PassNumberSize = 2.0;
 
+        // Point of a pass (run from..to of the path) that lies the given distance ahead of the
+        // vehicle, measured along its heading: the one nearest to that distance
+        private bool RowPoint(int from, int to, int vehicleIdx, double ahead, out double e, out double n)
+        {
+            e = n = 0;
+            var list = recPath.recList;
+            if (list.Count == 0) return false;
+            int v = Math.Max(0, Math.Min(list.Count - 1, vehicleIdx));
+            double h = list[v].heading;
+            double de = Math.Sin(h), dn = Math.Cos(h);
+            double ve = list[v].easting, vn = list[v].northing;
+            double best = double.MaxValue;
+            int bestK = -1;
+            int lo = Math.Max(0, Math.Min(from, to)), hi = Math.Min(list.Count - 1, Math.Max(from, to));
+            for (int k = lo; k <= hi; k++)
+            {
+                double fwd = (list[k].easting - ve) * de + (list[k].northing - vn) * dn;
+                double d = Math.Abs(fwd - ahead);
+                if (d < best) { best = d; bestK = k; }
+            }
+            if (bestK < 0 || best > 10.0) return false;
+            e = list[bestK].easting;
+            n = list[bestK].northing;
+            return true;
+        }
+
         private void DrawRecPathPassNumbers()
         {
             if (!UpdateRecPathLabels()) return;
@@ -391,10 +417,12 @@ namespace AgOpenGPS
             foreach (int i in order)
             {
                 RunLabel label = recPathLabels[i];
-                if (i == current && recPath.isDrivingRecordedPath)
+                // every pass ahead gets its number at the same distance ahead of the vehicle, so
+                // the numbers form one line across the screen ahead of the tractor
+                if (recPath.isDrivingRecordedPath && RowPoint(label.StartIndex, label.EndIndex, idx, 30.0, out double rowE, out double rowN))
                 {
-                    label.E = recPath.recList[aheadIdx].easting;
-                    label.N = recPath.recList[aheadIdx].northing;
+                    label.E = rowE;
+                    label.N = rowN;
                 }
                 else
                 {
