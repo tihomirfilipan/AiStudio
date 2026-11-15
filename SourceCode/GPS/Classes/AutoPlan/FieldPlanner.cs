@@ -1354,7 +1354,10 @@ namespace AgOpenGPS.AutoPlan
                             man = ReverseManeuver.KTurn(pj, lastH, pts[0], entryH, R, s, fenceGrid.Clear);
                             if (man != null) { cut = j + 1; break; }
                         }
-                        if (man == null) man = ReverseManeuver.Find(lastP, lastH, pts[0], entryH, R, s, fenceGrid.Clear);
+                        if (man == null) man = ReverseManeuver.Find(lastP, lastH, pts[0], entryH, R, s, fenceGrid.Clear)
+                            // no room with the tool clearance: the reversing turn may use the whole field
+                            // (mirrored to the other side) before the ordinary turn is taken
+                            ?? ReverseManeuver.Find(lastP, lastH, pts[0], entryH, R, s, fenceGrid.Inside, 200000);
                         else if (cut < path.Count) path.RemoveRange(cut, path.Count - cut);
                         if (man != null)
                         {
@@ -1388,7 +1391,8 @@ namespace AgOpenGPS.AutoPlan
                             man = ReverseManeuver.KTurn(pj, lh, pts[0], eh, R, s, fenceGrid.Clear);
                             if (man != null) { cutAt = j + 1; break; }
                         }
-                        if (man == null) man = ReverseManeuver.Find(lp, lh, pts[0], eh, R, s, fenceGrid.Clear);
+                        if (man == null) man = ReverseManeuver.Find(lp, lh, pts[0], eh, R, s, fenceGrid.Clear)
+                            ?? ReverseManeuver.Find(lp, lh, pts[0], eh, R, s, fenceGrid.Inside, 200000);
                         else if (cutAt < path.Count) path.RemoveRange(cutAt, path.Count - cutAt);
                         if (man != null)
                         {
