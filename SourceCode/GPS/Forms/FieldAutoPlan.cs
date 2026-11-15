@@ -414,7 +414,9 @@ namespace AgOpenGPS
                 GL.PointSize(26.0f);
                 GL.Begin(PrimitiveType.Points);
                 if (label.IsHeadland) GL.Color3(0.45f, 0.47f, 0.50f);
-                else GL.Color3(0.05f, 0.28f, 0.63f);
+                else if (i == current) GL.Color3(0.98f, 0.92f, 0.46f);
+                else if (i == current + 1) GL.Color3(0.95f, 0.95f, 0.95f);
+                else GL.Color3(0.45f, 0.47f, 0.50f);
                 GL.Vertex3(label.E, label.N, 0);
                 GL.End();
 
