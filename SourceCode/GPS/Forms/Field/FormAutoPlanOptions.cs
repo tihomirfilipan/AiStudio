@@ -38,6 +38,7 @@ namespace AgOpenGPS.Forms.Field
         private readonly Timer previewTimer;
         private int version, planVersion = -1;
         private readonly double appWidth, appRadius;
+        private bool raceSelected;
 
         /// <summary>Also add the first pass line as a new curve track.</summary>
         public bool AddTrack => tileAddTrack.Selected || GuidanceMode;
@@ -49,6 +50,8 @@ namespace AgOpenGPS.Forms.Field
         public bool GuidanceMode => tileGuidance.Selected;
 
         public FieldPlanSettings Settings { get; private set; }
+
+        public bool RaceSelected => raceSelected;
 
         /// <summary>The plan of the preview when it matches the chosen options, else null.</summary>
         public FieldPlanResult Plan { get; private set; }
@@ -155,6 +158,19 @@ namespace AgOpenGPS.Forms.Field
                     T("turning radius ", "radijus okretanja ") + Fmt(turnRadius) + " m."
             };
             root.Controls.Add(info);
+            var btnRace = new Button
+            {
+                Text = T("RACE - central gores (forward only)", "RACE - oklinci u sredini (samo naprijed)"),
+                AutoSize = true,
+                MinimumSize = new Size(440, 48),
+                BackColor = Color.FromArgb(27, 110, 65),
+                ForeColor = Color.White,
+                FlatStyle = FlatStyle.Flat,
+                Margin = new Padding(3, 5, 3, 10)
+            };
+            btnRace.Click += (s, e) => SelectRace();
+            root.Controls.Add(btnRace);
+
 
             var numbers = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = new Padding(0, 0, 0, 4) };
             nudWidth = AddNumber(numbers, T("Work width (m)", "Radna širina (m)"), 0.5m, 60m, 2, (decimal)appWidth);
@@ -350,6 +366,7 @@ namespace AgOpenGPS.Forms.Field
         /// <summary>Settings like the example plans: turns at the edge, headland left for the driver.</summary>
         private void Recommended()
         {
+            raceSelected = false;
             nudWidth.Value = (decimal)appWidth;
             nudRadius.Value = (decimal)appRadius;
             nudLaps.Value = 0;
@@ -365,6 +382,37 @@ namespace AgOpenGPS.Forms.Field
             tileSlant.Selected = false;
             tileWedge.Selected = false;
             tileMiddle.Selected = false;
+            edgeIndex = -1;
+            OptionsChanged();
+        }
+
+        /// <summary>
+        /// One-click preset for central gores. The preview remains authoritative:
+        /// the geometry engine must still find feasible forward-only connections.
+        /// </summary>
+        private void SelectRace()
+        {
+            raceSelected = true;
+            nudWidth.Value = 3.00m;
+            nudRadius.Value = 5.6m;
+            nudLaps.Value = 0;
+            tilePath.Selected = true;
+            tileGuidance.Selected = false;
+            tileEnds.Selected = true;
+            tileAllAround.Selected = false;
+            tileTurnsEdge.Selected = true;
+            tileTurnsShort.Selected = false;
+            tileTurnsReverse.Selected = false;
+            tileOrderAuto.Selected = false;
+            tileOrderNeighbour.Selected = false;
+            tileOrderSkip.Selected = true;
+            tileWorkHeadland.Selected = false;
+            tileExtraPass.Selected = false;
+            tileAvoidWorked.Selected = true;
+            tileSplit.Selected = false;
+            tileSlant.Selected = false;
+            tileWedge.Selected = true;
+            tileMiddle.Selected = true;
             edgeIndex = -1;
             OptionsChanged();
         }
@@ -385,7 +433,8 @@ namespace AgOpenGPS.Forms.Field
             if (fence == null || fence.Count < 3) return;
             int v = version;
             FieldPlanSettings settings = CurrentSettings();
-            Task.Run(() => FieldPlanner.Build(fence, settings, startPos, startHeading))
+            Task.Run(() => raceSelected ? RacePlanner.Build(fence, settings, startPos, startHeading)
+                : FieldPlanner.Build(fence, settings, startPos, startHeading))
                 .ContinueWith(t =>
                 {
                     if (IsDisposed || v != version) return;   // options changed meanwhile

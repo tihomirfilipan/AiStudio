@@ -21,6 +21,7 @@ namespace AgOpenGPS.AutoPlan
             public double X, Y, H;     // H = heading the vehicle faces (clockwise from north)
             public double G, F;
             public bool Reverse;
+            public int DirectionChanges;
             public Node Parent;
             public List<Pose> Piece;   // points from the parent to this node
         }
@@ -209,11 +210,15 @@ namespace AgOpenGPS.AutoPlan
         }
 
         public static List<Pose> Find(V2 p0, double h0, V2 p1, double h1, double R, double spacing,
-            Func<V2, bool> inside, int maxExpansions = 60000)
+            Func<V2, bool> inside, int maxExpansions = 60000, int maxDirectionChanges = 5)
         {
-            // the standard three point turn first, the search only where it does not fit
+            if (inside == null || R <= 0 || spacing <= 0 || maxExpansions <= 0 || maxDirectionChanges < 0)
+                return null;
+
+            // The standard three point turn first. It uses two direction changes:
+            // forward -> reverse -> forward. Respect the same budget as the search.
             List<Pose> k = KTurn(p0, h0, p1, h1, R, spacing, inside);
-            if (k != null) return k;
+            if (k != null && CountDirectionChanges(k) <= maxDirectionChanges) return k;
 
             double step = Math.Max(1.0, R * Math.PI / 8.0);   // length of one primitive
             double cell = Math.Max(0.5, step * 0.5);
@@ -226,7 +231,7 @@ namespace AgOpenGPS.AutoPlan
             var nodes = new List<Node>();
             var closed = new HashSet<long>();
 
-            var start = new Node { X = p0.E, Y = p0.N, H = FieldPlanner.Mod2Pi(h0), G = 0, Reverse = false };
+            var start = new Node { X = p0.E, Y = p0.N, H = FieldPlanner.Mod2Pi(h0), G = 0, Reverse = false, DirectionChanges = 0 };
             start.F = Heuristic(start, p1, h1, R);
             nodes.Add(start);
             open.Add(Tuple.Create(start.F, 0));
@@ -255,10 +260,23 @@ namespace AgOpenGPS.AutoPlan
                             if (!inside(q.P)) { ok = false; break; }
                         if (!ok) continue;
 
-                        double g = n.G + step * (dir < 0 ? reversePenalty : 1.0)
-                            + (n.Parent != null && (dir < 0) != n.Reverse ? switchPenalty : 0.0)
-                            + (n.Parent == null && dir < 0 ? switchPenalty : 0.0);
-                        var c = new Node { X = x, Y = y, H = h, G = g, Reverse = dir < 0, Parent = n, Piece = piece };
+                        bool reverse = dir < 0;
+                        int directionChanges = n.DirectionChanges + (reverse != n.Reverse ? 1 : 0);
+                        if (directionChanges > maxDirectionChanges) continue;
+
+                        double g = n.G + step * (reverse ? reversePenalty : 1.0)
+                            + (reverse != n.Reverse ? switchPenalty : 0.0);
+                        var c = new Node
+                        {
+                            X = x,
+                            Y = y,
+                            H = h,
+                            G = g,
+                            Reverse = reverse,
+                            DirectionChanges = directionChanges,
+                            Parent = n,
+                            Piece = piece
+                        };
                         if (closed.Contains(Key(c, cell, headingBins))) continue;
                         c.F = g + Heuristic(c, p1, h1, R);
                         nodes.Add(c);
@@ -267,6 +285,20 @@ namespace AgOpenGPS.AutoPlan
                 }
             }
             return null;
+        }
+
+        /// <summary>Counts forward/reverse transitions in a generated manoeuvre.</summary>
+        public static int CountDirectionChanges(IList<Pose> path)
+        {
+            if (path == null || path.Count < 2) return 0;
+            int changes = 0;
+            bool previous = path[0].Reverse;
+            for (int i = 1; i < path.Count; i++)
+            {
+                if (path[i].Reverse != previous) changes++;
+                previous = path[i].Reverse;
+            }
+            return changes;
         }
 
         private static double Heuristic(Node n, V2 p1, double h1, double R)
@@ -279,7 +311,10 @@ namespace AgOpenGPS.AutoPlan
         {
             long x = (long)Math.Floor(n.X / cell), y = (long)Math.Floor(n.Y / cell);
             long hb = (long)Math.Floor(FieldPlanner.Mod2Pi(n.H) / (2 * Math.PI) * bins) % bins;
-            return ((x & 0xFFFFF) << 40) | ((y & 0xFFFFF) << 20) | (hb << 1) | (n.Reverse ? 1L : 0L);
+            // Keep direction-change budget in the state key: the same pose with fewer
+            // remaining reversals is a different search state.
+            return ((x & 0xFFFFF) << 40) | ((y & 0xFFFFF) << 20) | (hb << 1)
+                | (((long)n.DirectionChanges & 0x3FFFL) << 6) | (n.Reverse ? 1L : 0L);
         }
 
         // Drives one primitive from node n: dir +1 forward / -1 reverse, steer -1 left, 0, +1 right

@@ -81,6 +81,9 @@ namespace AgOpenGPS.AutoPlan
         /// </summary>
         public bool HeadlandReverseTurns = false;
 
+        /// <summary>Maximum number of forward/reverse direction changes in one searched manoeuvre.</summary>
+        public int MaxDirectionChanges = 5;
+
         /// <summary>Turns and transfers never drive over worked passes (only headland and the outer pass tracks).</summary>
         public bool AvoidWorked = false;
 
@@ -128,6 +131,9 @@ namespace AgOpenGPS.AutoPlan
         /// to its long edge, then the other one from the middle out to its edge.
         /// </summary>
         public bool StartFromMiddle = false;
+
+        /// <summary>Reject a failed wedge plan instead of silently falling back to an edge-first plan.</summary>
+        public bool RequireMiddleWedge = false;
 
         public FieldPlanSettings Clone() => (FieldPlanSettings)MemberwiseClone();
 
@@ -231,7 +237,7 @@ namespace AgOpenGPS.AutoPlan
 
                 // a wedge or split field with no plan (halves too narrow for the tool): the whole
                 // field as one
-                if ((set.WedgeField || set.SplitField) && (!res.Ok || res.Points.Count < 2))
+                if (!set.RequireMiddleWedge && (set.WedgeField || set.SplitField) && (!res.Ok || res.Points.Count < 2))
                 {
                     FieldPlanSettings one = set.Clone();
                     one.WedgeField = false;
@@ -865,7 +871,7 @@ namespace AgOpenGPS.AutoPlan
                     PlanPoint l = res.Points[res.Points.Count - 1];
                     double h1 = HeadingOf(pts[0], pts[Math.Min(3, pts.Count - 1)]);
                     var man = ReverseManeuver.KTurn(new V2(l.E, l.N), l.Heading, pts[0], h1, R, s, fullGrid.Clear, false)
-                        ?? ReverseManeuver.Find(new V2(l.E, l.N), l.Heading, pts[0], h1, R, s, fullGrid.Clear);
+                        ?? ReverseManeuver.Find(new V2(l.E, l.N), l.Heading, pts[0], h1, R, s, fullGrid.Clear, 60000, set.MaxDirectionChanges);
                     if (man != null)
                     {
                         AddManoeuvre(res, man);

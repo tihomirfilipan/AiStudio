@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - develop
+      - feature/universal-maneuver-planner
   pull_request:
 
 env:

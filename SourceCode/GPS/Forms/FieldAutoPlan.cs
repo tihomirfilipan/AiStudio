@@ -156,7 +156,7 @@ namespace AgOpenGPS
             // Options dialog with live preview, prefilled with the tool width and turning radius from the app
             FieldPlanSettings settings;
             FieldPlanResult plan;
-            bool addTrack, guidanceMode;
+            bool addTrack, guidanceMode, raceSelected;
             using (var form = new Forms.Field.FormAutoPlanOptions(tool.width, tool.overlap, yt.youTurnRadius,
                 fence, new V2(start.E, start.N), start.Heading, refEdge))
             {
@@ -165,6 +165,7 @@ namespace AgOpenGPS
                 plan = form.Plan;
                 addTrack = form.AddTrack;
                 guidanceMode = form.GuidanceMode;
+                raceSelected = form.RaceSelected;
             }
 
             if (plan == null)
@@ -173,7 +174,9 @@ namespace AgOpenGPS
                 try
                 {
                     Cursor.Current = Cursors.WaitCursor;
-                    plan = FieldPlanner.Build(fence, settings, new V2(start.E, start.N), start.Heading);
+                    plan = raceSelected
+                        ? RacePlanner.Build(fence, settings, new V2(start.E, start.N), start.Heading)
+                        : FieldPlanner.Build(fence, settings, new V2(start.E, start.N), start.Heading);
                 }
                 finally
                 {
