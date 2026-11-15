@@ -117,9 +117,44 @@ namespace AgOpenGPS.AutoPlan
 
             var fence = new List<V2>(boundary);
             double margin = width * 0.5;
-            V2 centre = new V2(fence.Average(p => p.E), fence.Average(p => p.N));
+            // Area-weighted centroid, not the average of boundary vertices (which
+            // depends on how densely each edge was recorded).
+            double twiceArea = 0, cx = 0, cy = 0;
+            for (int i = 0; i < fence.Count; i++)
+            {
+                V2 a = fence[i], b = fence[(i + 1) % fence.Count];
+                double cross = a.E * b.N - b.E * a.N;
+                twiceArea += cross;
+                cx += (a.E + b.E) * cross;
+                cy += (a.N + b.N) * cross;
+            }
+            V2 centre = Math.Abs(twiceArea) > 1e-8
+                ? new V2(cx / (3 * twiceArea), cy / (3 * twiceArea))
+                : new V2(fence.Average(p => p.E), fence.Average(p => p.N));
             if (!Inside(fence, centre, margin))
-                return Fail("RACE AI: geometric centre is outside usable field");
+            {
+                // Concave polygons can have their centroid outside the field.
+                // Find the nearest usable interior point instead of rejecting it.
+                V2 best = centre;
+                double bestDistance = double.MaxValue;
+                double minE = fence.Min(p => p.E), maxE = fence.Max(p => p.E);
+                double minN = fence.Min(p => p.N), maxN = fence.Max(p => p.N);
+                for (int i = 0; i <= 30; i++)
+                    for (int j = 0; j <= 30; j++)
+                    {
+                        V2 candidate = new V2(minE + (maxE - minE) * i / 30.0,
+                            minN + (maxN - minN) * j / 30.0);
+                        double distance = Dist(candidate, centre);
+                        if (distance < bestDistance && Inside(fence, candidate, margin))
+                        {
+                            best = candidate;
+                            bestDistance = distance;
+                        }
+                    }
+                if (bestDistance == double.MaxValue)
+                    return Fail("RACE AI: no safe interior centre at the required clearance");
+                centre = best;
+            }
 
             // Search orientations independently; no legacy reference-edge ordering.
             var candidates = new List<Tuple<double, List<Lane>>>();
