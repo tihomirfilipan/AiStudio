@@ -725,11 +725,16 @@ namespace AgOpenGPS
                 if (activeRun >= 0) { nextRun = r; break; }
             }
 
+            // the turn between the active pass and the next one is white too
+            int turnRun = -1;
+            if (activeRun >= 0 && nextRun >= 0)
+                for (int r = activeRun + 1; r < nextRun; r++) if (!runs[r].work) turnRun = r;
+
             for (int r = 0; r < runs.Count; r++)
             {
                 var run = runs[r];
                 if (r == activeRun) { GL.LineWidth(2); GL.Color3(0.98f, 0.92f, 0.46f); }
-                else if (r == nextRun) { GL.LineWidth(2); GL.Color3(1.0f, 1.0f, 1.0f); }
+                else if (r == nextRun || r == turnRun) { GL.LineWidth(2); GL.Color3(1.0f, 1.0f, 1.0f); }
                 else { GL.LineWidth(1.5f); GL.Color3(0.55f, 0.57f, 0.60f); }
 
                 GL.Begin(PrimitiveType.LineStrip);
