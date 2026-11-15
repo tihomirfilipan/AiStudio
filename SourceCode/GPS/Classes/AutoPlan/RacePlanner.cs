@@ -223,20 +223,23 @@ namespace AgOpenGPS.AutoPlan
                             continue;
                         // A* connector must not traverse an already worked strip.
                         bool overlap = false;
-                        if (options.AvoidWorked) foreach (PlanPoint p in turn)
+                        if (options.AvoidWorked)
                         {
-                            V2 q = Pos(p);
-                            foreach (Lane old in worked)
+                            foreach (PlanPoint p in turn)
                             {
-                                V2 v = old.B - old.A;
-                                double t = Math.Max(0, Math.Min(1, Dot(q - old.A, v) / Dot(v, v)));
-                                if (Dist(q, old.A + v * t) < margin)
+                                V2 q = Pos(p);
+                                foreach (Lane old in worked)
                                 {
-                                    overlap = true;
-                                    break;
-                                }
+                                    V2 v = old.B - old.A;
+                                    double t = Math.Max(0, Math.Min(1, Dot(q - old.A, v) / Dot(v, v)));
+                                    if (Dist(q, old.A + v * t) < margin)
+                                    {
+                                        overlap = true;
+                                        break;
+                                    }
                             }
-                            if (overlap) break;
+                                if (overlap) break;
+                            }
                         }
                         if (overlap) continue;
                         double cost = turn.Count * 0.75;
