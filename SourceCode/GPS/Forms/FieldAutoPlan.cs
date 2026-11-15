@@ -337,7 +337,9 @@ namespace AgOpenGPS
             // a trailed implement cuts the inside of a curve: the tractor drives its path shifted to the
             // outside by L * L * curvature / 2 (L = hitch length behind the pivot), so the implement
             // covers the planned pass; the offset follows the curvature of the planned path
-            double trailL = tool.isToolTrailing ? tool.trailingHitchLength : 0.0;
+            // distance from the pivot to the implement, taken from the implement now attached (its
+            // hitch and trailing settings), the same value the section switching uses
+            double trailL = Math.Max(0.0, -toolBehind);
             var shifted = new List<PlanPoint>(planPoints.Count);
             for (int k = 0; k < planPoints.Count; k++)
             {
