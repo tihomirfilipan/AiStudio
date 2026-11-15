@@ -748,9 +748,7 @@ namespace AgOpenGPS
             if (activeRun >= 0 && nextRun >= 0)
                 for (int r = activeRun + 1; r < nextRun; r++) if (!runs[r].work) turnRun = r;
 
-            // turns coloured by their order along the path: warm colours first, cooler later
-            int turnCount = 0;
-            foreach (var t in runs) if (!t.work) turnCount++;
+            // turns coloured by their order along the path
             int turnNo = 0;
 
             for (int r = 0; r < runs.Count; r++)
@@ -761,7 +759,9 @@ namespace AgOpenGPS
                 else if (r == turnRun) { GL.LineWidth(3); GL.Color3(0.60f, 0.90f, 1.0f); }
                 else if (!run.work)
                 {
-                    double hue = turnCount > 1 ? 280.0 * turnNo / (turnCount - 1) : 0;
+                    // warm colours first (red, orange, pink, violet, blue, green), never yellow or light blue
+                    double[] hues = { 0, 22, 330, 285, 235, 120 };
+                    double hue = hues[turnNo % hues.Length];
                     turnNo++;
                     HsvToRgb(hue, out float rr, out float gg, out float bb);
                     GL.LineWidth(2.5f); GL.Color3(rr, gg, bb);
