@@ -40,6 +40,8 @@ namespace AgOpenGPS.Forms.Field
         private readonly double appWidth, appRadius;
         private bool raceSelected;
         private Button raceButton;
+        private CheckBox aiPartial, aiAlternate, aiAvoid, aiCentre;
+        private NumericUpDown aiDirections, aiBudget;
 
         /// <summary>Also add the first pass line as a new curve track.</summary>
         public bool AddTrack => tileAddTrack.Selected || GuidanceMode;
@@ -189,6 +191,40 @@ namespace AgOpenGPS.Forms.Field
             root.Controls.Add(btnRace);
             btnRace.Text = T("RACE AI: OFF (click to enable)", "RACE AI: ISKLJUČEN (klikni za uključivanje)");
 
+
+            // RACE AI has its own controls, independent of the legacy picture tiles.
+            var aiGroup = new GroupBox
+            {
+                Text = T("RACE AI - search settings", "RACE AI - postavke pretraživanja"),
+                ForeColor = Color.WhiteSmoke,
+                AutoSize = true,
+                Width = 445,
+                Padding = new Padding(10)
+            };
+            var aiPanel = new FlowLayoutPanel
+            {
+                FlowDirection = FlowDirection.TopDown,
+                WrapContents = false,
+                AutoSize = true,
+                Dock = DockStyle.Fill
+            };
+            aiGroup.Controls.Add(aiPanel);
+            aiPartial = new CheckBox { Text = T("Show incomplete plan (safe sections only)", "Prikaži nepotpun plan (samo sigurni dijelovi)"), AutoSize = true, Checked = true };
+            aiAlternate = new CheckBox { Text = T("Try both travel directions", "Isprobaj oba smjera vožnje"), AutoSize = true, Checked = true };
+            aiAvoid = new CheckBox { Text = T("Avoid already worked ground", "Izbjegavaj obrađeno tlo"), AutoSize = true, Checked = true };
+            aiCentre = new CheckBox { Text = T("Start planning from centre", "Planiranje od sredine"), AutoSize = true, Checked = true };
+            foreach (CheckBox cb in new[] { aiPartial, aiAlternate, aiAvoid, aiCentre })
+            {
+                aiPanel.Controls.Add(cb);
+                cb.CheckedChanged += (s, e) => OptionsChanged();
+            }
+            var aiNumbers = new FlowLayoutPanel { AutoSize = true, WrapContents = false };
+            aiDirections = AddNumber(aiNumbers, T("Directions", "Smjerova"), 4, 72, 0, 36);
+            aiBudget = AddNumber(aiNumbers, T("A* search limit", "A* limit pretrage"), 1000, 200000, 0, 25000);
+            aiPanel.Controls.Add(aiNumbers);
+            aiDirections.ValueChanged += (s, e) => OptionsChanged();
+            aiBudget.ValueChanged += (s, e) => OptionsChanged();
+            root.Controls.Add(aiGroup);
 
             var numbers = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = new Padding(0, 0, 0, 4) };
             nudWidth = AddNumber(numbers, T("Work width (m)", "Radna širina (m)"), 0.5m, 60m, 2, (decimal)appWidth);
@@ -448,12 +484,28 @@ namespace AgOpenGPS.Forms.Field
             previewTimer.Start();
         }
 
+        private RaceAiOptions CurrentAiOptions()
+        {
+            return new RaceAiOptions
+            {
+                AllowPartial = aiPartial.Checked,
+                TryAlternateDirections = aiAlternate.Checked,
+                AvoidWorked = aiAvoid.Checked,
+                StartFromCentre = aiCentre.Checked,
+                Directions = (int)aiDirections.Value,
+                SearchBudget = (int)aiBudget.Value
+            };
+        }
+
+        public RaceAiOptions AiOptions => CurrentAiOptions();
+
         private void StartPreview()
         {
             if (fence == null || fence.Count < 3) return;
             int v = version;
             FieldPlanSettings settings = CurrentSettings();
-            Task.Run(() => raceSelected ? RacePlanner.Build(fence, settings, startPos, startHeading)
+            RaceAiOptions ai = CurrentAiOptions();
+            Task.Run(() => raceSelected ? RacePlanner.Build(fence, settings, startPos, startHeading, ai)
                 : FieldPlanner.Build(fence, settings, startPos, startHeading))
                 .ContinueWith(t =>
                 {
