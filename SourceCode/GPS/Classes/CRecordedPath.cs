@@ -482,9 +482,12 @@ namespace AgOpenGPS
             int count = ReverseHeading ? 1 : -1;
             CRecPathPt start = new CRecPathPt(rEastRP, rNorthRP, 0, 0, false);
             double distSoFar = 0;
+            bool goalFound = false;
+            int lastIdx = -1;
 
             for (int i = ReverseHeading ? B : A; i < ptCount && i >= 0; i += count)
             {
+                lastIdx = i;
                 // used for calculating the length squared of next segment.
                 double tempDist = Math.Sqrt((start.easting - recList[i].easting) * (start.easting - recList[i].easting)
                     + (start.northing - recList[i].northing) * (start.northing - recList[i].northing));
@@ -496,10 +499,20 @@ namespace AgOpenGPS
 
                     goalPointRP.easting = (((1 - j) * start.easting) + (j * recList[i].easting));
                     goalPointRP.northing = (((1 - j) * start.northing) + (j * recList[i].northing));
+                    goalFound = true;
                     break;
                 }
                 else distSoFar += tempDist;
                 start = recList[i];
+            }
+
+            // the path ends before the look-ahead distance (near the end of a turn, nothing straight
+            // ahead of the nose): the goal is the last point of the path, not the old goal point,
+            // which kept the wheels turned the wrong way until the end of the turn
+            if (!goalFound && lastIdx >= 0)
+            {
+                goalPointRP.easting = recList[lastIdx].easting;
+                goalPointRP.northing = recList[lastIdx].northing;
             }
 
             //calc "D" the distance from pivotAxlePosRP axle to lookahead point
