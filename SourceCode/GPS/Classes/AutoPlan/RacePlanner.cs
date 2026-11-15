@@ -242,7 +242,24 @@ namespace AgOpenGPS.AutoPlan
                             }
                         }
                         if (overlap) continue;
-                        double cost = turn.Count * 0.75;
+                        // Account for the next pass as well as the immediate connector.
+                        // The previous greedy rule picked the shortest current turn even
+                        // when it left the tractor at the isolated end of the field.
+                        double connectorLength = 0;
+                        for (int i = 1; i < turn.Count; i++)
+                            connectorLength += Dist(Pos(turn[i - 1]), Pos(turn[i]));
+                        double nextDistance = double.MaxValue;
+                        foreach (Lane next in remaining)
+                        {
+                            if (ReferenceEquals(next, lane)) continue;
+                            nextDistance = Math.Min(nextDistance, Dist(b, next.A));
+                            if (options.TryAlternateDirections)
+                                nextDistance = Math.Min(nextDistance, Dist(b, next.B));
+                        }
+                        if (nextDistance == double.MaxValue) nextDistance = 0;
+                        // A modest look-ahead: never replace actual connector length
+                        // with an unverified straight-line path.
+                        double cost = connectorLength + 0.5 * nextDistance;
                         if (cost < bestCost)
                         {
                             bestCost = cost;

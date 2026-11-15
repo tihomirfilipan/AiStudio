@@ -6,6 +6,7 @@ on:
       - develop
       - feature/universal-maneuver-planner
       - feature/race-ai-v2
+      - fix/race-ai-v2-verified
   pull_request:
 
 env:
