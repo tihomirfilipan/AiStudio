@@ -506,12 +506,17 @@ namespace AgOpenGPS
             double goalPointDistanceSquared = glm.DistanceSquared(goalPointRP.northing, goalPointRP.easting, pivotAxlePosRP.northing, pivotAxlePosRP.easting);
 
             //calculate the the delta x in local coordinates and steering angle degrees based on wheelbase
-            double localHeading = glm.twoPI - mf.fixHeading + inty;
+            // driving in reverse: the steering axle is the trailing one, so the geometry is taken from
+            // the direction of motion (nose heading + 180 degrees) and the steering angle is mirrored
+            bool reverseDrive = mf.isReverse;
+            double headingRP = reverseDrive ? mf.fixHeading + Math.PI : mf.fixHeading;
+            double localHeading = glm.twoPI - headingRP + inty;
 
             ppRadiusRP = goalPointDistanceSquared / (2 * (((goalPointRP.easting - pivotAxlePosRP.easting) * Math.Cos(localHeading)) + ((goalPointRP.northing - pivotAxlePosRP.northing) * Math.Sin(localHeading))));
 
             steerAngleRP = glm.toDegrees(Math.Atan(2 * (((goalPointRP.easting - pivotAxlePosRP.easting) * Math.Cos(localHeading))
                 + ((goalPointRP.northing - pivotAxlePosRP.northing) * Math.Sin(localHeading))) * mf.vehicle.VehicleConfig.Wheelbase / goalPointDistanceSquared));
+            if (reverseDrive) steerAngleRP = -steerAngleRP;
 
             if (steerAngleRP < -mf.vehicle.maxSteerAngle) steerAngleRP = -mf.vehicle.maxSteerAngle;
             if (steerAngleRP > mf.vehicle.maxSteerAngle) steerAngleRP = mf.vehicle.maxSteerAngle;
