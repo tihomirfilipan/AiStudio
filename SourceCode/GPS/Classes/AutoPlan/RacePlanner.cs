@@ -196,8 +196,18 @@ namespace AgOpenGPS.AutoPlan
             if (!Inside(fence, start, margin))
                 return Fail("RACE AI: tractor start is outside safe field clearance");
             var worked = new List<Lane>();
-            foreach (Lane lane in lanesBest)
+            // Keep searching other unworked lanes after a failed connection.
+            // Each round considers every remaining lane and both directions.
+            var remaining = new List<Lane>(lanesBest);
+            while (remaining.Count > 0)
             {
+                Lane chosenLane = null;
+                PlanPoint chosenEntry = default;
+                PlanPoint chosenExit = default;
+                List<PlanPoint> chosenTurn = null;
+                double chosenCost = double.MaxValue;
+                foreach (Lane lane in remaining)
+                {
                 PlanPoint bestEntry = default;
                 PlanPoint bestExit = default;
                 List<PlanPoint> bestTurn = null;
@@ -238,35 +248,44 @@ namespace AgOpenGPS.AutoPlan
                         bestExit = exit;
                     }
                 }
-                if (bestTurn == null)
+                if (bestTurn != null && bestCost < chosenCost)
                 {
-                    result.SkippedPieces++;
+                    chosenLane = lane;
+                    chosenEntry = bestEntry;
+                    chosenExit = bestExit;
+                    chosenTurn = bestTurn;
+                    chosenCost = bestCost;
+                }
+                }
+                if (chosenLane == null)
+                {
+                    result.SkippedPieces = remaining.Count;
                     if (!options.AllowPartial)
-                        return Fail("RACE AI: no safe forward-only turn to lane " + (worked.Count + 1));
-                    // Partial mode never invents a connector or allows unsafe driving.
-                    // Stop at the last validated point and report the unfinished area.
+                        return Fail("RACE AI: " + remaining.Count +
+                            " lanes cannot be reached safely from current position");
                     break;
                 }
-                foreach (PlanPoint p in bestTurn)
+                remaining.Remove(chosenLane);
+                foreach (PlanPoint p in chosenTurn)
                     result.Points.Add(p);
                 result.Turns += worked.Count > 0 ? 1 : 0;
-                double length = Dist(Pos(bestEntry), Pos(bestExit));
+                double length = Dist(Pos(chosenEntry), Pos(chosenExit));
                 int count = Math.Max(2, (int)Math.Ceiling(length / 0.75));
                 for (int j = 0; j <= count; j++)
                 {
                     double t = (double)j / count;
                     result.Points.Add(new PlanPoint
                     {
-                        E = bestEntry.E + (bestExit.E - bestEntry.E) * t,
-                        N = bestEntry.N + (bestExit.N - bestEntry.N) * t,
-                        Heading = bestEntry.Heading,
+                        E = chosenEntry.E + (chosenExit.E - chosenEntry.E) * t,
+                        N = chosenEntry.N + (chosenExit.N - chosenEntry.N) * t,
+                        Heading = chosenEntry.Heading,
                         IsWork = true
                     });
                 }
                 result.WorkLength += length;
                 result.Passes++;
-                worked.Add(lane);
-                current = bestExit;
+                worked.Add(chosenLane);
+                current = chosenExit;
             }
             for (int i = 1; i < result.Points.Count; i++)
                 result.TotalLength += Dist(Pos(result.Points[i - 1]), Pos(result.Points[i]));
