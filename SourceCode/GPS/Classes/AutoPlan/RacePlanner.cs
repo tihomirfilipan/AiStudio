@@ -208,54 +208,54 @@ namespace AgOpenGPS.AutoPlan
                 double chosenCost = double.MaxValue;
                 foreach (Lane lane in remaining)
                 {
-                PlanPoint bestEntry = default;
-                PlanPoint bestExit = default;
-                List<PlanPoint> bestTurn = null;
-                double bestCost = double.MaxValue;
-                for (int direction = 0; direction < (options.TryAlternateDirections ? 2 : 1); direction++)
-                {
-                    V2 a = direction == 0 ? lane.A : lane.B;
-                    V2 b = direction == 0 ? lane.B : lane.A;
-                    double h = Heading(a, b);
-                    var entry = new PlanPoint { E = a.E, N = a.N, Heading = h };
-                    var exit = new PlanPoint { E = b.E, N = b.N, Heading = h };
-                    if (!TryConnect(fence, current, entry, radius, margin, options.SearchBudget, out List<PlanPoint> turn))
-                        continue;
-                    // A* connector must not traverse an already worked strip.
-                    bool overlap = false;
-                    if (options.AvoidWorked) foreach (PlanPoint p in turn)
+                    PlanPoint bestEntry = default;
+                    PlanPoint bestExit = default;
+                    List<PlanPoint> bestTurn = null;
+                    double bestCost = double.MaxValue;
+                    for (int direction = 0; direction < (options.TryAlternateDirections ? 2 : 1); direction++)
                     {
-                        V2 q = Pos(p);
-                        foreach (Lane old in worked)
+                        V2 a = direction == 0 ? lane.A : lane.B;
+                        V2 b = direction == 0 ? lane.B : lane.A;
+                        double h = Heading(a, b);
+                        var entry = new PlanPoint { E = a.E, N = a.N, Heading = h };
+                        var exit = new PlanPoint { E = b.E, N = b.N, Heading = h };
+                        if (!TryConnect(fence, current, entry, radius, margin, options.SearchBudget, out List<PlanPoint> turn))
+                            continue;
+                        // A* connector must not traverse an already worked strip.
+                        bool overlap = false;
+                        if (options.AvoidWorked) foreach (PlanPoint p in turn)
                         {
-                            V2 v = old.B - old.A;
-                            double t = Math.Max(0, Math.Min(1, Dot(q - old.A, v) / Dot(v, v)));
-                            if (Dist(q, old.A + v * t) < margin)
+                            V2 q = Pos(p);
+                            foreach (Lane old in worked)
                             {
-                                overlap = true;
-                                break;
+                                V2 v = old.B - old.A;
+                                double t = Math.Max(0, Math.Min(1, Dot(q - old.A, v) / Dot(v, v)));
+                                if (Dist(q, old.A + v * t) < margin)
+                                {
+                                    overlap = true;
+                                    break;
+                                }
                             }
+                            if (overlap) break;
                         }
-                        if (overlap) break;
+                        if (overlap) continue;
+                        double cost = turn.Count * 0.75;
+                        if (cost < bestCost)
+                        {
+                            bestCost = cost;
+                            bestTurn = turn;
+                            bestEntry = entry;
+                            bestExit = exit;
+                        }
                     }
-                    if (overlap) continue;
-                    double cost = turn.Count * 0.75;
-                    if (cost < bestCost)
+                    if (bestTurn != null && bestCost < chosenCost)
                     {
-                        bestCost = cost;
-                        bestTurn = turn;
-                        bestEntry = entry;
-                        bestExit = exit;
+                        chosenLane = lane;
+                        chosenEntry = bestEntry;
+                        chosenExit = bestExit;
+                        chosenTurn = bestTurn;
+                        chosenCost = bestCost;
                     }
-                }
-                if (bestTurn != null && bestCost < chosenCost)
-                {
-                    chosenLane = lane;
-                    chosenEntry = bestEntry;
-                    chosenExit = bestExit;
-                    chosenTurn = bestTurn;
-                    chosenCost = bestCost;
-                }
                 }
                 if (chosenLane == null)
                 {
