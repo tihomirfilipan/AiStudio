@@ -502,6 +502,7 @@ namespace AgOpenGPS
 
                     DrawPlanMiniMap();
                     DrawAutoPlanCard();
+                    DrawPassStrip();
                     DrawReverseHint();
 
                     if (bnd.bndList.Count > 0 && yt.isYouTurnBtnOn) DrawUTurnBtn();
