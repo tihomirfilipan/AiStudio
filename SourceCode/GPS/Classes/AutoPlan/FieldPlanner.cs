@@ -1142,8 +1142,7 @@ namespace AgOpenGPS.AutoPlan
                 // distance to the work area edge: equal to the boundary along a long side, the inner
                 // edge of the headland at the ends (the extra pass must not run into the headland)
                 var fenceSeg = new SegmentGrid(work, true, Math.Max(5.0, W));
-                // a full new pass beyond the last one only; a strip too narrow for one stays headland
-                for (double f = 1.0; f >= 0.9; f -= 0.05)
+                for (double f = 1.0; f >= 0.25; f -= 0.05)
                 {
                     List<V2> off = lanes.Beyond(last.Lane, f);
                     List<V2> best = null;
