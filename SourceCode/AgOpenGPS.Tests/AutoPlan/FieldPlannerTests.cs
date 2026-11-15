@@ -369,8 +369,10 @@ namespace AgOpenGPS.Tests.AutoPlan
         {
             var settings = new FieldPlanSettings
             {
-                WorkWidth = 3.0, TurnRadius = 5.6,
-                WedgeField = false, StartFromMiddle = false,
+                WorkWidth = 3.0,
+                TurnRadius = 5.6,
+                WedgeField = false,
+                StartFromMiddle = false,
                 HeadlandReverseTurns = true
             };
             var result = RacePlanner.Build(new List<V2>
