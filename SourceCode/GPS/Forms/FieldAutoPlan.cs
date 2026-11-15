@@ -510,7 +510,7 @@ namespace AgOpenGPS
         }
 
         /// <summary>
-        /// Pass numbers in one line ahead of the vehicle, across the top of the screen: the current
+        /// Pass numbers in one line ahead of the vehicle on the main screen: the current
         /// pass yellow, the next one white, the following ones grey. Shown while driving the plan.
         /// </summary>
         private void DrawPassStrip()
@@ -539,7 +539,9 @@ namespace AgOpenGPS
             double total = 0;
             foreach (var it in items) total += it.text.Length * charW + gap;
             double x = -total / 2.0;
-            double y = 40;
+            // on the main screen, just ahead of the vehicle (centre of the view, above it)
+            double y = oglMain.Height * 0.5 - 80;
+            x = -total / 2.0;
 
             GL.Enable(EnableCap.Blend);
             GL.Color4(0.12, 0.14, 0.17, 0.80);
