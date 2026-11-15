@@ -268,8 +268,14 @@ namespace AgOpenGPS.AutoPlan
                             + (reverse != n.Reverse ? switchPenalty : 0.0);
                         var c = new Node
                         {
-                            X = x, Y = y, H = h, G = g, Reverse = reverse,
-                            DirectionChanges = directionChanges, Parent = n, Piece = piece
+                            X = x,
+                            Y = y,
+                            H = h,
+                            G = g,
+                            Reverse = reverse,
+                            DirectionChanges = directionChanges,
+                            Parent = n,
+                            Piece = piece
                         };
                         if (closed.Contains(Key(c, cell, headingBins))) continue;
                         c.F = g + Heuristic(c, p1, h1, R);
