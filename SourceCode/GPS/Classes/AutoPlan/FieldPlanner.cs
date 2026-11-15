@@ -998,10 +998,16 @@ namespace AgOpenGPS.AutoPlan
             LaneLines lanes = endsOnly ? lanesEnds : new LaneLines(refExt, side, W, headWidth + W * 0.5, minRadius, s);
             var passes = new List<Pass>();
             int emptyInRow = 0;
+            // a pass centre keeps half a width from the far boundary; a strip narrower than that
+            // is headland (uvratina), not a pass
+            double farSpan = 0.0;
+            foreach (V2 fp in fence) farSpan = Math.Max(farSpan, side * ((fp.E - refEdge[mid].E) * leftN.E + (fp.N - refEdge[mid].N) * leftN.N));
+            double farLimit = farSpan - W * 0.5 + 0.01;
             for (int lane = 0; lane < 10000; lane++)
             {
                 double d = (endsOnly ? 0.0 : headWidth) + W * (lane + 0.5);
                 if (d > diag + headWidth) break;
+                if (d > farLimit) break;
 
                 List<V2> off = lanes.Get(lane);
                 if (off.Count < 2) break;
@@ -1136,7 +1142,8 @@ namespace AgOpenGPS.AutoPlan
                 // distance to the work area edge: equal to the boundary along a long side, the inner
                 // edge of the headland at the ends (the extra pass must not run into the headland)
                 var fenceSeg = new SegmentGrid(work, true, Math.Max(5.0, W));
-                for (double f = 1.0; f >= 0.25; f -= 0.05)
+                // a full new pass beyond the last one only; a strip too narrow for one stays headland
+                for (double f = 1.0; f >= 0.9; f -= 0.05)
                 {
                     List<V2> off = lanes.Beyond(last.Lane, f);
                     List<V2> best = null;
@@ -1148,7 +1155,7 @@ namespace AgOpenGPS.AutoPlan
                     var dists = new List<double>(best.Count);
                     foreach (V2 q in best) dists.Add(fenceSeg.MinDistance(q, W));
                     dists.Sort();
-                    if (dists[dists.Count / 2] < W * 0.5 - 0.2) continue;
+                    if (dists[dists.Count / 2] < W * 0.5 - 0.05) continue;
 
                     passes.Add(new Pass { Lane = last.Lane + 1, Pts = ResampleOpen(best, s) });
                     res.ExtraSidePass = true;
