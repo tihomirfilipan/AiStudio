@@ -10,6 +10,16 @@ namespace AgOpenGPS.AutoPlan
     /// Never calls FieldPlanner.Build or its legacy turn-order routines.
     /// Rejects plans that cannot satisfy the constraints.
     /// </summary>
+    public sealed class RaceAiOptions
+    {
+        public bool AllowPartial = true;
+        public bool TryAlternateDirections = true;
+        public bool AvoidWorked = true;
+        public bool StartFromCentre = true;
+        public int Directions = 36;
+        public int SearchBudget = 25000;
+    }
+
     public static class RacePlanner
     {
         private sealed class Lane
@@ -90,7 +100,7 @@ namespace AgOpenGPS.AutoPlan
         }
 
         private static bool TryConnect(List<V2> fence, PlanPoint from, PlanPoint to,
-            double radius, double margin, out List<PlanPoint> points)
+            double radius, double margin, int budget, out List<PlanPoint> points)
         {
             var options = new RaceAiSearch.Options
             {
@@ -99,7 +109,7 @@ namespace AgOpenGPS.AutoPlan
                 Step = 0.75,
                 PositionTolerance = 0.9,
                 HeadingTolerance = 0.18,
-                MaxExpansions = 25000
+                MaxExpansions = budget
             };
             var path = RaceAiSearch.Connect(fence, from, to, options);
             points = path.Points;
@@ -109,6 +119,13 @@ namespace AgOpenGPS.AutoPlan
         public static FieldPlanResult Build(IList<V2> boundary, FieldPlanSettings settings,
             V2 start, double heading)
         {
+            return Build(boundary, settings, start, heading, new RaceAiOptions());
+        }
+
+        public static FieldPlanResult Build(IList<V2> boundary, FieldPlanSettings settings,
+            V2 start, double heading, RaceAiOptions options)
+        {
+            options = options ?? new RaceAiOptions();
             if (boundary == null || boundary.Count < 3 || settings == null)
                 return Fail("RACE AI: missing field or settings");
             double width = settings.WorkWidth, radius = settings.TurnRadius;
@@ -158,9 +175,9 @@ namespace AgOpenGPS.AutoPlan
 
             // Search orientations independently; no legacy reference-edge ordering.
             var candidates = new List<Tuple<double, List<Lane>>>();
-            for (int k = 0; k < 36; k++)
+            for (int k = 0; k < Math.Max(4, Math.Min(72, options.Directions)); k++)
             {
-                double a = k * Math.PI / 36.0;
+                double a = k * Math.PI / Math.Max(4, Math.Min(72, options.Directions));
                 List<Lane> lanes = Generate(fence, centre, a, width, margin);
                 double length = lanes.Sum(l => l.Length);
                 candidates.Add(Tuple.Create(length, lanes));
@@ -172,6 +189,8 @@ namespace AgOpenGPS.AutoPlan
             // Work only on fresh lanes. Search both approach directions for each lane.
             // Fail closed if a forward-only connector cannot be found.
             var lanesBest = candidates[0].Item2;
+            if (!options.StartFromCentre)
+                lanesBest = lanesBest.OrderBy(l => Math.Min(Dist(start, l.A), Dist(start, l.B))).ToList();
             var result = new FieldPlanResult();
             var current = new PlanPoint { E = start.E, N = start.N, Heading = heading };
             if (!Inside(fence, start, margin))
@@ -183,18 +202,18 @@ namespace AgOpenGPS.AutoPlan
                 PlanPoint bestExit = default;
                 List<PlanPoint> bestTurn = null;
                 double bestCost = double.MaxValue;
-                for (int direction = 0; direction < 2; direction++)
+                for (int direction = 0; direction < (options.TryAlternateDirections ? 2 : 1); direction++)
                 {
                     V2 a = direction == 0 ? lane.A : lane.B;
                     V2 b = direction == 0 ? lane.B : lane.A;
                     double h = Heading(a, b);
                     var entry = new PlanPoint { E = a.E, N = a.N, Heading = h };
                     var exit = new PlanPoint { E = b.E, N = b.N, Heading = h };
-                    if (!TryConnect(fence, current, entry, radius, margin, out List<PlanPoint> turn))
+                    if (!TryConnect(fence, current, entry, radius, margin, options.SearchBudget, out List<PlanPoint> turn))
                         continue;
                     // A* connector must not traverse an already worked strip.
                     bool overlap = false;
-                    foreach (PlanPoint p in turn)
+                    if (options.AvoidWorked) foreach (PlanPoint p in turn)
                     {
                         V2 q = Pos(p);
                         foreach (Lane old in worked)
@@ -220,7 +239,14 @@ namespace AgOpenGPS.AutoPlan
                     }
                 }
                 if (bestTurn == null)
-                    return Fail("RACE AI: no safe forward-only turn to lane " + (worked.Count + 1));
+                {
+                    result.SkippedPieces++;
+                    if (!options.AllowPartial)
+                        return Fail("RACE AI: no safe forward-only turn to lane " + (worked.Count + 1));
+                    // Partial mode never invents a connector or allows unsafe driving.
+                    // Stop at the last validated point and report the unfinished area.
+                    break;
+                }
                 foreach (PlanPoint p in bestTurn)
                     result.Points.Add(p);
                 result.Turns += worked.Count > 0 ? 1 : 0;
@@ -244,8 +270,12 @@ namespace AgOpenGPS.AutoPlan
             }
             for (int i = 1; i < result.Points.Count; i++)
                 result.TotalLength += Dist(Pos(result.Points[i - 1]), Pos(result.Points[i]));
+            if (result.Passes == 0)
+                return Fail("RACE AI: no validated working pass");
             result.Ok = true;
-            result.OrderDescription = "RACE AI v2: centre-out lanes, forward-only A* transitions";
+            result.OrderDescription = "RACE AI v2: " +
+                (result.SkippedPieces > 0 ? "PARTIAL / unfinished - " : "") +
+                "forward-only A*; " + result.Passes + "/" + lanesBest.Count + " lanes";
             result.WorkArea = fence;
             return result;
         }
