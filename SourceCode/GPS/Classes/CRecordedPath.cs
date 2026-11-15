@@ -86,8 +86,11 @@ namespace AgOpenGPS
 
         private void SetSimSpeed(double pathStep)
         {
-            if (!double.IsNaN(lastSimStep) && Math.Abs(mf.sim.stepDistance - lastSimStep) > 1e-6 && pathStep > 1e-6)
-                simSpeedFactor = Math.Max(0.0, mf.sim.stepDistance / pathStep);
+            // a reverse part of the path has a negative step: the speed factor is the ratio of
+            // the magnitudes (a signed ratio went to zero and the simulated tractor stopped before
+            // the reversing), the sign of the path step is kept
+            if (!double.IsNaN(lastSimStep) && Math.Abs(mf.sim.stepDistance - lastSimStep) > 1e-6 && Math.Abs(pathStep) > 1e-6)
+                simSpeedFactor = Math.Abs(mf.sim.stepDistance) / Math.Abs(pathStep);
             lastSimStep = pathStep * simSpeedFactor;
             mf.sim.stepDistance = lastSimStep;
         }
