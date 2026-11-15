@@ -155,6 +155,19 @@ namespace AgOpenGPS.Forms.Field
                     T("turning radius ", "radijus okretanja ") + Fmt(turnRadius) + " m."
             };
             root.Controls.Add(info);
+            var btnRaceljnjak = new Button
+            {
+                Text = T("RAČELJNJAK - central gores (forward only)", "RAČELJNJAK - oklinci u sredini (samo naprijed)"),
+                AutoSize = true,
+                MinimumSize = new Size(440, 48),
+                BackColor = Color.FromArgb(27, 110, 65),
+                ForeColor = Color.White,
+                FlatStyle = FlatStyle.Flat,
+                Margin = new Padding(3, 5, 3, 10)
+            };
+            btnRaceljnjak.Click += (s, e) => SelectRaceljnjak();
+            root.Controls.Add(btnRaceljnjak);
+
 
             var numbers = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = new Padding(0, 0, 0, 4) };
             nudWidth = AddNumber(numbers, T("Work width (m)", "Radna širina (m)"), 0.5m, 60m, 2, (decimal)appWidth);
@@ -365,6 +378,36 @@ namespace AgOpenGPS.Forms.Field
             tileSlant.Selected = false;
             tileWedge.Selected = false;
             tileMiddle.Selected = false;
+            edgeIndex = -1;
+            OptionsChanged();
+        }
+
+        /// <summary>
+        /// One-click preset for central gores. The preview remains authoritative:
+        /// the geometry engine must still find feasible forward-only connections.
+        /// </summary>
+        private void SelectRaceljnjak()
+        {
+            nudWidth.Value = 3.00m;
+            nudRadius.Value = 5.6m;
+            nudLaps.Value = 0;
+            tilePath.Selected = true;
+            tileGuidance.Selected = false;
+            tileEnds.Selected = true;
+            tileAllAround.Selected = false;
+            tileTurnsEdge.Selected = true;
+            tileTurnsShort.Selected = false;
+            tileTurnsReverse.Selected = false;
+            tileOrderAuto.Selected = false;
+            tileOrderNeighbour.Selected = false;
+            tileOrderSkip.Selected = true;
+            tileWorkHeadland.Selected = false;
+            tileExtraPass.Selected = false;
+            tileAvoidWorked.Selected = true;
+            tileSplit.Selected = false;
+            tileSlant.Selected = false;
+            tileWedge.Selected = true;
+            tileMiddle.Selected = true;
             edgeIndex = -1;
             OptionsChanged();
         }
