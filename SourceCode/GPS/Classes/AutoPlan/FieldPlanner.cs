@@ -1652,7 +1652,17 @@ namespace AgOpenGPS.AutoPlan
             // there, one closed loop around the field when the headland runs all around
             if (endsOnly)
             {
-                if (endRunId != null) res.HeadlandTracks = EndTracks(fence, endRunId, W, s);
+                if (endRunId != null)
+                {
+                    // each end's track lies at that end's own headland width (the same as its line)
+                    var trackDist = new Dictionary<int, double>();
+                    if (set.HeadlandReverseTurns && set.HeadlandLineDistance <= 0)
+                    {
+                        double lineD = ReverseManeuver.KTurnReach(W, R) + W * 0.5 + 0.3;
+                        foreach (var kv in straightEndByEnd) trackDist[kv.Key] = Math.Max(lineD, kv.Value + 0.3);
+                    }
+                    res.HeadlandTracks = EndTracks(fence, endRunId, W, s, trackDist);
+                }
             }
             else
             {
@@ -4145,7 +4155,7 @@ namespace AgOpenGPS.AutoPlan
         /// </summary>
         // Tracks along the ends: every end run of the boundary moved in by one tool width
         // (straight on a little past both of its ends), the two longest ones
-        private static List<List<V2>> EndTracks(List<V2> fence, int[] endRunId, double W, double s)
+        private static List<List<V2>> EndTracks(List<V2> fence, int[] endRunId, double W, double s, Dictionary<int, double> endDist = null)
         {
             int n = fence.Count;
             var runs = new Dictionary<int, List<int>>();
@@ -4160,20 +4170,27 @@ namespace AgOpenGPS.AutoPlan
                 l.Add(i);
             }
             // a clean offset of the whole boundary (no crossings at the corners), cut to the part
-            // next to each end
-            List<V2> inset = InsetLoop(fence, W, s);
+            // next to each end; an end with its own headland width gets its own offset
             var result = new List<List<V2>>();
-            if (inset == null || inset.Count < 10) return result;
-            int m = inset.Count;
-            var idOf = new int[m];
-            for (int k = 0; k < m; k++)
+            var insetCache = new Dictionary<double, (List<V2> inset, int[] idOf)>();
+            (List<V2> inset, int[] idOf) InsetFor(double dist)
             {
-                // the boundary point it belongs to: nearest one
-                idOf[k] = endRunId[NearestIndex(fence, inset[k])];
+                double key = Math.Round(dist, 3);
+                if (insetCache.TryGetValue(key, out var c)) return c;
+                List<V2> ins = InsetLoop(fence, dist, s);
+                var ids = new int[ins == null ? 0 : ins.Count];
+                for (int k = 0; k < ids.Length; k++) ids[k] = endRunId[NearestIndex(fence, ins[k])];
+                c = (ins, ids);
+                insetCache[key] = c;
+                return c;
             }
             foreach (var kv in runs)
             {
                 int id = kv.Key;
+                double dist = endDist != null && endDist.TryGetValue(id, out double dv) ? dv : W;
+                var (inset, idOf) = InsetFor(dist);
+                if (inset == null || inset.Count < 10) continue;
+                int m = inset.Count;
                 // longest run of the inset loop (cyclic) next to this end
                 int bestStart = -1, bestLen = 0;
                 int startK = Array.FindIndex(idOf, v => v != id);
