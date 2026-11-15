@@ -307,8 +307,8 @@ namespace AgOpenGPS.AutoPlan
             long hb = (long)Math.Floor(FieldPlanner.Mod2Pi(n.H) / (2 * Math.PI) * bins) % bins;
             // Keep direction-change budget in the state key: the same pose with fewer
             // remaining reversals is a different search state.
-            return ((x & 0xFFFFF) << 40) | ((y & 0xFFFFF) << 20) | (hb << 4)
-                | (((long)n.DirectionChanges & 0x7L) << 1) | (n.Reverse ? 1L : 0L);
+            return ((x & 0xFFFFF) << 40) | ((y & 0xFFFFF) << 20) | (hb << 1)
+                | (((long)n.DirectionChanges & 0x3FFFL) << 6) | (n.Reverse ? 1L : 0L);
         }
 
         // Drives one primitive from node n: dir +1 forward / -1 reverse, steer -1 left, 0, +1 right
