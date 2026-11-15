@@ -385,6 +385,7 @@ namespace AgOpenGPS.Forms.Field
             if (fence == null || fence.Count < 3) return;
             int v = version;
             FieldPlanSettings settings = CurrentSettings();
+            FormGPS.ApplyVehicleTurn(settings);
             Task.Run(() => FieldPlanner.Build(fence, settings, startPos, startHeading))
                 .ContinueWith(t =>
                 {

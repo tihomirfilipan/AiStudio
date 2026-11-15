@@ -173,6 +173,7 @@ namespace AgOpenGPS
                 try
                 {
                     Cursor.Current = Cursors.WaitCursor;
+                    ApplyVehicleTurn(settings);
                     plan = FieldPlanner.Build(fence, settings, new V2(start.E, start.N), start.Heading);
                 }
                 finally
@@ -600,6 +601,20 @@ namespace AgOpenGPS
             GL.Color3(1.0f, 1.0f, 1.0f);
             for (int i = 0; i < lines.Length; i++)
                 font.DrawText(left + 12, top + 6 + i * lineH, lines[i], size);
+        }
+
+        /// <summary>
+        /// Full lock turning radius and front reach of the vehicle for the short three point turn
+        /// (KK): radius of the rear axle at the maximum steer angle, with a small margin so the
+        /// steering can still correct.
+        /// </summary>
+        public static void ApplyVehicleTurn(FieldPlanSettings settings)
+        {
+            double wheelbase = Properties.VehicleSettings.Default.setVehicle_wheelbase;
+            double maxSteer = Properties.VehicleSettings.Default.setVehicle_maxSteerAngle;
+            if (wheelbase < 0.5 || maxSteer < 10 || maxSteer > 80) return;
+            settings.FullLockRadius = 1.15 * wheelbase / Math.Tan(maxSteer * Math.PI / 180.0);
+            settings.FrontReach = wheelbase + 1.0;
         }
 
         /// <summary>Big "REVERSE" sign while the recorded path goes backwards (driver shifts gear).</summary>

@@ -201,6 +201,75 @@ namespace AgOpenGPS.AutoPlan
             return null;
         }
 
+        /// <summary>
+        /// KK, the short three point turn: straight on from the pass end until the front end of the
+        /// vehicle is at the boundary, backwards at full lock (the rear swings towards the next
+        /// pass) by the angle acos(-L / 2R), then forward at full lock the other way, which ends on
+        /// the next pass facing along it; straight on into the pass. R is the full lock radius.
+        /// Null when the passes are not side by side, two radii or more apart, or it does not fit.
+        /// </summary>
+        public static List<Pose> KK(V2 p0, double h0, V2 p1, double h1, double R, double spacing, Func<V2, bool> inside,
+            Func<V2, bool> noseInside, double frontReach)
+        {
+            double dh = Math.IEEERemainder(h1 - h0 - Math.PI, 2.0 * Math.PI);
+            if (Math.Abs(dh) > 0.2) return null;
+            V2 d = new V2(Math.Sin(h0), Math.Cos(h0));
+            V2 r = new V2(Math.Cos(h0), -Math.Sin(h0));        // to the right of the heading
+            V2 rel = p1 - p0;
+            double along = rel.E * d.E + rel.N * d.N;
+            double lat = rel.E * r.E + rel.N * r.N;
+            double L = Math.Abs(lat);
+            if (L < 0.5 || L >= 2.0 * R - 0.05) return null;
+            V2 u = r * Math.Sign(lat);                          // towards the next pass
+            double phi = Math.Acos(-L / (2.0 * R));             // reversing arc
+            double back = 2.0 * R * Math.Sin(phi);              // the turn ends this far back from its start
+            double step = Math.Max(0.2, Math.Min(spacing, 0.5));
+            int Steps(double len) => Math.Max(2, (int)Math.Ceiling(len / step));
+
+            // straight on as far as the front end stays inside
+            double eMax = -1.0;
+            for (double e = 0.0; e <= 60.0; e += 0.25)
+            {
+                if (!noseInside(p0 + d * (e + frontReach))) break;
+                eMax = e;
+            }
+            // the turn must end before the next pass starts
+            double eMin = Math.Max(0.0, along + back);
+            for (double e = eMax; e >= eMin - 1e-9; e -= 0.25)
+            {
+                V2 a0 = p0 + d * e;
+                V2 Wp(double x, double y) => a0 + u * x + d * y;
+                var pts = new List<Pose>();
+                void Add(V2 p, bool rev) { pts.Add(new Pose { P = p, Reverse = rev }); }
+                Add(p0, false);
+                int n = Steps(e);
+                for (int i = 1; i <= n && e > 1e-6; i++) Add(p0 + d * (e * i / n), false);
+                // backwards at full lock, centre (R, 0)
+                n = Steps(R * phi);
+                for (int i = 1; i <= n; i++)
+                {
+                    double t = phi * i / n;
+                    Add(Wp(R - R * Math.Cos(t), -R * Math.Sin(t)), true);
+                }
+                // forward at full lock the other way, onto the next pass
+                double cx = R - 2.0 * R * Math.Cos(phi), cy = -back;
+                n = Steps(R * (Math.PI - phi));
+                for (int i = 1; i <= n; i++)
+                {
+                    double t = phi + (Math.PI - phi) * i / n;
+                    Add(Wp(cx + R * Math.Cos(t), cy + R * Math.Sin(t)), false);
+                }
+                V2 q = Wp(L, -back);
+                double len = (p1 - q).Length;
+                n = Steps(len);
+                for (int i = 1; i <= n && len > 1e-6; i++) Add(q + (p1 - q) * (i / (double)n), false);
+                bool ok = true;
+                foreach (Pose pp in pts) if (!inside(pp.P)) { ok = false; break; }
+                if (ok) return pts;
+            }
+            return null;
+        }
+
         /// <summary>Room the three point turn needs past its start (towards the boundary).</summary>
         public static double KTurnReach(double W, double R)
         {

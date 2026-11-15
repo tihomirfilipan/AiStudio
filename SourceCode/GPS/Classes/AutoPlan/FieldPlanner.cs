@@ -81,6 +81,15 @@ namespace AgOpenGPS.AutoPlan
         /// </summary>
         public bool HeadlandReverseTurns = false;
 
+        /// <summary>
+        /// Turning radius at full steering lock (rear axle), meters; 0 = not known. With it and
+        /// the reversing option the short three point turn (KK) is used where it fits.
+        /// </summary>
+        public double FullLockRadius = 0;
+
+        /// <summary>Distance from the pivot (rear axle) to the front end of the vehicle, meters.</summary>
+        public double FrontReach = 3.7;
+
         /// <summary>Turns and transfers never drive over worked passes (only headland and the outer pass tracks).</summary>
         public bool AvoidWorked = false;
 
@@ -1352,7 +1361,11 @@ namespace AgOpenGPS.AutoPlan
                         double lineRev = ReverseManeuver.KTurnReach(W, R) + W * 0.5 + 0.3;
                         List<ReverseManeuver.Pose> man = null;
                         int cut = path.Count;
-                        for (int j = path.Count - 1; j >= 0; j--)
+                        // short three point turn (KK) first: straight on until the front end is at the
+                        // boundary, back at full lock, forward at full lock into the next pass
+                        if (set.FullLockRadius > 0)
+                            man = ReverseManeuver.KK(lastP, lastH, pts[0], entryH, set.FullLockRadius, s, fenceGrid.Clear, fenceGrid.Inside, set.FrontReach);
+                        for (int j = path.Count - 1; j >= 0 && man == null; j--)
                         {
                             V2 pj = new V2(path[j].E, path[j].N);
                             if ((pj - lastP).Length > 2.0 * R) break;
