@@ -356,6 +356,35 @@ namespace AgOpenGPS.Tests.AutoPlan
         }
 
         [Test]
+        public void RacePlanner_RejectsMissingBoundary()
+        {
+            var settings = new FieldPlanSettings { WorkWidth = 3.0, TurnRadius = 5.6 };
+            var result = RacePlanner.Build(new List<V2>(), settings, new V2(0, 0), 0);
+            Assert.That(result.Ok, Is.False);
+            Assert.That(result.Error, Does.Contain("RACE"));
+        }
+
+        [Test]
+        public void RacePlanner_DoesNotModifyInputSettings()
+        {
+            var settings = new FieldPlanSettings
+            {
+                WorkWidth = 3.0, TurnRadius = 5.6,
+                WedgeField = false, StartFromMiddle = false,
+                HeadlandReverseTurns = true
+            };
+            var result = RacePlanner.Build(new List<V2>
+            {
+                new V2(0, 0), new V2(50, 0),
+                new V2(50, 80), new V2(0, 80)
+            }, settings, new V2(25, 40), 0);
+            Assert.That(settings.WedgeField, Is.False);
+            Assert.That(settings.StartFromMiddle, Is.False);
+            Assert.That(settings.HeadlandReverseTurns, Is.True);
+            Assert.That(result, Is.Not.Null);
+        }
+
+        [Test]
         public void ReverseManeuver_CountsForwardReverseTransitions()
         {
             var fence = Rectangle(100, 100);
