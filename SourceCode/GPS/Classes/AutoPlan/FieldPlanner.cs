@@ -1335,7 +1335,10 @@ namespace AgOpenGPS.AutoPlan
                 {
                     LastPose(path, s, out V2 lastP, out double lastH);
                     double entryH = HeadingOf(pts[0], pts[Math.Min(3, pts.Count - 1)]);
-                    if ((pts[0] - lastP).Length <= 2.0 * R + 4.0 * W + 40.0)
+                    // turns between neighbouring passes always use the reversing turn (R); a farther
+                    // pass (skipped passes) only when it is close
+                    bool neighbourTurn = Math.Abs(order[i].Pass.Lane - order[i - 1].Pass.Lane) <= 1;
+                    if (neighbourTurn || (pts[0] - lastP).Length <= 2.0 * R + 4.0 * W + 40.0)
                     {
                         // the three point turn; near corners the pass may run on too close to the
                         // boundary for it: then it starts a bit earlier on the pass, but never before
