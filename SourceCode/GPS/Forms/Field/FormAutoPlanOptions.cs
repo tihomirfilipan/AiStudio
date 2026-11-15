@@ -38,6 +38,7 @@ namespace AgOpenGPS.Forms.Field
         private readonly Timer previewTimer;
         private int version, planVersion = -1;
         private readonly double appWidth, appRadius;
+        private bool raceSelected;
 
         /// <summary>Also add the first pass line as a new curve track.</summary>
         public bool AddTrack => tileAddTrack.Selected || GuidanceMode;
@@ -49,6 +50,8 @@ namespace AgOpenGPS.Forms.Field
         public bool GuidanceMode => tileGuidance.Selected;
 
         public FieldPlanSettings Settings { get; private set; }
+
+        public bool RaceSelected => raceSelected;
 
         /// <summary>The plan of the preview when it matches the chosen options, else null.</summary>
         public FieldPlanResult Plan { get; private set; }
@@ -363,6 +366,7 @@ namespace AgOpenGPS.Forms.Field
         /// <summary>Settings like the example plans: turns at the edge, headland left for the driver.</summary>
         private void Recommended()
         {
+            raceSelected = false;
             nudWidth.Value = (decimal)appWidth;
             nudRadius.Value = (decimal)appRadius;
             nudLaps.Value = 0;
@@ -388,6 +392,7 @@ namespace AgOpenGPS.Forms.Field
         /// </summary>
         private void SelectRace()
         {
+            raceSelected = true;
             nudWidth.Value = 3.00m;
             nudRadius.Value = 5.6m;
             nudLaps.Value = 0;
@@ -428,7 +433,8 @@ namespace AgOpenGPS.Forms.Field
             if (fence == null || fence.Count < 3) return;
             int v = version;
             FieldPlanSettings settings = CurrentSettings();
-            Task.Run(() => FieldPlanner.Build(fence, settings, startPos, startHeading))
+            Task.Run(() => raceSelected ? RacePlanner.Build(fence, settings, startPos, startHeading)
+                : FieldPlanner.Build(fence, settings, startPos, startHeading))
                 .ContinueWith(t =>
                 {
                     if (IsDisposed || v != version) return;   // options changed meanwhile
