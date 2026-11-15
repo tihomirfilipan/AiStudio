@@ -687,17 +687,6 @@ namespace AgOpenGPS
             mf.guidanceLineSteerAngle = (short)(steerAngleRP * 100);
         }
 
-        // Colours used for the turns of a recorded path, repeated in this order
-        private static readonly float[][] TurnColors =
-        {
-            new[] { 1.00f, 0.44f, 0.26f }, // orange
-            new[] { 0.93f, 0.25f, 0.48f }, // pink
-            new[] { 0.15f, 0.78f, 0.85f }, // cyan
-            new[] { 0.67f, 0.28f, 0.74f }, // purple
-            new[] { 0.94f, 0.33f, 0.31f }, // red
-            new[] { 0.26f, 0.65f, 0.96f }, // blue
-        };
-
         // A working run that ends where it started is a headland lap
         private bool IsClosedLoop(int a, int b)
         {
@@ -713,9 +702,9 @@ namespace AgOpenGPS
         {
             int ptCount = recList.Count;
             if (ptCount < 1) return;
-            // Draw the path run by run: passes yellow, headland laps (closed loops) grey,
-            // and every turn thicker in the next colour of the palette
-            int turnIndex = -1;
+            // Every run of the path is grey, except the active pass (yellow) and the pass after it
+            // (white). Headland laps and turns are grey too.
+            var runs = new List<(int from, int end, bool work, bool headland)>();
             int i = 0;
             while (i < ptCount)
             {
@@ -723,37 +712,34 @@ namespace AgOpenGPS
                 int runStart = i;
                 while (i < ptCount && recList[i].autoBtnState == work) i++;
                 int runEnd = i - 1;
-                int from = Math.Max(0, runStart - 1); // connect to the previous run
+                bool headland = work && (IsClosedLoop(runStart, runEnd) || Math.Abs(recList[runStart].speed - FormGPS.AutoPlanHeadlandSpeed) < 0.05);
+                runs.Add((Math.Max(0, runStart - 1), runEnd, work, headland));
+            }
 
-                if (work)
-                {
-                    if (IsClosedLoop(runStart, runEnd) || Math.Abs(recList[runStart].speed - FormGPS.AutoPlanHeadlandSpeed) < 0.05)
-                    {
-                        GL.LineWidth(2);
-                        GL.Color3(0.62f, 0.64f, 0.67f);
-                    }
-                    else
-                    {
-                        GL.LineWidth(1);
-                        GL.Color3(0.98f, 0.92f, 0.460f);
-                    }
-                }
-                else
-                {
-                    turnIndex++;
-                    float[] c = TurnColors[turnIndex % TurnColors.Length];
-                    GL.LineWidth(3);
-                    GL.Color3(c[0], c[1], c[2]);
-                }
+            int cur = Math.Max(0, Math.Min(ptCount - 1, currentPositonIndex));
+            int activeRun = -1, nextRun = -1;
+            for (int r = 0; r < runs.Count; r++)
+            {
+                if (!runs[r].work || runs[r].headland) continue;
+                if (activeRun < 0 && cur <= runs[r].end) { activeRun = r; continue; }
+                if (activeRun >= 0) { nextRun = r; break; }
+            }
+
+            for (int r = 0; r < runs.Count; r++)
+            {
+                var run = runs[r];
+                if (r == activeRun) { GL.LineWidth(2); GL.Color3(0.98f, 0.92f, 0.46f); }
+                else if (r == nextRun) { GL.LineWidth(2); GL.Color3(1.0f, 1.0f, 1.0f); }
+                else { GL.LineWidth(1.5f); GL.Color3(0.55f, 0.57f, 0.60f); }
 
                 GL.Begin(PrimitiveType.LineStrip);
-                for (int h = from; h <= runEnd; h++) GL.Vertex3(recList[h].easting, recList[h].northing, 0);
+                for (int h = run.from; h <= run.end; h++) GL.Vertex3(recList[h].easting, recList[h].northing, 0);
                 GL.End();
             }
 
-            // reverse parts of turns: white, dashed
-            GL.LineWidth(4);
-            GL.Color3(1.0f, 1.0f, 1.0f);
+            // reverse parts of turns: dashed, grey (not the colour of the next pass)
+            GL.LineWidth(3);
+            GL.Color3(0.80f, 0.80f, 0.82f);
             GL.Enable(EnableCap.LineStipple);
             GL.LineStipple(1, 0x0F0F);
             GL.Begin(PrimitiveType.Lines);
