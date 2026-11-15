@@ -759,9 +759,11 @@ namespace AgOpenGPS
                 else if (r == turnRun) { GL.LineWidth(3); GL.Color3(0.60f, 0.90f, 1.0f); }
                 else if (!run.work)
                 {
-                    // warm colours first (red, orange, pink, violet, blue, green), never yellow or light blue
-                    double[] hues = { 0, 22, 330, 285, 235, 120 };
-                    double hue = hues[turnNo % hues.Length];
+                    // every turn its own colour: hues spaced by the golden angle, so neighbours differ
+                    // and the colours do not repeat soon; yellow and light blue are skipped
+                    double hue = (turnNo * 137.508) % 360.0;
+                    if (hue > 40 && hue < 75) hue += 40;
+                    if (hue > 185 && hue < 215) hue += 30;
                     turnNo++;
                     HsvToRgb(hue, out float rr, out float gg, out float bb);
                     GL.LineWidth(2.5f); GL.Color3(rr, gg, bb);
