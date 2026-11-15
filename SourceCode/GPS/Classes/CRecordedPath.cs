@@ -512,19 +512,29 @@ namespace AgOpenGPS
                 // curve being driven, so the steering is held up to the stop
                 if (count == 1 && i > 1 && (recList[i].speed < 0) != partReverse)
                 {
-                    int c2 = i - 1, c1 = Math.Max(0, i - 2), c0 = Math.Max(0, i - 3);
+                    // curve being driven: from points about a metre and two metres back (points
+                    // right at the cusp can be close together or uneven)
+                    int c2 = i - 1, c1 = c2, c0;
+                    while (c1 > 0 && recList[c1].speed < 0 == partReverse
+                        && glm.Distance(recList[c2].easting, recList[c2].northing, recList[c1].easting, recList[c1].northing) < 1.0) c1--;
+                    c0 = c1;
+                    while (c0 > 0 && recList[c0].speed < 0 == partReverse
+                        && glm.Distance(recList[c1].easting, recList[c1].northing, recList[c0].easting, recList[c0].northing) < 1.0) c0--;
                     double h2 = Math.Atan2(recList[c2].northing - recList[c1].northing, recList[c2].easting - recList[c1].easting);
                     double h1 = Math.Atan2(recList[c1].northing - recList[c0].northing, recList[c1].easting - recList[c0].easting);
-                    double segLen = glm.Distance(recList[c2].easting, recList[c2].northing, recList[c1].easting, recList[c1].northing);
+                    double len21 = glm.Distance(recList[c2].easting, recList[c2].northing, recList[c1].easting, recList[c1].northing);
+                    double len10 = glm.Distance(recList[c1].easting, recList[c1].northing, recList[c0].easting, recList[c0].northing);
                     double kappa = 0;
-                    if (c0 != c1 && segLen > 0.01)
+                    if (len21 > 0.3 && len10 > 0.3)
                     {
                         double dh = h2 - h1;
                         while (dh > Math.PI) dh -= glm.twoPI;
                         while (dh < -Math.PI) dh += glm.twoPI;
-                        kappa = dh / segLen;
+                        kappa = dh / ((len21 + len10) * 0.5);
+                        // the chord direction lags the tangent at the cusp by half the turn of the chord
+                        h2 += kappa * len21 * 0.5;
                     }
-                    if (c1 == c2) break;
+                    if (len21 < 0.05) break;
                     double rem = goalPointDistance - distSoFar - Math.Sqrt(((start.easting - recList[c2].easting) * (start.easting - recList[c2].easting))
                         + ((start.northing - recList[c2].northing) * (start.northing - recList[c2].northing)));
                     if (rem < 0) rem = 0;

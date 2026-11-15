@@ -341,10 +341,23 @@ namespace AgOpenGPS
             // hitch and trailing settings), the same value the section switching uses
             double trailL = Math.Max(0.0, -toolBehind);
             var shifted = new List<PlanPoint>(planPoints.Count);
+            // turns with a reversing part (three point turns) are driven exactly as planned: the
+            // shift changes side where the driving direction changes, which broke the path at the
+            // cusp (the reversing part started metres beside the end of the forward arc)
+            var inReverseTurn = new bool[planPoints.Count];
+            for (int k = 0; k < planPoints.Count;)
+            {
+                if (planPoints[k].IsWork) { k++; continue; }
+                int k1 = k;
+                bool hasReverse = false;
+                while (k1 < planPoints.Count && !planPoints[k1].IsWork) { hasReverse |= planPoints[k1].IsReverse; k1++; }
+                if (hasReverse) for (int q = k; q < k1; q++) inReverseTurn[q] = true;
+                k = k1;
+            }
             for (int k = 0; k < planPoints.Count; k++)
             {
                 PlanPoint p = planPoints[k];
-                if (trailL > 0.5 && planPoints.Count > 2)
+                if (trailL > 0.5 && planPoints.Count > 2 && !inReverseTurn[k])
                 {
                     // curvature over +-3 points, smoothed: straight parts (and parts with a gentle bend)
                     // get no shift, so the passes beside each other keep their spacing there
