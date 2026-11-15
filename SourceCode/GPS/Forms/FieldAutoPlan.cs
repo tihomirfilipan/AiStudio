@@ -376,15 +376,32 @@ namespace AgOpenGPS
             // Current and next run are always shown, the rest only where there is room
             int idx = recPath.isFollowingRecPath ? recPath.currentPositonIndex : 0;
             int current = recPathLabels.FindIndex(l => l.EndIndex >= idx);
-            var order = new List<int>(recPathLabels.Count);
-            if (current >= 0) order.Add(current);
-            if (current >= 0 && current + 1 < recPathLabels.Count) order.Add(current + 1);
-            for (int i = 0; i < recPathLabels.Count; i++) if (i != current && i != current + 1) order.Add(i);
+            // only the passes ahead of the vehicle: the current one and the next few, one after another
+            var order = new List<int>(8);
+            for (int i = Math.Max(0, current); i < recPathLabels.Count && order.Count < 6; i++)
+                if (!recPathLabels[i].IsHeadland) order.Add(i);
+            // the current pass is labelled a bit ahead of the vehicle (on the pass), the others at
+            // the start of their pass
+            int ahead = Math.Max(0, Math.Min(recPath.recList.Count - 1, idx));
+            int aheadIdx = ahead;
+            double ahead30 = recPathCumLength[ahead] + 30.0;
+            while (aheadIdx < recPath.recList.Count - 1 && recPathCumLength[aheadIdx] < ahead30) aheadIdx++;
 
             var shown = new List<RunLabel>(recPathLabels.Count);
             foreach (int i in order)
             {
                 RunLabel label = recPathLabels[i];
+                if (i == current && recPath.isDrivingRecordedPath)
+                {
+                    label.E = recPath.recList[aheadIdx].easting;
+                    label.N = recPath.recList[aheadIdx].northing;
+                }
+                else
+                {
+                    int st = Math.Min(label.StartIndex + 2, recPath.recList.Count - 1);
+                    label.E = recPath.recList[st].easting;
+                    label.N = recPath.recList[st].northing;
+                }
                 bool free = true;
                 foreach (RunLabel o in shown)
                 {
