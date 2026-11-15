@@ -132,6 +132,9 @@ namespace AgOpenGPS.AutoPlan
         /// </summary>
         public bool StartFromMiddle = false;
 
+        /// <summary>Reject a failed wedge plan instead of silently falling back to an edge-first plan.</summary>
+        public bool RequireMiddleWedge = false;
+
         public FieldPlanSettings Clone() => (FieldPlanSettings)MemberwiseClone();
 
         /// <summary>
@@ -234,7 +237,7 @@ namespace AgOpenGPS.AutoPlan
 
                 // a wedge or split field with no plan (halves too narrow for the tool): the whole
                 // field as one
-                if ((set.WedgeField || set.SplitField) && (!res.Ok || res.Points.Count < 2))
+                if (!set.RequireMiddleWedge && (set.WedgeField || set.SplitField) && (!res.Ok || res.Points.Count < 2))
                 {
                     FieldPlanSettings one = set.Clone();
                     one.WedgeField = false;
