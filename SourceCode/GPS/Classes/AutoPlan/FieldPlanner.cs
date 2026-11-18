@@ -4585,6 +4585,7 @@ namespace AgOpenGPS.AutoPlan
                 if (endRunId[i] >= 0) { if (curI == null) { curI = new List<int>(); stretchIdx.Add(curI); } curI.Add(i); }
                 else curI = null;
             }
+            var uvLines = new List<List<V2>>();
             foreach (var si in stretchIdx)
             {
                 if (si.Count < 2) continue;
@@ -4611,6 +4612,14 @@ namespace AgOpenGPS.AutoPlan
                     V2 v = ll > 0.5 ? new V2(planLaneDir.E / ll, planLaneDir.N / ll) : Dir(copy[0], copy[copy.Count - 1]);
                     V2 midC = copy[copy.Count / 2];
                     if (!tester2.Inside(midC + v * 1.5)) v = new V2(-v.E, -v.N);
+                    // the headland track of this end: the copy moved by the whole headland width
+                    {
+                        var uv = new List<V2>(copy.Count);
+                        foreach (V2 p in copy) uv.Add(p + v * (laps * W));
+                        while (uv.Count > 2 && !tester2.Inside(uv[0])) uv.RemoveAt(0);
+                        while (uv.Count > 2 && !tester2.Inside(uv[uv.Count - 1])) uv.RemoveAt(uv.Count - 1);
+                        uvLines.Add(uv);
+                    }
                     for (int k = 0; k < laps; k++)
                     {
                         var line = new List<V2>(copy.Count);
@@ -4630,6 +4639,11 @@ namespace AgOpenGPS.AutoPlan
             double LenOf(int e) => res.EndPassLines[e].Count > 0 && res.EndPassLines[e][0].Count > 1 ? OpenLength(res.EndPassLines[e][0]) : 0.0;
             order.Sort((a, b) => LenOf(b).CompareTo(LenOf(a)));
             for (int rank = 0; rank < order.Count; rank++) res.EndPassTrack[order[rank]] = rank;
+            // the headland tracks (uvratina1, uvratina2): the copied boundary of each end, moved by the headland width
+            var uvTracks = new List<List<V2>>();
+            for (int rank = 0; rank < order.Count && uvTracks.Count < 2; rank++)
+                if (uvLines[order[rank]].Count >= 3) uvTracks.Add(uvLines[order[rank]]);
+            if (uvTracks.Count > 0) res.HeadlandTracks = uvTracks;
         }
 
         /// <summary>

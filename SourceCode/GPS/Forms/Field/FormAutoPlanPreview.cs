@@ -258,15 +258,6 @@ namespace AgOpenGPS.Forms.Field
                     for (int k = 0; k < line.Length; k++) line[k] = P(ps.Pts[k].E, ps.Pts[k].N);
                     using (var pen = new Pen(Color.FromArgb(255, 224, 102), 1.4f)) g.DrawLines(pen, line);
                 }
-                // the guidance lines of the headland passes
-                for (int e = 0; e < plan.EndPassLines.Count; e++)
-                    foreach (List<V2> pl in plan.EndPassLines[e])
-                    {
-                        if (pl.Count < 3) continue;
-                        var line = new PointF[pl.Count];
-                        for (int k = 0; k < line.Length; k++) line[k] = P(pl[k].E, pl[k].N);
-                        using (var pen = new Pen(Color.FromArgb(200, 0, 229, 255), 1.6f)) g.DrawLines(pen, line);
-                    }
                 using (var font = new Font("Tahoma", 10F, FontStyle.Bold))
                     for (int t = 0; t < plan.HeadlandTracks.Count && t < 2; t++)
                     {
