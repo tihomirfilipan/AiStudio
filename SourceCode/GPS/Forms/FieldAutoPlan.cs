@@ -88,6 +88,9 @@ namespace AgOpenGPS
         private Bitmap autoPlanIconOn, autoPlanIconOff, trackIconOn, trackIconOff;
         private int autoPlanButtonState = -1, trackButtonState = -1;
         private bool autoPlanSteerLit;
+        private bool autoPathStarting;
+        private Bitmap autoSteerGreyIcon;
+        private bool autoSteerGrey;
 
         /// <summary>A path is selected: it is loaded and its panel is open, or it is being driven.</summary>
         private bool IsAutoPathActive => recPath.recList.Count > 4 && !recPath.isRecordOn
@@ -109,6 +112,25 @@ namespace AgOpenGPS
             {
                 trackButtonState = trackState;
                 btnTrack.Image = trackState == 1 ? trackIconOn : trackIconOff;
+            }
+
+            // autosteer button in path mode (path panel open) with no path to drive: grey
+            bool grey = panelDrag.Visible && !recPath.isRecordOn && recPath.recList.Count <= 4;
+            if (grey)
+            {
+                if (autoSteerGreyIcon == null) autoSteerGreyIcon = GreyIcon(new Bitmap(Properties.Resources.AutoSteerOff));
+                if (btnAutoSteer.Image != autoSteerGreyIcon) btnAutoSteer.Image = autoSteerGreyIcon;
+                autoSteerGrey = true;
+                return;
+            }
+            if (autoSteerGrey)
+            {
+                autoSteerGrey = false;
+                autoPlanSteerLit = !recPath.isDrivingRecordedPath;      // force the icon below to be set again
+                if (isBtnAutoSteerOn)
+                    btnAutoSteer.Image = trk.isAutoSnapToPivot ? Properties.Resources.AutoSteerOnSnapToPivot : Properties.Resources.AutoSteerOn;
+                else
+                    btnAutoSteer.Image = trk.isAutoSnapToPivot ? Properties.Resources.AutoSteerOffSnapToPivot : Properties.Resources.AutoSteerOff;
             }
 
             // autosteer button: lit while the path is driven (it starts and stops the path)

@@ -176,10 +176,19 @@ namespace AgOpenGPS
                 btnPathGoStop.PerformClick();
                 return;
             }
-            if (!isBtnAutoSteerOn && trk.idx < 0 && !ct.isContourBtnOn
-                && panelDrag.Visible && recPath.recList.Count > 4)
+            // path mode (the path panel is open): the button is Play when there is a path to drive,
+            // and does nothing (its icon is grey) when there is none
+            if (!autoPathStarting && panelDrag.Visible && !recPath.isRecordOn)
             {
-                btnPathGoStop.PerformClick();
+                if (recPath.recList.Count > 4)
+                {
+                    // starting the path switches the guidance line / autosteer off, which presses this
+                    // button again: the flag lets that press through as an ordinary one
+                    autoPathStarting = true;
+                    try { btnPathGoStop.PerformClick(); }
+                    finally { autoPathStarting = false; }
+                }
+                else TimedMessageBox(2000, T("Auto path", "Auto putanja"), T("There is no path to drive", "Nema putanje za vožnju"));
                 return;
             }
 
