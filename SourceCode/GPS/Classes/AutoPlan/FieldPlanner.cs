@@ -93,6 +93,13 @@ namespace AgOpenGPS.AutoPlan
         /// <summary>Headland passes worked along each end of the passes (the outermost ones first); 0 = all laps of the headland.</summary>
         public int EndPasses = 1;
 
+        /// <summary>
+        /// The drive may start at any corner of the field: of the long edges that run alike the one with the end
+        /// nearest to the vehicle gets the first pass (not with an edge picked by hand, a start from the middle,
+        /// a wedge or a split field).
+        /// </summary>
+        public bool StartAtNearestCorner = true;
+
         /// <summary>Each reversing turn can be switched off: K (KL/KD), KLV (KLV1/KDV1) and R (searched reversing turn).</summary>
         public bool UseK = true, UseKLV = true, UseFind = true;
 
@@ -239,6 +246,24 @@ namespace AgOpenGPS.AutoPlan
 
         public static FieldPlanResult Build(IList<V2> fence, FieldPlanSettings set, V2 startPos, double startHeading)
         {
+            // the drive may start at any corner: also try the first pass along the long edge on the other side
+            // whose end is nearest to the vehicle, and take that plan when it is not worse
+            if (set.ReferenceEdge == null && set.StartAtNearestCorner && !set.StartFromMiddle && !set.WedgeField && !set.SplitField)
+            {
+                FieldPlanSettings plain = set.Clone();
+                plain.StartAtNearestCorner = false;
+                FieldPlanResult r0 = Build(fence, plain, startPos, startHeading);
+                if (!r0.Ok) return r0;
+                List<V2> alt = NearestCornerEdge(fence, startPos, r0.ReferenceEdge);
+                if (alt == null) return r0;
+                FieldPlanSettings other = plain.Clone();
+                other.ReferenceEdge = alt;
+                FieldPlanResult r1 = Build(fence, other, startPos, startHeading);
+                // not worse: no more turns leaving the field, about the same passes and as much work done
+                bool notWorse = r1.Ok && r1.TurnsLeavingField <= r0.TurnsLeavingField && Math.Abs(r1.Passes - r0.Passes) <= 1
+                    && r1.WorkLength >= r0.WorkLength * 0.97 && r1.TotalLength <= r0.TotalLength * 1.05 && r1.SkippedPieces <= r0.SkippedPieces;
+                return notWorse ? r1 : r0;
+            }
             var res = new FieldPlanResult();
             try
             {
@@ -1895,6 +1920,42 @@ namespace AgOpenGPS.AutoPlan
         /// Straight edges of the boundary (corners found by simplifying it), longest first, as
         /// two point lines: choices for the edge the passes follow.
         /// </summary>
+        /// <summary>
+        /// A long edge that runs alike the edge of the plan (within about 10 degrees, at least half as long) on
+        /// the other side of the field, when one of its ends is clearly nearer to the vehicle than the ends of the
+        /// plan's edge; null otherwise.
+        /// </summary>
+        private static List<V2> NearestCornerEdge(IList<V2> fence, V2 startPos, List<V2> planEdge)
+        {
+            if (planEdge == null || planEdge.Count < 2) return null;
+            var cands = EdgeCandidates(fence, 8);
+            if (cands.Count < 2) return null;
+            V2 pa = planEdge[0], pb = planEdge[planEdge.Count - 1];
+            V2 pd = Dir(pa, pb);
+            double planLen = (pb - pa).Length;
+            double dPlan = Math.Min((pa - startPos).Length, (pb - startPos).Length);
+            // the longest candidate stands for the plan's edge: take the one most alike it
+            List<V2> main = cands[0];
+            double bestD = dPlan - 2.0 * 3.0;
+            List<V2> best = null;
+            V2 md = Dir(main[0], main[1]);
+            double mainLen = (main[1] - main[0]).Length;
+            foreach (var c in cands)
+            {
+                V2 cd = Dir(c[0], c[1]);
+                if (Math.Abs(cd.E * md.E + cd.N * md.N) < 0.985) continue;          // not alike (about 10 degrees)
+                if ((c[1] - c[0]).Length < 0.5 * mainLen) continue;
+                // not the plan's own edge: it must lie across the field from it
+                V2 mid = (c[0] + c[1]) * 0.5;
+                V2 across = new V2(-pd.N, pd.E);
+                double lateral = Math.Abs((mid - pa).E * across.E + (mid - pa).N * across.N);
+                if (lateral < 10.0) continue;
+                double d = Math.Min((c[0] - startPos).Length, (c[1] - startPos).Length);
+                if (d < bestD) { bestD = d; best = c; }
+            }
+            return best;
+        }
+
         public static List<List<V2>> EdgeCandidates(IList<V2> fenceIn, int max)
         {
             var result = new List<List<V2>>();
