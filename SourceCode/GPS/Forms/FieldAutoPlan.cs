@@ -76,13 +76,17 @@ namespace AgOpenGPS
             autoPlanIconOn = AutoPlanIcon(48);
             autoPlanIconOff = GreyIcon(autoPlanIconOn);
             btnAutoPlan.Image = autoPlanIconOff;
+            // the tracks button too: coloured while a track is selected, grey otherwise
+            trackIconOn = new Bitmap(Properties.Resources.TrackOn);
+            trackIconOff = GreyIcon(trackIconOn);
+            btnTrack.Image = trk.idx > -1 ? trackIconOn : trackIconOff;
             var stateTimer = new Timer { Interval = 400 };
             stateTimer.Tick += (s, e) => UpdateAutoPlanButtons();
             stateTimer.Start();
         }
 
-        private Bitmap autoPlanIconOn, autoPlanIconOff;
-        private int autoPlanButtonState = -1;
+        private Bitmap autoPlanIconOn, autoPlanIconOff, trackIconOn, trackIconOff;
+        private int autoPlanButtonState = -1, trackButtonState = -1;
         private bool autoPlanSteerLit;
 
         /// <summary>A path is selected: it is loaded and its panel is open, or it is being driven.</summary>
@@ -98,6 +102,13 @@ namespace AgOpenGPS
             {
                 autoPlanButtonState = state;
                 btnAutoPlan.Image = state == 1 ? autoPlanIconOn : autoPlanIconOff;
+            }
+
+            int trackState = trk.idx > -1 ? 1 : 0;
+            if (trackState != trackButtonState)
+            {
+                trackButtonState = trackState;
+                btnTrack.Image = trackState == 1 ? trackIconOn : trackIconOff;
             }
 
             // autosteer button: lit while the path is driven (it starts and stops the path)
