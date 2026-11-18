@@ -90,6 +90,9 @@ namespace AgOpenGPS.AutoPlan
         /// <summary>Use the short three point turn KK with the reversing option (needs FullLockRadius).</summary>
         public bool UseKK = true;
 
+        /// <summary>Headland passes worked along each end of the passes (the outermost ones first); 0 = all laps of the headland.</summary>
+        public int EndPasses = 1;
+
         /// <summary>Each reversing turn can be switched off: K (KL/KD), KLV (KLV1/KDV1) and R (searched reversing turn).</summary>
         public bool UseK = true, UseKLV = true, UseFind = true;
 
@@ -1830,7 +1833,7 @@ namespace AgOpenGPS.AutoPlan
             // --- Headland: strips at the pass ends, or laps all around ---
             if (set.WorkHeadland && endsOnly)
             {
-                BuildEndStrips(fence, endRunId, laps, W, R, s, fenceGrid, path, res, transferLoop, set.HeadlandReverseTurns);
+                BuildEndStrips(fence, endRunId, laps, W, R, s, fenceGrid, path, res, transferLoop, set.HeadlandReverseTurns, set.EndPasses);
             }
             else if (set.WorkHeadland)
             {
@@ -2439,10 +2442,12 @@ namespace AgOpenGPS.AutoPlan
         /// The direction of every strip is chosen so that the connecting turn is short and inside.
         /// </summary>
         private static void BuildEndStrips(List<V2> fence, int[] endRunId, int laps, double W, double R, double s,
-            PolygonTester fenceGrid, List<PlanPoint> path, FieldPlanResult res, List<V2> transferLoop, bool reverseTurns)
+            PolygonTester fenceGrid, List<PlanPoint> path, FieldPlanResult res, List<V2> transferLoop, bool reverseTurns, int endPasses = 0)
         {
             var groups = new Dictionary<int, List<List<V2>>>(); // end id -> strips, inner first
-            for (int j = laps - 1; j >= 0; j--)
+            // only the outermost strips of the headland are worked along the ends (the rest of the headland is the driver's)
+            int stripCount = endPasses > 0 ? Math.Min(laps, endPasses) : laps;
+            for (int j = stripCount - 1; j >= 0; j--)
             {
                 List<V2> lap = InsetLoop(fence, W * (j + 0.5), s);
                 if (lap.Count < 10) continue;

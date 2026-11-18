@@ -34,7 +34,8 @@ namespace AgOpenGPS.Properties
         public bool setMap_isAutoSatellite = true;
 
         // Auto field plan options (last used)
-        public bool setAutoPlan_workHeadland = false;
+        public bool setAutoPlan_workHeadland = true;
+        public int setAutoPlan_endPasses = 1;
         public bool setAutoPlan_headlandAllAround = false;
         public int setAutoPlan_headlandLaps = 0;
         public bool setAutoPlan_extraPass = true;
