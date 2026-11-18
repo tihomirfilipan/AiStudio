@@ -79,7 +79,8 @@ namespace AgOpenGPS
             // the tracks button too: coloured while a track is selected, grey otherwise
             trackIconOn = new Bitmap(Properties.Resources.TrackOn);
             trackIconOff = GreyIcon(trackIconOn);
-            btnTrack.Image = trk.idx > -1 ? trackIconOn : trackIconOff;
+            // (the track object does not exist yet at this point of the start: grey until the timer sets it)
+            btnTrack.Image = trackIconOff;
             var stateTimer = new Timer { Interval = 400 };
             stateTimer.Tick += (s, e) => UpdateAutoPlanButtons();
             stateTimer.Start();
@@ -99,6 +100,7 @@ namespace AgOpenGPS
         private void UpdateAutoPlanButtons()
         {
             if (btnAutoPlan == null || btnAutoPlan.IsDisposed) return;
+            if (trk == null || recPath == null) return;
 
             int state = IsAutoPathActive ? 1 : 0;
             if (state != autoPlanButtonState)
