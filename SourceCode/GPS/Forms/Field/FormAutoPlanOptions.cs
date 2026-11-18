@@ -490,10 +490,12 @@ namespace AgOpenGPS.Forms.Field
             }
             if (step == 2)
             {
-                preview.Image = FormAutoPlanPreview.RenderHeadland(plan, fence, w, h);
+                preview.Image = FormAutoPlanPreview.RenderHeadland(plan, fence, w, h, (double)nudWidth.Value);
                 old?.Dispose();
-                lblPreview.Text = T("Step 2: headland (brown band) and the tracks uvratina1 / uvratina2 on the same scheme.",
-                    "Korak 2: uvratine (smeđi pojas) i tragovi uvratina1 / uvratina2 na istoj shemi.");
+                var hp = FormAutoPlanPreview.HeadlandPasses(plan, fence, (double)nudWidth.Value);
+                string u1 = hp.Count > 0 ? hp[0].ToString() : "-", u2 = hp.Count > 1 ? hp[1].ToString() : "-";
+                lblPreview.Text = T("Step 2: headland (brown band). U1 = ", "Korak 2: uvratine (smeđi pojas). U1 = ") + u1 +
+                    T(" passes, U2 = ", " prohoda, U2 = ") + u2 + T(" passes.", " prohoda.");
                 return;
             }
             preview.Image = FormAutoPlanPreview.RenderPlan(plan, fence, startPos, startHeading, tileAddTrack.Selected || tileGuidance.Selected, w, h);

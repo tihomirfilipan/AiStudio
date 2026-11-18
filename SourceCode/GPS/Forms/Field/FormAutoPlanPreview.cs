@@ -155,8 +155,40 @@ namespace AgOpenGPS.Forms.Field
         /// Step 2 of the plan: the headland (uvratina) on the scheme of the passes: the band between the
         /// boundary and the inner edge of the headland, the passes, and the headland tracks uvratina1/2.
         /// </summary>
-        public static Bitmap RenderHeadland(FieldPlanResult plan, List<V2> fence, int w, int h)
+        /// <summary>
+        /// Number of headland passes of each headland track (uvratina1, uvratina2): the distance of the
+        /// track from the boundary divided by the work width.
+        /// </summary>
+        public static List<int> HeadlandPasses(FieldPlanResult plan, List<V2> fence, double workWidth)
         {
+            var res = new List<int>();
+            for (int t = 0; t < plan.HeadlandTracks.Count && t < 2; t++)
+            {
+                List<V2> tr = plan.HeadlandTracks[t];
+                var d = new List<double>();
+                for (int k = 0; k < tr.Count; k += Math.Max(1, tr.Count / 20))
+                {
+                    double best = double.MaxValue;
+                    for (int i = 0; i < fence.Count; i++)
+                    {
+                        V2 a = fence[i], b = fence[(i + 1) % fence.Count];
+                        double ex = b.E - a.E, en = b.N - a.N, l2 = ex * ex + en * en;
+                        double u = l2 < 1e-9 ? 0 : Math.Max(0, Math.Min(1, ((tr[k].E - a.E) * ex + (tr[k].N - a.N) * en) / l2));
+                        double dx = tr[k].E - (a.E + u * ex), dn = tr[k].N - (a.N + u * en);
+                        best = Math.Min(best, Math.Sqrt(dx * dx + dn * dn));
+                    }
+                    d.Add(best);
+                }
+                d.Sort();
+                res.Add(d.Count == 0 || workWidth <= 0 ? 0 : (int)Math.Round(d[d.Count / 2] / workWidth));
+            }
+            return res;
+        }
+
+        public static Bitmap RenderHeadland(FieldPlanResult plan, List<V2> fence, int w, int h, double workWidth = 0)
+        {
+            List<int> passes = HeadlandPasses(plan, fence, workWidth);
+
             var bmp = new Bitmap(w, h);
             using (Graphics g = Graphics.FromImage(bmp))
             {
@@ -203,7 +235,7 @@ namespace AgOpenGPS.Forms.Field
                         for (int k = 0; k < line.Length; k++) line[k] = P(tr[k].E, tr[k].N);
                         Color c = t == 0 ? Color.FromArgb(0, 229, 255) : Color.FromArgb(255, 64, 255);
                         using (var pen = new Pen(c, 4f) { LineJoin = LineJoin.Round }) g.DrawLines(pen, line);
-                        g.DrawString("uvratina" + (t + 1), font, new SolidBrush(c), line[line.Length / 2].X + 6, line[line.Length / 2].Y - 20);
+                        g.DrawString("U" + (t + 1) + ": " + (t < passes.Count && passes[t] > 0 ? passes[t] + " prohoda" : "uvratina"), font, new SolidBrush(c), line[line.Length / 2].X + 6, line[line.Length / 2].Y - 20);
                     }
             }
             return bmp;
