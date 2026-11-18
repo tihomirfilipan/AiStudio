@@ -132,22 +132,56 @@ namespace AgOpenGPS
             }
             else //find closest point
             {
+                // nearest point driven in the direction the vehicle faces (the pass beside it,
+                // driven the other way, can be just as near); any point when none faces this way
+                double vehHeading = mf.pivotAxlePos.heading;
+                double bestAny = double.MaxValue;
+                int idxAny = 0;
                 foreach (CRecPathPt pt in recList)
                 {
                     double temp = ((pt.easting - homePos.easting) * (pt.easting - homePos.easting))
                         + ((pt.northing - homePos.northing) * (pt.northing - homePos.northing));
 
-                    if (temp < distance)
+                    if (temp < bestAny)
+                    {
+                        bestAny = temp;
+                        idxAny = i;
+                    }
+                    if (temp < distance && Math.Cos(pt.heading - vehHeading) > 0.5)
                     {
                         distance = temp;
                         idx = i;
                     }
                     i++;
                 }
+                if (distance > bestAny + 400.0) { idx = idxAny; distance = bestAny; }
 
-                //scootch down the line a bit
-                if (idx + 5 < recList.Count) idx += 5;
-                else idx = recList.Count - 1;
+                // on the path already (within 3 m, facing along it): follow it from here. An
+                // approach curve to a point a few metres ahead has no room and made a full circle
+                if (distance < 9.0 && Math.Cos(recList[idx].heading - vehHeading) > 0.7 && idx + 2 < recList.Count)
+                {
+                    starPathIndx = currentPositonIndex = idx;
+                    C = idx;
+                    A = idx;
+                    B = idx + 1;
+                    shuttleDubinsList.Clear();
+                    shortestDubinsList.Clear();
+                    isFollowingDubinsHome = false;
+                    isFollowingDubinsToPath = false;
+                    isFollowingRecPath = true;
+                    isEndOfTheRecLine = false;
+                    isDrivingRecordedPath = true;
+                    return true;
+                }
+
+                // farther away: join the path about 12 m on, so the approach curve has room;
+                // not past a change of driving direction
+                double on = 0;
+                while (idx + 1 < recList.Count - 1 && on < 12.0 && (recList[idx + 1].speed < 0) == (recList[idx].speed < 0))
+                {
+                    on += glm.Distance(recList[idx].easting, recList[idx].northing, recList[idx + 1].easting, recList[idx + 1].northing);
+                    idx++;
+                }
 
                 starPathIndx = currentPositonIndex = idx;
             }
