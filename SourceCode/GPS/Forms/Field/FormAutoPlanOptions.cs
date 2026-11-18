@@ -262,7 +262,9 @@ namespace AgOpenGPS.Forms.Field
                 ForeColor = Color.White,
                 Margin = new Padding(3, 6, 3, 2)
             });
-            var row = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = new Padding(0) };
+            // a long row wraps after five tiles, so none of them runs off to the right of the window
+            var row = new FlowLayoutPanel { AutoSize = true, WrapContents = tiles.Length > 5, Margin = new Padding(0) };
+            if (tiles.Length > 5) row.MaximumSize = new Size(5 * 134 + 6, 0);
             for (int i = 0; i < tiles.Length; i++)
             {
                 PictureTile t = tiles[i];
