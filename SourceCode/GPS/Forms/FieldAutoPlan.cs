@@ -373,6 +373,11 @@ namespace AgOpenGPS
                 // headland all around: one closed track uvratina1 around the whole field
                 for (int h = 0; h < plan.HeadlandTracks.Count && h < 2; h++)
                     AddAutoPlanTrack(plan.HeadlandTracks[h], true, "uvratina" + (h + 1), plan.HeadlandTrackClosed);
+                // guidance lines of the headland passes at every end: U1_1 .. U1_4 and U2_1 .. U2_4 (pass 1 next to the boundary)
+                for (int e = 0; e < plan.EndPassLines.Count && e < 2; e++)
+                    for (int k = 0; k < plan.EndPassLines[e].Count; k++)
+                        if (plan.EndPassLines[e][k].Count >= 3)
+                            AddAutoPlanTrack(plan.EndPassLines[e][k], true, "U" + (plan.EndPassTrack[e] + 1) + "_" + (k + 1), false);
                 // a second headland track of an earlier plan does not belong to this one
                 if (plan.HeadlandTracks.Count < 2)
                 {

@@ -198,6 +198,10 @@ namespace AgOpenGPS.AutoPlan
         public int HeadlandLaps;
         /// <summary>Width of the headland at the ends in work widths (the number of headland passes U1/U2).</summary>
         public int HeadlandPasses;
+        /// <summary>Guidance lines of the headland passes: per end, one line for each pass (1 = next to the boundary), name index of the end track in EndPassNames.</summary>
+        public List<List<List<V2>>> EndPassLines = new List<List<List<V2>>>();
+        /// <summary>Which headland track (0 = U1, 1 = U2) each entry of EndPassLines belongs to.</summary>
+        public List<int> EndPassTrack = new List<int>();
         public int SkippedPieces;
         public bool ExtraSidePass;     // an extra overlapping pass was added to cover the strip left after the last pass
         public double TotalLength;
@@ -1844,6 +1848,7 @@ namespace AgOpenGPS.AutoPlan
                             if (endId >= 0 && !trackDist.ContainsKey(endId)) trackDist[endId] = LapsDistance(lineD, W);
                     }
                     res.HeadlandTracks = EndTracks(fence, endRunId, W, s, trackDist);
+                    BuildEndPassLines(fence, endRunId, W, laps, s, res);
                     // an end that got no track (a narrow field) gets one on its cut line
                     if (endCutLines != null)
                         foreach (var cl in endCutLines)
@@ -4549,6 +4554,100 @@ namespace AgOpenGPS.AutoPlan
                 if (best == null || run.Count > best.Count) best = run;
             if (best == null || OpenLength(best) < 2.0 * W) return null;
             return ExtendToFence(ResampleOpen(best, s), fence, W, s);
+        }
+
+        /// <summary>
+        /// Guidance lines for the headland passes at every end: each line lies half a pass, one and a
+        /// half passes ... from the (smoothed) boundary of the end, so they follow an irregular boundary.
+        /// Found as the points of a grid inside the field at that distance from the end, ordered by the
+        /// position of their nearest point along the end.
+        /// </summary>
+        private static void BuildEndPassLines(List<V2> fence, int[] endRunId, double W, int laps, double s, FieldPlanResult res)
+        {
+            res.EndPassLines.Clear();
+            res.EndPassTrack.Clear();
+            int n = fence.Count;
+            int start = Array.IndexOf(endRunId, -1);
+            if (start < 0 || laps < 1 || W <= 0) return;
+            var tester = new PolygonTester(fence);
+            // contiguous stretches of end points (an end may be several pieces with different ids)
+            var stretches = new List<List<V2>>();
+            List<V2> cur = null;
+            for (int c = 1; c <= n; c++)
+            {
+                int i = (start + c) % n;
+                if (endRunId[i] >= 0) { if (cur == null) { cur = new List<V2>(); stretches.Add(cur); } cur.Add(fence[i]); }
+                else cur = null;
+            }
+            foreach (var st in stretches)
+            {
+                if (st.Count < 3 || OpenLength(st) < 2.0 * W) continue;
+                var end = new List<V2>(st);
+                for (int it = 0; it < 2; it++)
+                {
+                    var q = new List<V2> { end[0] };
+                    for (int k = 0; k + 1 < end.Count; k++)
+                    {
+                        V2 a = end[k], b = end[k + 1];
+                        q.Add(new V2(0.75 * a.E + 0.25 * b.E, 0.75 * a.N + 0.25 * b.N));
+                        q.Add(new V2(0.25 * a.E + 0.75 * b.E, 0.25 * a.N + 0.75 * b.N));
+                    }
+                    q.Add(end[end.Count - 1]);
+                    end = q;
+                }
+                end = ResampleOpen(end, 0.5);
+                if (end.Count < 4) continue;
+                var arc = new double[end.Count];
+                for (int k = 1; k < end.Count; k++) arc[k] = arc[k - 1] + (end[k] - end[k - 1]).Length;
+                double reach = laps * W + 1.0;
+                double minE = double.MaxValue, maxE = double.MinValue, minN = double.MaxValue, maxN = double.MinValue;
+                foreach (V2 p in end)
+                {
+                    minE = Math.Min(minE, p.E); maxE = Math.Max(maxE, p.E);
+                    minN = Math.Min(minN, p.N); maxN = Math.Max(maxN, p.N);
+                }
+                double cell = Math.Max(0.25, Math.Min(1.0, arc[arc.Length - 1] / 250.0));
+                var bins = new SortedDictionary<int, (double e, double n, int c)>[laps];
+                for (int k = 0; k < laps; k++) bins[k] = new SortedDictionary<int, (double e, double n, int c)>();
+                for (double e = minE - reach; e <= maxE + reach; e += cell)
+                    for (double nn = minN - reach; nn <= maxN + reach; nn += cell)
+                    {
+                        var c = new V2(e, nn);
+                        double best = double.MaxValue, bestArc = 0;
+                        for (int k = 0; k + 1 < end.Count; k++)
+                        {
+                            V2 ab = end[k + 1] - end[k];
+                            double l2 = ab.E * ab.E + ab.N * ab.N;
+                            double t = l2 > 1e-12 ? Math.Max(0, Math.Min(1, ((c.E - end[k].E) * ab.E + (c.N - end[k].N) * ab.N) / l2)) : 0;
+                            double dd = (c - (end[k] + ab * t)).Length;
+                            if (dd < best) { best = dd; bestArc = arc[k] + t * Math.Sqrt(l2); }
+                        }
+                        int level = (int)Math.Round(best / W - 0.5);
+                        if (level < 0 || level >= laps || Math.Abs(best - (level + 0.5) * W) > cell * 0.7 || !tester.Inside(c)) continue;
+                        int key = (int)Math.Round(bestArc / (cell * 2.0));
+                        bins[level].TryGetValue(key, out var acc);
+                        bins[level][key] = (acc.e + e, acc.n + nn, acc.c + 1);
+                    }
+                var lines = new List<List<V2>>();
+                for (int k = 0; k < laps; k++)
+                {
+                    var line = new List<V2>();
+                    foreach (var kv in bins[k]) line.Add(new V2(kv.Value.e / kv.Value.c, kv.Value.n / kv.Value.c));
+                    lines.Add(line.Count >= 3 ? line : new List<V2>());
+                }
+                // which headland track (U1/U2) this end belongs to: the nearest one
+                V2 mid = end[end.Count / 2];
+                int track = 0;
+                double bestD = double.MaxValue;
+                for (int h = 0; h < res.HeadlandTracks.Count && h < 2; h++)
+                    foreach (V2 tp in res.HeadlandTracks[h])
+                    {
+                        double dd = (tp - mid).Length;
+                        if (dd < bestD) { bestD = dd; track = h; }
+                    }
+                res.EndPassLines.Add(lines);
+                res.EndPassTrack.Add(track);
+            }
         }
 
         private static List<List<V2>> EndTracks(List<V2> fence, int[] endRunId, double W, double s, Dictionary<int, double> endDist = null)
