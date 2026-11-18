@@ -4624,6 +4624,12 @@ namespace AgOpenGPS.AutoPlan
                 res.EndPassLines.Add(shifted);
                 res.EndPassTrack.Add(track);
             }
+            // U1 is the longer end, U2 the shorter (the headland tracks are sorted the same way), so each end has its own number
+            var order = new List<int>();
+            for (int e = 0; e < res.EndPassLines.Count; e++) order.Add(e);
+            double LenOf(int e) => res.EndPassLines[e].Count > 0 && res.EndPassLines[e][0].Count > 1 ? OpenLength(res.EndPassLines[e][0]) : 0.0;
+            order.Sort((a, b) => LenOf(b).CompareTo(LenOf(a)));
+            for (int rank = 0; rank < order.Count; rank++) res.EndPassTrack[order[rank]] = rank;
         }
 
         /// <summary>
