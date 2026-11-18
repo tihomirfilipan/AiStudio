@@ -144,7 +144,20 @@ namespace AgOpenGPS.Forms.Field
 
             lblPreview = new Label { Dock = DockStyle.Bottom, Height = 70, ForeColor = Color.Silver, Font = new Font("Tahoma", 10F) };
             preview = new PictureBox { Dock = DockStyle.Fill, BackColor = Color.FromArgb(24, 28, 32), SizeMode = PictureBoxSizeMode.Zoom };
+            // step 1: the scheme of the passes, step 2: the plan with the order and the turns
+            var stepRow = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 58, WrapContents = false };
+            btnStep1 = new Button { Text = T("1  Pass scheme", "1  Shema prohoda"), Size = new Size(200, 52), FlatStyle = FlatStyle.Flat, ForeColor = Color.White, Font = new Font("Tahoma", 12F, FontStyle.Bold), Margin = new Padding(2) };
+            btnStep2 = new Button { Text = T("2  Headland", "2  Uvratine"), Size = new Size(150, 52), FlatStyle = FlatStyle.Flat, ForeColor = Color.White, Font = new Font("Tahoma", 12F, FontStyle.Bold), Margin = new Padding(2) };
+            btnStep3 = new Button { Text = T("3  Turns and plan", "3  Okreti i plan"), Size = new Size(200, 52), FlatStyle = FlatStyle.Flat, ForeColor = Color.White, Font = new Font("Tahoma", 12F, FontStyle.Bold), Margin = new Padding(2) };
+            btnStep1.Click += (s, e) => SetStep(1);
+            btnStep2.Click += (s, e) => SetStep(2);
+            btnStep3.Click += (s, e) => SetStep(3);
+            stepRow.Controls.Add(btnStep1);
+            stepRow.Controls.Add(btnStep2);
+            stepRow.Controls.Add(btnStep3);
+            SetStepColours();
             right.Controls.Add(preview);
+            right.Controls.Add(stepRow);
             right.Controls.Add(lblPreview);
             right.Controls.Add(edgeRow);
             right.Controls.Add(buttons);
@@ -426,6 +439,23 @@ namespace AgOpenGPS.Forms.Field
                 }, TaskScheduler.FromCurrentSynchronizationContext());
         }
 
+        private Button btnStep1, btnStep2, btnStep3;
+        private int step = 1;   // 1: pass scheme, 2: headland, 3: turns and plan
+
+        private void SetStepColours()
+        {
+            btnStep1.BackColor = step == 1 ? Color.FromArgb(31, 122, 58) : Color.FromArgb(69, 79, 87);
+            btnStep2.BackColor = step == 2 ? Color.FromArgb(31, 122, 58) : Color.FromArgb(69, 79, 87);
+            btnStep3.BackColor = step == 3 ? Color.FromArgb(31, 122, 58) : Color.FromArgb(69, 79, 87);
+        }
+
+        private void SetStep(int newStep)
+        {
+            step = newStep;
+            SetStepColours();
+            if (Plan != null) ShowPlan(Plan);
+        }
+
         private void ShowPlan(FieldPlanResult plan)
         {
             if (!plan.Ok)
@@ -435,6 +465,23 @@ namespace AgOpenGPS.Forms.Field
             }
             int w = Math.Max(100, preview.ClientSize.Width), h = Math.Max(100, preview.ClientSize.Height);
             var old = preview.Image;
+            if (step == 1)
+            {
+                preview.Image = FormAutoPlanPreview.RenderScheme(plan, fence, w, h);
+                old?.Dispose();
+                lblPreview.Text = T("Step 1: pass scheme, ", "Korak 1: shema prohoda, ") + plan.Scheme.Count + T(" passes. ", " prohoda. ") +
+                    T("Solid = left half (L), dashed = right half (D), the same number in the same colour. This scheme does not change in the next steps.",
+                      "Puna crta = lijeva polovica (L), crtkana = desna (D), isti broj iste boje. Ova shema se u sljedećim koracima ne mijenja.");
+                return;
+            }
+            if (step == 2)
+            {
+                preview.Image = FormAutoPlanPreview.RenderHeadland(plan, fence, w, h);
+                old?.Dispose();
+                lblPreview.Text = T("Step 2: headland (brown band) and the tracks uvratina1 / uvratina2 on the same scheme.",
+                    "Korak 2: uvratine (smeđi pojas) i tragovi uvratina1 / uvratina2 na istoj shemi.");
+                return;
+            }
             preview.Image = FormAutoPlanPreview.RenderPlan(plan, fence, startPos, startHeading, tileAddTrack.Selected || tileGuidance.Selected, w, h);
             old?.Dispose();
 

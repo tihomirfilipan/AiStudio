@@ -94,6 +94,121 @@ namespace AgOpenGPS.Forms.Field
         private Bitmap Render(int w, int h) => RenderPlan(plan, fence, vehiclePos, vehicleHeading, showTrack, w, h);
 
         /// <summary>Picture of a plan: boundary, passes with numbers, turns, headland, vehicle.</summary>
+        private static readonly Color[] SchemeColors =
+        {
+            Color.FromArgb(255, 70, 70), Color.FromArgb(80, 230, 90), Color.FromArgb(70, 160, 255), Color.FromArgb(255, 200, 40),
+            Color.FromArgb(171, 71, 188), Color.FromArgb(38, 198, 218), Color.FromArgb(255, 112, 67), Color.FromArgb(236, 64, 122)
+        };
+
+        /// <summary>
+        /// Step 1 of the plan: only the passes as laid out (no order, no turns). In a wedge field the
+        /// first half is 1L, 2L ... (solid) and the second 1D, 2D ... (dashed) counted from the outer
+        /// boundary, the pair of the same number in the same colour.
+        /// </summary>
+        public static Bitmap RenderScheme(FieldPlanResult plan, List<V2> fence, int w, int h)
+        {
+            var bmp = new Bitmap(w, h);
+            using (Graphics g = Graphics.FromImage(bmp))
+            {
+                g.SmoothingMode = SmoothingMode.AntiAlias;
+                g.Clear(Color.FromArgb(32, 38, 43));
+                if (fence.Count < 3) return bmp;
+                double minE = double.MaxValue, maxE = double.MinValue, minN = double.MaxValue, maxN = double.MinValue;
+                foreach (V2 p in fence)
+                {
+                    minE = Math.Min(minE, p.E); maxE = Math.Max(maxE, p.E);
+                    minN = Math.Min(minN, p.N); maxN = Math.Max(maxN, p.N);
+                }
+                const int pad = 30;
+                double sc = Math.Min((w - 2 * pad) / Math.Max(1, maxE - minE), (h - 2 * pad) / Math.Max(1, maxN - minN));
+                double ox = pad + ((w - 2 * pad) - (maxE - minE) * sc) / 2;
+                double oy = pad + ((h - 2 * pad) - (maxN - minN) * sc) / 2;
+                PointF P(double e, double n) => new PointF((float)(ox + (e - minE) * sc), (float)(oy + (maxN - n) * sc));
+
+                var poly = new PointF[fence.Count];
+                for (int i = 0; i < fence.Count; i++) poly[i] = P(fence[i].E, fence[i].N);
+                using (var fill = new SolidBrush(Color.FromArgb(36, 69, 44))) g.FillPolygon(fill, poly);
+                using (var pen = new Pen(Color.WhiteSmoke, 2.5f)) g.DrawPolygon(pen, poly);
+
+                using (var font = new Font("Tahoma", 9F, FontStyle.Bold))
+                    foreach (PassScheme ps in plan.Scheme)
+                    {
+                        if (ps.Pts.Count < 2) continue;
+                        Color c = SchemeColors[(Math.Max(1, ps.Rank) - 1) % SchemeColors.Length];
+                        var line = new PointF[ps.Pts.Count];
+                        for (int k = 0; k < line.Length; k++) line[k] = P(ps.Pts[k].E, ps.Pts[k].N);
+                        using (var pen = new Pen(c, 2f) { LineJoin = LineJoin.Round })
+                        {
+                            if (ps.Side == 'D') pen.DashStyle = DashStyle.Dash;
+                            g.DrawLines(pen, line);
+                        }
+                        PointF m = line[line.Length / 2];
+                        SizeF sz = g.MeasureString(ps.Name, font);
+                        g.FillRectangle(Brushes.Black, m.X - 1, m.Y - sz.Height - 1, sz.Width + 2, sz.Height);
+                        g.DrawString(ps.Name, font, new SolidBrush(c), m.X, m.Y - sz.Height - 1);
+                    }
+            }
+            return bmp;
+        }
+
+        /// <summary>
+        /// Step 2 of the plan: the headland (uvratina) on the scheme of the passes: the band between the
+        /// boundary and the inner edge of the headland, the passes, and the headland tracks uvratina1/2.
+        /// </summary>
+        public static Bitmap RenderHeadland(FieldPlanResult plan, List<V2> fence, int w, int h)
+        {
+            var bmp = new Bitmap(w, h);
+            using (Graphics g = Graphics.FromImage(bmp))
+            {
+                g.SmoothingMode = SmoothingMode.AntiAlias;
+                g.Clear(Color.FromArgb(32, 38, 43));
+                if (fence.Count < 3) return bmp;
+                double minE = double.MaxValue, maxE = double.MinValue, minN = double.MaxValue, maxN = double.MinValue;
+                foreach (V2 p in fence)
+                {
+                    minE = Math.Min(minE, p.E); maxE = Math.Max(maxE, p.E);
+                    minN = Math.Min(minN, p.N); maxN = Math.Max(maxN, p.N);
+                }
+                const int pad = 30;
+                double sc = Math.Min((w - 2 * pad) / Math.Max(1, maxE - minE), (h - 2 * pad) / Math.Max(1, maxN - minN));
+                double ox = pad + ((w - 2 * pad) - (maxE - minE) * sc) / 2;
+                double oy = pad + ((h - 2 * pad) - (maxN - minN) * sc) / 2;
+                PointF P(double e, double n) => new PointF((float)(ox + (e - minE) * sc), (float)(oy + (maxN - n) * sc));
+
+                var poly = new PointF[fence.Count];
+                for (int i = 0; i < fence.Count; i++) poly[i] = P(fence[i].E, fence[i].N);
+                // the headland: the whole field in the headland colour, the work area on top in the field colour
+                using (var fill = new SolidBrush(Color.FromArgb(94, 78, 40))) g.FillPolygon(fill, poly);
+                if (plan.WorkArea != null && plan.WorkArea.Count >= 3)
+                {
+                    var wa = new PointF[plan.WorkArea.Count];
+                    for (int i = 0; i < wa.Length; i++) wa[i] = P(plan.WorkArea[i].E, plan.WorkArea[i].N);
+                    using (var fill = new SolidBrush(Color.FromArgb(36, 69, 44))) g.FillPolygon(fill, wa);
+                }
+                using (var pen = new Pen(Color.WhiteSmoke, 2.5f)) g.DrawPolygon(pen, poly);
+
+                foreach (PassScheme ps in plan.Scheme)
+                {
+                    if (ps.Pts.Count < 2) continue;
+                    var line = new PointF[ps.Pts.Count];
+                    for (int k = 0; k < line.Length; k++) line[k] = P(ps.Pts[k].E, ps.Pts[k].N);
+                    using (var pen = new Pen(Color.FromArgb(255, 224, 102), 1.4f)) g.DrawLines(pen, line);
+                }
+                using (var font = new Font("Tahoma", 10F, FontStyle.Bold))
+                    for (int t = 0; t < plan.HeadlandTracks.Count && t < 2; t++)
+                    {
+                        List<V2> tr = plan.HeadlandTracks[t];
+                        if (tr.Count < 2) continue;
+                        var line = new PointF[tr.Count];
+                        for (int k = 0; k < line.Length; k++) line[k] = P(tr[k].E, tr[k].N);
+                        Color c = t == 0 ? Color.FromArgb(0, 229, 255) : Color.FromArgb(255, 64, 255);
+                        using (var pen = new Pen(c, 4f) { LineJoin = LineJoin.Round }) g.DrawLines(pen, line);
+                        g.DrawString("uvratina" + (t + 1), font, new SolidBrush(c), line[line.Length / 2].X + 6, line[line.Length / 2].Y - 20);
+                    }
+            }
+            return bmp;
+        }
+
         public static Bitmap RenderPlan(FieldPlanResult plan, List<V2> fence, V2 vehiclePos, double vehicleHeading, bool showTrack, int w, int h)
         {
             var bmp = new Bitmap(w, h);

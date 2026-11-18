@@ -159,9 +159,22 @@ namespace AgOpenGPS.AutoPlan
         public double PointSpacing = 1.0;
     }
 
+    /// <summary>One pass of the scheme (step 1 of the plan): its name and its line, before the order and the turns.</summary>
+    public class PassScheme
+    {
+        /// <summary>1, 2, 3 ... counted from the first edge; in a wedge 1L, 2L ... and 1D, 2D ... counted from the outer boundary of each half.</summary>
+        public string Name;
+        public int Rank;
+        /// <summary>'L' and 'D' in a wedge field (left and right half), ' ' otherwise.</summary>
+        public char Side = ' ';
+        public List<V2> Pts = new List<V2>();
+    }
+
     public class FieldPlanResult
     {
         public bool Ok;
+        /// <summary>Step 1: the passes as laid out, without order and turns.</summary>
+        public List<PassScheme> Scheme = new List<PassScheme>();
         public string Error;
         public List<PlanPoint> Points = new List<PlanPoint>();
         public int Passes;
@@ -643,6 +656,7 @@ namespace AgOpenGPS.AutoPlan
                 }
                 // a wedge: the second half gets its own track
                 if (partRegions != null && res.TrackLine != r.TrackLine && res.TrackLine2.Count == 0) res.TrackLine2 = r.TrackLine;
+                res.Scheme.AddRange(r.Scheme);
                 res.Points.AddRange(r.Points);
                 res.Passes += r.Passes;
                 res.Turns += r.Turns;
@@ -1187,6 +1201,25 @@ namespace AgOpenGPS.AutoPlan
                 }
             }
 
+            // --- Step 1: the scheme of the passes (as laid out, before the order and the turns) ---
+            {
+                int secondCount = firstFamilyCount > 0 ? passes.Count - firstFamilyCount : 0;
+                for (int pi = 0; pi < passes.Count; pi++)
+                {
+                    var ps = new PassScheme { Pts = new List<V2>(passes[pi].Pts) };
+                    if (firstFamilyCount > 0 && secondCount > 0)
+                    {
+                        // wedge: the first half 1L, 2L ... and the second 1D, 2D ... from the outer boundary
+                        // (the second half is stored from its innermost pass to its outermost one)
+                        if (pi < firstFamilyCount) { ps.Side = 'L'; ps.Rank = pi + 1; }
+                        else { ps.Side = 'D'; ps.Rank = secondCount - (pi - firstFamilyCount); }
+                        ps.Name = ps.Rank + ps.Side.ToString();
+                    }
+                    else { ps.Rank = pi + 1; ps.Name = ps.Rank.ToString(); }
+                    res.Scheme.Add(ps);
+                }
+            }
+
             // --- Order passes and build turns ---
             var fenceGrid = new PolygonTester(fence);
             // turns and transfers must keep the tool inside: half a width from the boundary
@@ -1286,10 +1319,15 @@ namespace AgOpenGPS.AutoPlan
             Dictionary<int, List<V2>> directTurns = null;
             if (narrowMiddle)
             {
-                var origPts = new Dictionary<Pass, List<V2>>();
-                foreach (Pass ps in passes) origPts[ps] = new List<V2>(ps.Pts);
-                ExtendInsideEnds(passes, laneOf, work, fenceGrid, W, s, headWidth + R + 0.5 * W + 5.0);
-                TrimGrownEnds(passes, origPts, W);
+                // with the reversing turns the scheme of the passes (step 1) is kept as laid out: the passes
+                // are not grown at their inside ends (grown, they ran over each other where the two halves meet)
+                if (!set.HeadlandReverseTurns)
+                {
+                    var origPts = new Dictionary<Pass, List<V2>>();
+                    foreach (Pass ps in passes) origPts[ps] = new List<V2>(ps.Pts);
+                    ExtendInsideEnds(passes, laneOf, work, fenceGrid, W, s, headWidth + R + 0.5 * W + 5.0);
+                    TrimGrownEnds(passes, origPts, W);
+                }
                 foreach (Pass ps in passes) { ps.OrigA = null; ps.OrigB = null; }
                 order = OptimiseMiddleOrder(passes, R, W, fenceGrid, startPos, out directTurns, set);
                 orderName = "from the middle, searched order";
