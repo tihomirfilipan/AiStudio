@@ -93,6 +93,9 @@ namespace AgOpenGPS.AutoPlan
         /// <summary>Distance from the pivot (rear axle) to the front end of the vehicle, meters.</summary>
         public double FrontReach = 3.7;
 
+        /// <summary>Wheelbase, meters; with it KK reverses until the front wheels are on the next pass (0 = exactly onto it).</summary>
+        public double Wheelbase = 0;
+
         /// <summary>Turns and transfers never drive over worked passes (only headland and the outer pass tracks).</summary>
         public bool AvoidWorked = false;
 
@@ -1371,7 +1374,7 @@ namespace AgOpenGPS.AutoPlan
                         // short three point turn (KK) first: straight on until the front end is at the
                         // boundary, back at full lock, forward at full lock into the next pass
                         if (set.UseKK && set.FullLockRadius > 0)
-                            man = ReverseManeuver.KK(lastP, lastH, pts[0], entryH, set.FullLockRadius, s, fenceGrid.Clear, fenceGrid.Inside, set.FrontReach);
+                            man = ReverseManeuver.KK(lastP, lastH, pts[0], entryH, set.FullLockRadius, s, fenceGrid.Clear, fenceGrid.Inside, set.FrontReach, set.Wheelbase);
                         for (int j = path.Count - 1; j >= 0 && man == null; j--)
                         {
                             V2 pj = new V2(path[j].E, path[j].N);

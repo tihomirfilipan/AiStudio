@@ -84,6 +84,7 @@ namespace AgOpenGPS
         private double simSpeedFactor = 1.0;
         private bool lastPathReverse;
         private int cuspHoldTicks;
+        private int cuspSettleTicks = -1;
         private double lastSimStep = double.NaN;
 
         private void SetSimSpeed(double pathStep)
@@ -102,6 +103,7 @@ namespace AgOpenGPS
             lastSimStep = double.NaN;
             lastPathReverse = false;
             cuspHoldTicks = 0;
+            cuspSettleTicks = -1;
             //create the dubins path based on start and goal to start of recorded path
             A = B = C = 0;
 
@@ -282,11 +284,22 @@ namespace AgOpenGPS
                     // with the wheels still turned the wrong way ran the second arc up to 2 m off the path
                     double stepSpeed = recList[C].speed / 34.86;
                     bool nowReverse = recList[C].speed < 0;
-                    if (nowReverse != lastPathReverse) { lastPathReverse = nowReverse; cuspHoldTicks = 60; }
+                    if (nowReverse != lastPathReverse) { lastPathReverse = nowReverse; cuspHoldTicks = 150; cuspSettleTicks = -1; }
                     if (cuspHoldTicks > 0)
                     {
                         cuspHoldTicks--;
-                        if (Math.Abs(mf.mc.actualSteerAngleDegrees - steerAngleRP) > 2.0) stepSpeed = 0;
+                        if (Math.Abs(mf.mc.actualSteerAngleDegrees - steerAngleRP) > 2.0)
+                        {
+                            stepSpeed = 0;                 // the wheels are still turning
+                            cuspSettleTicks = -1;
+                        }
+                        else
+                        {
+                            // wheels turned: the driver waits about 3 s more before moving off
+                            if (cuspSettleTicks < 0) cuspSettleTicks = 32;
+                            if (cuspSettleTicks > 0) { cuspSettleTicks--; stepSpeed = 0; }
+                            else cuspHoldTicks = 0;
+                        }
                     }
                     SetSimSpeed(stepSpeed);
                     north = recList[C].northing;

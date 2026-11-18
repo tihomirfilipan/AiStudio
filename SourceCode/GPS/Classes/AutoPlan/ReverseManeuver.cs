@@ -209,7 +209,7 @@ namespace AgOpenGPS.AutoPlan
         /// Null when the passes are not side by side, two radii or more apart, or it does not fit.
         /// </summary>
         public static List<Pose> KK(V2 p0, double h0, V2 p1, double h1, double R, double spacing, Func<V2, bool> inside,
-            Func<V2, bool> noseInside, double frontReach)
+            Func<V2, bool> noseInside, double frontReach, double wheelbase = 0.0)
         {
             double dh = Math.IEEERemainder(h1 - h0 - Math.PI, 2.0 * Math.PI);
             if (Math.Abs(dh) > 0.2) return null;
@@ -221,8 +221,25 @@ namespace AgOpenGPS.AutoPlan
             double L = Math.Abs(lat);
             if (L < 0.5 || L >= 2.0 * R - 0.05) return null;
             V2 u = r * Math.Sign(lat);                          // towards the next pass
-            double phi = Math.Acos(-L / (2.0 * R));             // reversing arc
+            double phi = Math.Acos(-L / (2.0 * R));             // reversing arc landing exactly on the next pass
+            if (wheelbase > 0.5)
+            {
+                // reverse until the FRONT wheels are on the line of the next pass, then stop: the
+                // front axle is wheelbase * sin(phi) ahead of the rear axle and swings the other way
+                double Front(double a) => R * (1.0 - Math.Cos(a)) - wheelbase * Math.Sin(a) - L;
+                double lo = phi, hi = Math.PI - 0.02;
+                if (Front(hi) > 0)
+                {
+                    for (int k = 0; k < 40; k++)
+                    {
+                        double mid = 0.5 * (lo + hi);
+                        if (Front(mid) < 0) lo = mid; else hi = mid;
+                    }
+                    phi = 0.5 * (lo + hi);
+                }
+            }
             double back = 2.0 * R * Math.Sin(phi);              // the turn ends this far back from its start
+            double xEnd = -2.0 * R * Math.Cos(phi);             // where the forward arc ends (next pass at L)
             double step = Math.Max(0.2, Math.Min(spacing, 0.5));
             int Steps(double len) => Math.Max(2, (int)Math.Ceiling(len / step));
 
@@ -259,7 +276,7 @@ namespace AgOpenGPS.AutoPlan
                     double t = phi + (Math.PI - phi) * i / n;
                     Add(Wp(cx + R * Math.Cos(t), cy + R * Math.Sin(t)), false);
                 }
-                V2 q = Wp(L, -back);
+                V2 q = Wp(xEnd, -back);
                 double len = (p1 - q).Length;
                 n = Steps(len);
                 for (int i = 1; i <= n && len > 1e-6; i++) Add(q + (p1 - q) * (i / (double)n), false);

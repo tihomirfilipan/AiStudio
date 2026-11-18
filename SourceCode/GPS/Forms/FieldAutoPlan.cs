@@ -714,6 +714,7 @@ namespace AgOpenGPS
             if (wheelbase < 0.5 || maxSteer < 10 || maxSteer > 80) return;
             settings.FullLockRadius = 1.15 * wheelbase / Math.Tan(maxSteer * Math.PI / 180.0);
             settings.FrontReach = wheelbase + 1.0;
+            settings.Wheelbase = wheelbase;
         }
 
         /// <summary>Big "REVERSE" sign while the recorded path goes backwards (driver shifts gear).</summary>
