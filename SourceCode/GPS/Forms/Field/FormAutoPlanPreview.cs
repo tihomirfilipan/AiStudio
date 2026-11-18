@@ -100,6 +100,34 @@ namespace AgOpenGPS.Forms.Field
             Color.FromArgb(171, 71, 188), Color.FromArgb(38, 198, 218), Color.FromArgb(255, 112, 67), Color.FromArgb(236, 64, 122)
         };
 
+        // --- zoom and pan of the preview (mouse wheel, drag, double click resets) ---
+        public static double ViewZoom = 1.0;
+        public static double ViewCenterE, ViewCenterN;
+        public static bool ViewHasCenter;
+
+        public static void ResetView() { ViewZoom = 1.0; ViewHasCenter = false; }
+
+        /// <summary>Base scale (pixels per metre at zoom 1) and the centre of the field for a picture of w x h.</summary>
+        public static void ViewBase(List<V2> fence, int w, int h, out double sc, out double cE, out double cN)
+        {
+            double minE = double.MaxValue, maxE = double.MinValue, minN = double.MaxValue, maxN = double.MinValue;
+            foreach (V2 q in fence)
+            {
+                minE = Math.Min(minE, q.E); maxE = Math.Max(maxE, q.E);
+                minN = Math.Min(minN, q.N); maxN = Math.Max(maxN, q.N);
+            }
+            const int pad = 30;
+            sc = Math.Min((w - 2 * pad) / Math.Max(1, maxE - minE), (h - 2 * pad) / Math.Max(1, maxN - minN));
+            cE = (minE + maxE) / 2; cN = (minN + maxN) / 2;
+        }
+
+        private static PointF ViewPoint(double e, double n, double defE, double defN, double sc, int w, int h)
+        {
+            double cE = ViewHasCenter ? ViewCenterE : defE, cN = ViewHasCenter ? ViewCenterN : defN;
+            double k = sc * ViewZoom;
+            return new PointF((float)(w / 2.0 + (e - cE) * k), (float)(h / 2.0 - (n - cN) * k));
+        }
+
         /// <summary>
         /// Step 1 of the plan: only the passes as laid out (no order, no turns). In a wedge field the
         /// first half is 1L, 2L ... (solid) and the second 1D, 2D ... (dashed) counted from the outer
@@ -123,7 +151,7 @@ namespace AgOpenGPS.Forms.Field
                 double sc = Math.Min((w - 2 * pad) / Math.Max(1, maxE - minE), (h - 2 * pad) / Math.Max(1, maxN - minN));
                 double ox = pad + ((w - 2 * pad) - (maxE - minE) * sc) / 2;
                 double oy = pad + ((h - 2 * pad) - (maxN - minN) * sc) / 2;
-                PointF P(double e, double n) => new PointF((float)(ox + (e - minE) * sc), (float)(oy + (maxN - n) * sc));
+                PointF P(double e, double n) => ViewPoint(e, n, (minE + maxE) / 2, (minN + maxN) / 2, sc, w, h);
 
                 var poly = new PointF[fence.Count];
                 for (int i = 0; i < fence.Count; i++) poly[i] = P(fence[i].E, fence[i].N);
@@ -209,7 +237,7 @@ namespace AgOpenGPS.Forms.Field
                 double sc = Math.Min((w - 2 * pad) / Math.Max(1, maxE - minE), (h - 2 * pad) / Math.Max(1, maxN - minN));
                 double ox = pad + ((w - 2 * pad) - (maxE - minE) * sc) / 2;
                 double oy = pad + ((h - 2 * pad) - (maxN - minN) * sc) / 2;
-                PointF P(double e, double n) => new PointF((float)(ox + (e - minE) * sc), (float)(oy + (maxN - n) * sc));
+                PointF P(double e, double n) => ViewPoint(e, n, (minE + maxE) / 2, (minN + maxN) / 2, sc, w, h);
 
                 var poly = new PointF[fence.Count];
                 for (int i = 0; i < fence.Count; i++) poly[i] = P(fence[i].E, fence[i].N);
@@ -274,7 +302,7 @@ namespace AgOpenGPS.Forms.Field
                 double sc = Math.Min((w - 2 * pad) / Math.Max(1, maxE - minE), (h - 2 * pad) / Math.Max(1, maxN - minN));
                 double ox = pad + ((w - 2 * pad) - (maxE - minE) * sc) / 2;
                 double oy = pad + ((h - 2 * pad) - (maxN - minN) * sc) / 2;
-                PointF P(double e, double n) => new PointF((float)(ox + (e - minE) * sc), (float)(oy + (maxN - n) * sc));
+                PointF P(double e, double n) => ViewPoint(e, n, (minE + maxE) / 2, (minN + maxN) / 2, sc, w, h);
 
                 var poly = new PointF[fence.Count];
                 for (int i = 0; i < fence.Count; i++) poly[i] = P(fence[i].E, fence[i].N);

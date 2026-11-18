@@ -35,6 +35,8 @@ namespace AgOpenGPS.Forms.Field
         private readonly List<List<V2>> edges;
         private int edgeIndex = -1;            // -1: picked edge, or the longest one automatically
         private readonly PictureBox preview;
+        private Point dragFrom;
+        private bool dragging;
         private readonly Label lblPreview, lblEdge;
         private readonly Timer previewTimer;
         private int version, planVersion = -1;
@@ -69,6 +71,7 @@ namespace AgOpenGPS.Forms.Field
             List<V2> fence, V2 startPos, double startHeading, List<V2> pickedEdge)
         {
             this.fence = fence;
+            FormAutoPlanPreview.ResetView();
             this.startPos = startPos;
             this.startHeading = startHeading;
             this.pickedEdge = pickedEdge;
@@ -268,6 +271,42 @@ namespace AgOpenGPS.Forms.Field
             nudEndPasses.ValueChanged += (s, e) => OptionsChanged();
             nudEndClearance.ValueChanged += (s, e) => OptionsChanged();
             preview.Resize += (s, e) => { if (Plan != null) ShowPlan(Plan); };
+            // zoom with the mouse wheel (around the pointer), move with the left button, double click resets
+            preview.MouseEnter += (s, e) => preview.Focus();
+            preview.MouseWheel += (s, e) =>
+            {
+                if (Plan == null || fence == null || fence.Count < 3) return;
+                int w = Math.Max(100, preview.ClientSize.Width), h = Math.Max(100, preview.ClientSize.Height);
+                FormAutoPlanPreview.ViewBase(fence, w, h, out double sc, out double dE, out double dN);
+                double cE = FormAutoPlanPreview.ViewHasCenter ? FormAutoPlanPreview.ViewCenterE : dE;
+                double cN = FormAutoPlanPreview.ViewHasCenter ? FormAutoPlanPreview.ViewCenterN : dN;
+                double k0 = sc * FormAutoPlanPreview.ViewZoom;
+                double pe = cE + (e.X - w / 2.0) / k0, pn = cN - (e.Y - h / 2.0) / k0;
+                double zoom = Math.Max(1.0, Math.Min(60.0, FormAutoPlanPreview.ViewZoom * Math.Pow(1.25, e.Delta / 120.0)));
+                double k1 = sc * zoom;
+                FormAutoPlanPreview.ViewZoom = zoom;
+                FormAutoPlanPreview.ViewCenterE = pe - (e.X - w / 2.0) / k1;
+                FormAutoPlanPreview.ViewCenterN = pn + (e.Y - h / 2.0) / k1;
+                FormAutoPlanPreview.ViewHasCenter = true;
+                ShowPlan(Plan);
+            };
+            preview.MouseDown += (s, e) => { if (e.Button == MouseButtons.Left) { dragFrom = e.Location; dragging = true; } };
+            preview.MouseUp += (s, e) => dragging = false;
+            preview.MouseMove += (s, e) =>
+            {
+                if (!dragging || Plan == null || fence == null || fence.Count < 3) return;
+                int w = Math.Max(100, preview.ClientSize.Width), h = Math.Max(100, preview.ClientSize.Height);
+                FormAutoPlanPreview.ViewBase(fence, w, h, out double sc, out double dE, out double dN);
+                double cE = FormAutoPlanPreview.ViewHasCenter ? FormAutoPlanPreview.ViewCenterE : dE;
+                double cN = FormAutoPlanPreview.ViewHasCenter ? FormAutoPlanPreview.ViewCenterN : dN;
+                double k = sc * FormAutoPlanPreview.ViewZoom;
+                FormAutoPlanPreview.ViewCenterE = cE - (e.X - dragFrom.X) / k;
+                FormAutoPlanPreview.ViewCenterN = cN + (e.Y - dragFrom.Y) / k;
+                FormAutoPlanPreview.ViewHasCenter = true;
+                dragFrom = e.Location;
+                ShowPlan(Plan);
+            };
+            preview.DoubleClick += (s, e) => { FormAutoPlanPreview.ResetView(); if (Plan != null) ShowPlan(Plan); };
             Shown += (s, e) => OptionsChanged();
             FormClosed += (s, e) => previewTimer.Dispose();
         }
