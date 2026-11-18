@@ -196,6 +196,8 @@ namespace AgOpenGPS.AutoPlan
         public int Turns;
         public int TurnsLeavingField;
         public int HeadlandLaps;
+        /// <summary>Width of the headland at the ends in work widths (the number of headland passes U1/U2).</summary>
+        public int HeadlandPasses;
         public int SkippedPieces;
         public bool ExtraSidePass;     // an extra overlapping pass was added to cover the strip left after the last pass
         public double TotalLength;
@@ -1063,6 +1065,7 @@ namespace AgOpenGPS.AutoPlan
                 return;
             }
             res.WorkArea = work;
+            res.HeadlandPasses = laps;
             workAreaTester = new PolygonTester(work);
 
             // two pass families of a nearly parallel wedge, split between the long edges (the

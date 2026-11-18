@@ -164,6 +164,8 @@ namespace AgOpenGPS.Forms.Field
             var res = new List<int>();
             for (int t = 0; t < plan.HeadlandTracks.Count && t < 2; t++)
             {
+                // the planner knows the headland width in work widths
+                if (plan.HeadlandPasses > 0) { res.Add(plan.HeadlandPasses); continue; }
                 List<V2> tr = plan.HeadlandTracks[t];
                 var d = new List<double>();
                 for (int k = 0; k < tr.Count; k += Math.Max(1, tr.Count / 20))
@@ -180,7 +182,9 @@ namespace AgOpenGPS.Forms.Field
                     d.Add(best);
                 }
                 d.Sort();
-                res.Add(d.Count == 0 || workWidth <= 0 ? 0 : (int)Math.Round(d[d.Count / 2] / workWidth));
+                // the track lies at the headland depth from the end; points near the sides of a narrow field are
+                // closer to the side, so the upper part of the distances is taken (not the median)
+                res.Add(d.Count == 0 || workWidth <= 0 ? 0 : (int)Math.Round(d[Math.Min(d.Count - 1, (int)(d.Count * 0.9))] / workWidth));
             }
             return res;
         }
