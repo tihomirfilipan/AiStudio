@@ -288,18 +288,13 @@ namespace AgOpenGPS
                     if (cuspHoldTicks > 0)
                     {
                         cuspHoldTicks--;
-                        if (Math.Abs(mf.mc.actualSteerAngleDegrees - steerAngleRP) > 2.0)
+                        // the simulator turns the wheels to 90 % of the commanded angle, so that is the angle to wait for
+                        if (Math.Abs(mf.mc.actualSteerAngleDegrees - steerAngleRP * 0.9) > 2.0)
                         {
                             stepSpeed = 0;                 // the wheels are still turning
                             cuspSettleTicks = -1;
                         }
-                        else
-                        {
-                            // wheels turned: the driver waits about 3 s more before moving off
-                            if (cuspSettleTicks < 0) cuspSettleTicks = 32;
-                            if (cuspSettleTicks > 0) { cuspSettleTicks--; stepSpeed = 0; }
-                            else cuspHoldTicks = 0;
-                        }
+                        else cuspHoldTicks = 0;        // wheels turned: move off at once
                     }
                     SetSimSpeed(stepSpeed);
                     north = recList[C].northing;
