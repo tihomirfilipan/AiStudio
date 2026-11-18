@@ -1288,7 +1288,7 @@ namespace AgOpenGPS.AutoPlan
                 ExtendInsideEnds(passes, laneOf, work, fenceGrid, W, s, headWidth + R + 0.5 * W + 5.0);
                 TrimGrownEnds(passes, origPts, W);
                 foreach (Pass ps in passes) { ps.OrigA = null; ps.OrigB = null; }
-                order = OptimiseMiddleOrder(passes, R, W, fenceGrid, startPos, out directTurns);
+                order = OptimiseMiddleOrder(passes, R, W, fenceGrid, startPos, out directTurns, set);
                 orderName = "from the middle, searched order";
             }
             else if (nearFirst != null && firstFamilyCount > 0)
@@ -1365,6 +1365,22 @@ namespace AgOpenGPS.AutoPlan
                             if (dcut < path.Count) path.RemoveRange(dcut, path.Count - dcut);
                             AddManoeuvreWorked(path, dman);
                             NoteTurnStart(dman);
+                            res.Turns++;
+                            AppendPoints(path, pts, true, true);
+                            continue;
+                        }
+                    }
+                    // a planned turn that would leave the field is not made: the searched reversing turn
+                    // (RF) inside the field is used instead, where one is found
+                    if (set.HeadlandReverseTurns && set.UseFind && CountOutside(dturn, fenceGrid) > 0)
+                    {
+                        LastPose(path, s, out V2 flp, out double flh);
+                        double feh = HeadingOf(pts[0], pts[Math.Min(3, pts.Count - 1)]);
+                        var fman = ReverseManeuver.Find(flp, flh, pts[0], feh, R, s, fenceGrid.Clear);
+                        if (fman != null)
+                        {
+                            AddManoeuvreWorked(path, fman);
+                            NoteTurnStart(fman);
                             res.Turns++;
                             AppendPoints(path, pts, true, true);
                             continue;
@@ -4520,7 +4536,7 @@ namespace AgOpenGPS.AutoPlan
         // Turns alternate between the two ends of the passes (the end nearer to the start and
         // the far end).
         private static List<Step> OptimiseMiddleOrder(List<Pass> passes, double R, double W, PolygonTester fence,
-            V2 startPos, out Dictionary<int, List<V2>> turns)
+            V2 startPos, out Dictionary<int, List<V2>> turns, FieldPlanSettings set = null)
         {
             int n = passes.Count;
             var grid = new PassGrid(W);
@@ -4562,6 +4578,32 @@ namespace AgOpenGPS.AutoPlan
                     var full = new List<V2> { p0 };
                     full.AddRange(path);
                     c.Add((OpenLength(full), outside, over, full));
+                }
+                // with the reversing option the turn between side by side passes is KK, K or KLV where
+                // one fits: it is much shorter than a half turn, so the search prefers the passes that
+                // can be joined that way
+                if (set != null && set.HeadlandReverseTurns)
+                {
+                    List<ReverseManeuver.Pose> man = null;
+                    if (set.UseKK && set.FullLockRadius > 0)
+                        man = ReverseManeuver.KK(p0, h0, p1, h1, set.FullLockRadius, 1.0, fence.Clear, fence.Inside, set.FrontReach, set.Wheelbase);
+                    if (man == null && set.UseK) man = ReverseManeuver.KTurn(p0, h0, p1, h1, R, 1.0, fence.Clear);
+                    if (man == null && set.UseKLV) man = ReverseManeuver.KLV1(p0, h0, p1, h1, R, 1.0, fence.Clear);
+                    if (man != null)
+                    {
+                        var mp = new List<V2>(man.Count);
+                        var overM = new Dictionary<int, int>();
+                        for (int k = 0; k < man.Count; k++)
+                        {
+                            mp.Add(man[k].P);
+                            if (k < 3 || k > man.Count - 4) continue;
+                            hs.Clear();
+                            grid.Near(man[k].P, 0.45 * W, hs);
+                            foreach (int id in hs)
+                                if (id != i && id != j) overM[id] = overM.TryGetValue(id, out int v) ? v + 1 : 1;
+                        }
+                        c.Add((OpenLength(mp), 0, overM, mp));
+                    }
                 }
                 cache[key] = c;
                 return c;
