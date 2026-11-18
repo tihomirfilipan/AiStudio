@@ -2375,14 +2375,14 @@ namespace AgOpenGPS.AutoPlan
                     int i = (start + c) % m;
                     if (ids[i] != curId)
                     {
-                        if (cur != null) AddStrip(groups, curId, cur, W, R, s, fenceGrid);
+                        if (cur != null) AddStrip(groups, curId, cur, W, R, s, fenceGrid, W * (j + 0.5));
                         cur = null;
                         curId = ids[i];
                         if (curId >= 0) cur = new List<V2>();
                     }
                     if (cur != null) cur.Add(lap[i]);
                 }
-                if (cur != null) AddStrip(groups, curId, cur, W, R, s, fenceGrid);
+                if (cur != null) AddStrip(groups, curId, cur, W, R, s, fenceGrid, W * (j + 0.5));
             }
 
             var remaining = new List<int>(groups.Keys);
@@ -2533,12 +2533,15 @@ namespace AgOpenGPS.AutoPlan
             return true;
         }
 
-        private static void AddStrip(Dictionary<int, List<List<V2>>> groups, int id, List<V2> pts, double W, double R, double s, PolygonTester fence)
+        private static void AddStrip(Dictionary<int, List<List<V2>>> groups, int id, List<V2> pts, double W, double R, double s, PolygonTester fence, double lapDepth = 0.0)
         {
             if (pts.Count < 3) return;
 
             // Stop short of the long sides so the turn to the next strip fits inside the field
-            int trim = (int)Math.Ceiling((R + W * 0.5 + 3.0) / s);
+            // the lap of a deeper strip is inset from the side boundary by its own depth already, so
+            // only the rest of the room is cut off (otherwise every deeper strip got shorter by the
+            // room twice and the third and fourth strips were dropped)
+            int trim = (int)Math.Ceiling(Math.Max(1.0, R + W * 0.5 + 3.0 - lapDepth) / s);
             if (pts.Count - 2 * trim < 3 || (pts.Count - 2 * trim) * s < 2.0 * W) return;
             pts = pts.GetRange(trim, pts.Count - 2 * trim);
 
