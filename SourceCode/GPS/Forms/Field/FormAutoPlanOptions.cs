@@ -707,7 +707,7 @@ namespace AgOpenGPS.Forms.Field
 
         private static List<ReverseManeuver.Pose> IconTurn(string kind, out double gap)
         {
-            gap = kind == "KK" || kind == "KRU" || kind == "SUZ" ? 3.0 : kind == "RF" ? 5.0 : 8.0;
+            gap = kind == "KK" ? 3.0 : kind == "RF" ? 5.0 : 8.0;
             if (turnIconCache.TryGetValue(kind, out var cached)) return cached;
             double R = 5.6, Rk = 1.15 * 2.72 / Math.Tan(52 * Math.PI / 180);
             double bound = kind == "KRU" || kind == "SUZ" ? 30.0 : kind == "RF" ? 6.0 : 14.0;
@@ -747,7 +747,7 @@ namespace AgOpenGPS.Forms.Field
                 using (var p = new Pen(Color.FromArgb(150, CHead), 1f) { DashStyle = DashStyle.Dash })
                     g.DrawLine(p, r.Left + 4, Q(0, 0).Y, r.Right - 4, Q(0, 0).Y);
                 using (Pen p = P(CPass, 1.6f))
-                    for (int k = -3; k <= 4; k++)
+                    for (int k = -1; k <= 2; k++)
                     {
                         double e = k * gap;
                         if (e < minE - 0.5 * gap || e > maxE + 0.5 * gap) continue;
