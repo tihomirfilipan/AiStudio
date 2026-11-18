@@ -35,6 +35,7 @@ namespace AgOpenGPS.Forms.Field
         private readonly List<List<V2>> edges;
         private int edgeIndex = -1;            // -1: picked edge, or the longest one automatically
         private readonly PictureBox preview;
+        private FlowLayoutPanel page1, page2, page3;
         private Point dragFrom;
         private bool dragging;
         private readonly Label lblPreview, lblEdge;
@@ -186,27 +187,72 @@ namespace AgOpenGPS.Forms.Field
             };
             root.Controls.Add(info);
 
-            var numbers = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = new Padding(0, 0, 0, 4) };
-            nudWidth = AddNumber(numbers, T("Work width (m)", "Radna širina (m)"), 0.5m, 60m, 2, (decimal)appWidth);
-            nudRadius = AddNumber(numbers, T("Turning radius (m)", "Radijus okretanja (m)"), 1m, 60m, 1, (decimal)appRadius);
-            nudLaps = AddNumber(numbers, T("Headland passes (0 = auto)", "Uvratina u prohodima (0 = auto)"), 0m, 10m, 0, Properties.Settings.Default.setAutoPlan_headlandLaps);
-            nudEndPasses = AddNumber(numbers, T("Passes along the ends (0 = all)", "Prohoda uz krajeve (0 = svi)"), 0m, 10m, 0, Properties.Settings.Default.setAutoPlan_endPasses);
-            nudEndClearance = AddNumber(numbers, T("Front end from the boundary (m)", "Prednji dio od međe (m)"), 0m, 20m, 1, (decimal)Properties.Settings.Default.setAutoPlan_endClearance);
-            root.Controls.Add(numbers);
-            lblAutoLaps = new Label { AutoSize = true, ForeColor = Color.Silver, Font = new Font("Tahoma", 10F), Margin = new Padding(3, 0, 3, 8) };
-            root.Controls.Add(lblAutoLaps);
+            // one page of options for each step: only the options of the chosen step are shown
+            Func<FlowLayoutPanel> NewPage = () => new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, AutoSize = true, WrapContents = false };
+            page1 = NewPage(); page2 = NewPage(); page3 = NewPage();
+            root.Controls.Add(page1); root.Controls.Add(page2); root.Controls.Add(page3);
 
             var set = Properties.Settings.Default;
+
+            // ---------- step 1: pass scheme ----------
+            var numbers1 = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = new Padding(0, 0, 0, 4) };
+            nudWidth = AddNumber(numbers1, T("Work width (m)", "Radna širina (m)"), 0.5m, 60m, 2, (decimal)appWidth);
+            page1.Controls.Add(StepNote(T("Step 1: the passes. The scheme does not change in the next steps.", "Korak 1: prohodi. Shema se u sljedećim koracima ne mijenja.")));
+            page1.Controls.Add(numbers1);
+            tileSplit = new PictureTile(T("Split field (own direction per part)", "Podijeli parcelu (svaki dio svoj smjer)"), DrawSplit);
+            tileSplit.Selected = set.setAutoPlan_splitField;
+            tileSlant = new PictureTile(T("Pass along a gently slanted edge", "Prohod uz kosu među"), DrawSlantPass);
+            tileSlant.Selected = set.setAutoPlan_slantPass;
+            tileWedge = new PictureTile(T("Wedge field (gores in the middle)", "Parcela u klin (oklinci u sredini)"), DrawWedge);
+            tileWedge.Selected = set.setAutoPlan_wedgeField;
+            tileExtraPass = new PictureTile(T("Extra pass along the last edge", "Dodatni prohod uz rub"), DrawExtraPass);
+            tileExtraPass.Selected = set.setAutoPlan_extraPass;
+            var col1 = Column();
+            AddGroup(col1, T("Passes (tap to switch on/off)", "Prohodi (dodir uključi/isključi)"), false, -1, tileSplit, tileSlant, tileWedge, tileExtraPass);
+            page1.Controls.Add(col1);
+
+            // ---------- step 2: headland ----------
+            var numbers2 = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = new Padding(0, 0, 0, 4) };
+            nudLaps = AddNumber(numbers2, T("Headland passes (0 = auto)", "Uvratina u prohodima (0 = auto)"), 0m, 10m, 0, Properties.Settings.Default.setAutoPlan_headlandLaps);
+            nudEndPasses = AddNumber(numbers2, T("Passes along the ends (0 = all)", "Prohoda uz krajeve (0 = svi)"), 0m, 10m, 0, Properties.Settings.Default.setAutoPlan_endPasses);
+            page2.Controls.Add(StepNote(T("Step 2: the headland (U1, U2) on the scheme.", "Korak 2: uvratine (U1, U2) na shemi.")));
+            page2.Controls.Add(numbers2);
+            lblAutoLaps = new Label { AutoSize = true, ForeColor = Color.Silver, Font = new Font("Tahoma", 10F), Margin = new Padding(3, 0, 3, 8) };
+            page2.Controls.Add(lblAutoLaps);
+            tileEnds = new PictureTile(T("Only at pass ends", "Samo na krajevima"), DrawHeadlandEnds);
+            tileAllAround = new PictureTile(T("All around", "Svuda okolo"), DrawHeadlandAround);
+            var col2 = Column();
+            AddGroup(col2, T("Headland", "Uvratina"), true, set.setAutoPlan_headlandAllAround ? 1 : 0, tileEnds, tileAllAround);
+            tileWorkHeadland = new PictureTile(T("Drive the headland at the end", "Obradi uvratine na kraju"), DrawWorkHeadland);
+            tileWorkHeadland.Selected = set.setAutoPlan_workHeadland;
+            AddGroup(col2, T("Headland work", "Rad na uvratini"), false, -1, tileWorkHeadland);
+            page2.Controls.Add(col2);
+
+            // ---------- step 3: turns and plan ----------
+            var numbers3 = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = new Padding(0, 0, 0, 4) };
+            nudRadius = AddNumber(numbers3, T("Turning radius (m)", "Radijus okretanja (m)"), 1m, 60m, 1, (decimal)appRadius);
+            nudEndClearance = AddNumber(numbers3, T("Front end from the boundary (m)", "Prednji dio od međe (m)"), 0m, 20m, 1, (decimal)Properties.Settings.Default.setAutoPlan_endClearance);
+            page3.Controls.Add(StepNote(T("Step 3: the turns and the plan (the order of the passes).", "Korak 3: okreti i plan (redoslijed prohoda).")));
+            page3.Controls.Add(numbers3);
             var columns = new FlowLayoutPanel { AutoSize = true, WrapContents = true, MaximumSize = new Size(1100, 0) };
-            root.Controls.Add(columns);
+            page3.Controls.Add(columns);
 
             var colA = Column();
             tilePath = new PictureTile(T("Recorded path", "Snimljena putanja"), DrawRecordedPath);
             tileGuidance = new PictureTile(T("Guidance line + U-turn", "Linija + U-okret"), DrawGuidance);
             AddGroup(colA, T("Drive with", "Način vožnje"), true, set.setAutoPlan_guidanceMode ? 1 : 0, tilePath, tileGuidance);
-            tileEnds = new PictureTile(T("Only at pass ends", "Samo na krajevima"), DrawHeadlandEnds);
-            tileAllAround = new PictureTile(T("All around", "Svuda okolo"), DrawHeadlandAround);
-            AddGroup(colA, T("Headland", "Uvratina"), true, set.setAutoPlan_headlandAllAround ? 1 : 0, tileEnds, tileAllAround);
+            tileOrderAuto = new PictureTile(T("Automatic", "Automatski"), DrawOrderAuto);
+            tileOrderNeighbour = new PictureTile(T("Neighbour passes", "Susjedni prohodi"), DrawOrderNeighbour);
+            tileOrderSkip = new PictureTile(T("Skip passes", "Preskakanje"), DrawOrderSkip);
+            AddGroup(colA, T("Pass order", "Redoslijed prohoda"), true, Math.Max(0, Math.Min(2, set.setAutoPlan_orderMode)),
+                tileOrderAuto, tileOrderNeighbour, tileOrderSkip);
+            tileMiddle = new PictureTile(T("Start in the middle", "Početak iz sredine"), DrawStartMiddle);
+            tileMiddle.Selected = set.setAutoPlan_startMiddle;
+            tileAddTrack = new PictureTile(T("Add new track", "Dodaj novi trag"), DrawAddTrack);
+            tileAddTrack.Selected = set.setAutoPlan_addTrack;
+            tileAvoidWorked = new PictureTile(T("Never drive over worked passes", "Ne vozi po obrađenom"), DrawAvoidWorked);
+            tileAvoidWorked.Selected = set.setAutoPlan_avoidWorked;
+            AddGroup(colA, T("Plan", "Plan"), false, -1, tileMiddle, tileAddTrack, tileAvoidWorked);
             columns.Controls.Add(colA);
 
             var colB = Column();
@@ -215,22 +261,6 @@ namespace AgOpenGPS.Forms.Field
             tileTurnsReverse = new PictureTile(T("With reversing", "S vožnjom unazad"), DrawTurnsReverse);
             AddGroup(colB, T("Turns", "Okreti"), true, set.setAutoPlan_reverseTurns ? 2 : (set.setAutoPlan_turnsAtBoundary ? 0 : 1),
                 tileTurnsEdge, tileTurnsShort, tileTurnsReverse);
-            tileOrderAuto = new PictureTile(T("Automatic", "Automatski"), DrawOrderAuto);
-            tileOrderNeighbour = new PictureTile(T("Neighbour passes", "Susjedni prohodi"), DrawOrderNeighbour);
-            tileOrderSkip = new PictureTile(T("Skip passes", "Preskakanje"), DrawOrderSkip);
-            AddGroup(colB, T("Pass order", "Redoslijed prohoda"), true, Math.Max(0, Math.Min(2, set.setAutoPlan_orderMode)),
-                tileOrderAuto, tileOrderNeighbour, tileOrderSkip);
-            columns.Controls.Add(colB);
-
-            var extras = Column();
-            tileWorkHeadland = new PictureTile(T("Drive the headland at the end", "Obradi uvratine na kraju"), DrawWorkHeadland);
-            tileExtraPass = new PictureTile(T("Extra pass along the last edge", "Dodatni prohod uz rub"), DrawExtraPass);
-            tileAddTrack = new PictureTile(T("Add new track", "Dodaj novi trag"), DrawAddTrack);
-            tileAvoidWorked = new PictureTile(T("Never drive over worked passes", "Ne vozi po obrađenom"), DrawAvoidWorked);
-            tileWorkHeadland.Selected = set.setAutoPlan_workHeadland;
-            tileExtraPass.Selected = set.setAutoPlan_extraPass;
-            tileAddTrack.Selected = set.setAutoPlan_addTrack;
-            tileAvoidWorked.Selected = set.setAutoPlan_avoidWorked;
             // the reversing turns, each with its short name in the icon, each can be switched on and off
             tileKK = new PictureTile(T("KK short turn", "KK kratki okret"), DrawKK);
             tileKK.Selected = set.setAutoPlan_kkTurn;
@@ -244,20 +274,14 @@ namespace AgOpenGPS.Forms.Field
             tilePear.Selected = set.setAutoPlan_pearTurn;
             tileTear = new PictureTile(T("SUZ teardrop turn", "SUZ suza okret"), DrawTearTurn);
             tileTear.Selected = set.setAutoPlan_tearTurn;
-            tileSplit = new PictureTile(T("Split field (own direction per part)", "Podijeli parcelu (svaki dio svoj smjer)"), DrawSplit);
-            tileSplit.Selected = set.setAutoPlan_splitField;
-            tileSlant = new PictureTile(T("Pass along a gently slanted edge", "Prohod uz kosu među"), DrawSlantPass);
-            tileSlant.Selected = set.setAutoPlan_slantPass;
-            tileWedge = new PictureTile(T("Wedge field (gores in the middle)", "Parcela u klin (oklinci u sredini)"), DrawWedge);
-            tileWedge.Selected = set.setAutoPlan_wedgeField;
-            tileMiddle = new PictureTile(T("Start in the middle", "Početak iz sredine"), DrawStartMiddle);
-            tileMiddle.Selected = set.setAutoPlan_startMiddle;
-            AddGroup(extras, T("Extras (tap to switch on/off)", "Dodatno (dodir uključi/isključi)"), false, -1,
-                tileWorkHeadland, tileExtraPass, tileAddTrack, tileAvoidWorked, tileKK, tileK, tileKLV, tileFind, tilePear, tileTear, tileSplit, tileSlant, tileWedge, tileMiddle);
+            AddGroup(colB, T("Reversing turns (tap to switch on/off)", "Okreti unazad (dodir uključi/isključi)"), false, -1,
+                tileKK, tileK, tileKLV, tileFind, tilePear, tileTear);
+            columns.Controls.Add(colB);
             // a wedge field starts in the middle (can be switched off again); after the group's own
             // click handler, so the wedge tile is already switched
             tileWedge.Click += (s, e) => { if (tileWedge.Selected) tileMiddle.Selected = true; };
-            root.Controls.Add(extras);
+
+            ShowStepPage();
 
             // every change redraws the preview (after a short pause)
             previewTimer = new Timer { Interval = 450 };
@@ -503,9 +527,23 @@ namespace AgOpenGPS.Forms.Field
             btnStep3.BackColor = step == 3 ? Color.FromArgb(31, 122, 58) : Color.FromArgb(69, 79, 87);
         }
 
+        private static Label StepNote(string text)
+        {
+            return new Label { AutoSize = true, ForeColor = Color.Silver, Margin = new Padding(3, 0, 3, 8), Text = text };
+        }
+
+        private void ShowStepPage()
+        {
+            if (page1 == null) return;
+            page1.Visible = step == 1;
+            page2.Visible = step == 2;
+            page3.Visible = step == 3;
+        }
+
         private void SetStep(int newStep)
         {
             step = newStep;
+            ShowStepPage();
             SetStepColours();
             if (Plan != null) ShowPlan(Plan);
         }
