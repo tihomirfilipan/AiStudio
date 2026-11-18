@@ -83,6 +83,7 @@ namespace AgOpenGPS
         // stay slower than passes but at the speed level the user picked.
         private double simSpeedFactor = 1.0;
         private bool lastPathReverse;
+        private bool pathHasPlannedReverse;
         private int cuspHoldTicks;
         private int cuspSettleTicks = -1;
         private double lastSimStep = double.NaN;
@@ -102,6 +103,7 @@ namespace AgOpenGPS
         {
             lastSimStep = double.NaN;
             lastPathReverse = false;
+            pathHasPlannedReverse = recList.Exists(q => q.speed < 0);
             cuspHoldTicks = 0;
             cuspSettleTicks = -1;
             //create the dubins path based on start and goal to start of recorded path
@@ -557,7 +559,12 @@ namespace AgOpenGPS
             double goalPointDistance = mf.vehicle.UpdateGoalPointDistance();
 
             // a planned reverse part (negative speed) is still followed along the path order
-            bool ReverseHeading = !mf.isReverse || recList[A].speed < 0;
+            // a planned path (the auto field plan) says by the sign of the speed which parts are driven
+            // backwards; the vehicle's own reverse flag follows the real movement and lags behind at a
+            // cusp, where the vehicle stands still: it made the wheels turn the wrong way before moving off
+            bool plannedDirection = pathHasPlannedReverse;
+            bool reverseNow = plannedDirection ? recList[A].speed < 0 : mf.isReverse;
+            bool ReverseHeading = plannedDirection || !mf.isReverse || recList[A].speed < 0;
 
             int count = ReverseHeading ? 1 : -1;
             CRecPathPt start = new CRecPathPt(rEastRP, rNorthRP, 0, 0, false);
@@ -647,7 +654,7 @@ namespace AgOpenGPS
             //calculate the the delta x in local coordinates and steering angle degrees based on wheelbase
             // driving in reverse: the steering axle is the trailing one, so the geometry is taken from
             // the direction of motion (nose heading + 180 degrees) and the steering angle is mirrored
-            bool reverseDrive = mf.isReverse;
+            bool reverseDrive = reverseNow;
             double headingRP = reverseDrive ? mf.fixHeading + Math.PI : mf.fixHeading;
             double localHeading = glm.twoPI - headingRP + inty;
 
