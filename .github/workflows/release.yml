@@ -52,6 +52,19 @@ jobs:
     - name: Publish
       run: dotnet publish --no-restore --configuration ${{env.BUILD_CONFIGURATION}} ${{env.SOLUTION_FILE_PATH}}
 
+    # TEMPORARY: the translations (satellite resource folders, one per language) are left out of
+    # the release zip; English (neutral) and Croatian stay. Remove this step to ship all languages again.
+    - name: Drop translations (temporary)
+      shell: powershell
+      run: |
+        $keep = @('en', 'hr')
+        $dirs = @(Get-ChildItem "${{env.PUBLISH_DIR}}" -Directory -Recurse | Where-Object {
+          $_.Name -match '^[a-z]{2,3}(-[A-Za-z]{2,4})?$' -and $keep -notcontains $_.Name -and
+          (Get-ChildItem $_.FullName -Filter '*.resources.dll' -ErrorAction SilentlyContinue)
+        })
+        foreach ($d in $dirs) { Remove-Item $d.FullName -Recurse -Force }
+        Write-Host "Removed $($dirs.Count) translation folders"
+
     - name: Create AgOpenGPS_${{ env.GitVersion_SemVer }}.zip
       shell: powershell
       run: Compress-Archive -Path "${{env.PUBLISH_DIR}}/*" -DestinationPath "AgOpenGPS_${{ env.GitVersion_SemVer }}.zip"
