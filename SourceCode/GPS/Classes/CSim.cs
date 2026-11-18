@@ -63,7 +63,12 @@ namespace AgOpenGPS
 
             mf.mc.actualSteerAngleDegrees = steerangleAve;
 
-            double temp = stepDistance * Math.Tan(steerangleAve * 0.0165329252) / 2;
+            // the heading follows the real wheelbase of the vehicle (the old fixed 2 m and the rounded
+            // degree factor made the simulated vehicle turn tighter than a real one, so the path
+            // following was judged on a vehicle that does not exist)
+            double wheelbase = mf.vehicle.VehicleConfig.Wheelbase;
+            if (wheelbase < 0.5) wheelbase = 2.0;
+            double temp = stepDistance * Math.Tan(steerangleAve * Math.PI / 180.0) / wheelbase;
             headingTrue += temp;
             if (headingTrue > glm.twoPI) headingTrue -= glm.twoPI;
             if (headingTrue < 0) headingTrue += glm.twoPI;
