@@ -1689,8 +1689,12 @@ namespace AgOpenGPS.AutoPlan
                     var trackDist = new Dictionary<int, double>();
                     if (set.HeadlandReverseTurns && set.HeadlandLineDistance <= 0)
                     {
-                        double lineD = ReverseManeuver.KTurnReach(W, R) + W * 0.5 + 0.3;
-                        foreach (var kv in straightEndByEnd) trackDist[kv.Key] = Math.Max(lineD, kv.Value + 0.3);
+                        // a whole number of widths from the boundary, like the headland passes
+                        double lineD = set.UseKK && set.FullLockRadius > 0 ? headWidth : ReverseManeuver.KTurnReach(W, R) + W * 0.5 + 0.3;
+                        foreach (var kv in straightEndByEnd) trackDist[kv.Key] = LapsDistance(Math.Max(lineD, kv.Value + 0.3), W);
+                        // an end without a measured turn gets the same distance (not the default of one width)
+                        foreach (int endId in endRunId)
+                            if (endId >= 0 && !trackDist.ContainsKey(endId)) trackDist[endId] = LapsDistance(lineD, W);
                     }
                     res.HeadlandTracks = EndTracks(fence, endRunId, W, s, trackDist);
                 }
@@ -1712,7 +1716,9 @@ namespace AgOpenGPS.AutoPlan
                 var byEnd = new Dictionary<int, double>();
                 foreach (var kv in straightEndByEnd) byEnd[kv.Key] = kv.Value + 0.3;
                 // with three point turns the work goes on up to where the turn starts
-                double lineDist = set.HeadlandReverseTurns ? ReverseManeuver.KTurnReach(W, R) + W * 0.5 + 0.3 : R + W * 0.5 + 0.3;
+                double lineDist = set.HeadlandReverseTurns
+                    ? (set.UseKK && set.FullLockRadius > 0 ? headWidth : LapsDistance(ReverseManeuver.KTurnReach(W, R) + W * 0.5 + 0.3, W))
+                    : R + W * 0.5 + 0.3;
                 // (three point turns all start at the same distance: one line for every end)
                 bool fixedLine = set.HeadlandLineDistance > 0;
                 if (fixedLine) lineDist = set.HeadlandLineDistance;
@@ -1721,7 +1727,7 @@ namespace AgOpenGPS.AutoPlan
                 var perEnd = new Dictionary<int, double>();
                 if (set.HeadlandReverseTurns && !fixedLine)
                 {
-                    foreach (var kv in straightEndByEnd) perEnd[kv.Key] = Math.Max(lineDist, kv.Value + 0.3);
+                    foreach (var kv in straightEndByEnd) perEnd[kv.Key] = LapsDistance(Math.Max(lineDist, kv.Value + 0.3), W);
                     if (perEnd.Count == 0) perEnd = null;
                 }
                 List<V2> line = InsetEnds(fence, endRunId, lineDist, s, default, 0.0,
@@ -4012,6 +4018,9 @@ namespace AgOpenGPS.AutoPlan
             return r;
         }
 
+        /// <summary>Distance rounded up to a whole number of work widths: the headland lines and tracks lie on the grid of the passes.</summary>
+        private static double LapsDistance(double d, double W) => Math.Max(1, Math.Ceiling(d / W - 0.02)) * W;
+
         private static List<V2> ResampleOpen(List<V2> line, double s)
         {
             var r = new List<V2>();
@@ -4189,6 +4198,22 @@ namespace AgOpenGPS.AutoPlan
         /// </summary>
         // Tracks along the ends: every end run of the boundary moved in by one tool width
         // (straight on a little past both of its ends), the two longest ones
+        /// <summary>The boundary points of one end offset into the field by dist, cut to the field (null if too short).</summary>
+        private static List<V2> EndOffsetLine(List<V2> fence, List<int> idx, double dist, double W, double s)
+        {
+            if (idx.Count < 3) return null;
+            var edge = new List<V2>(idx.Count);
+            foreach (int i in idx) edge.Add(fence[i]);
+            var grid = new SegmentGrid(edge, false, Math.Max(5.0, dist));
+            List<V2> off = OffsetOpen(edge, dist, grid, s);
+            if (off.Count < 3) return null;
+            List<V2> best = null;
+            foreach (var run in InsideRuns(off, fence))
+                if (best == null || run.Count > best.Count) best = run;
+            if (best == null || OpenLength(best) < 2.0 * W) return null;
+            return ExtendToFence(ResampleOpen(best, s), fence, W, s);
+        }
+
         private static List<List<V2>> EndTracks(List<V2> fence, int[] endRunId, double W, double s, Dictionary<int, double> endDist = null)
         {
             int n = fence.Count;
@@ -4223,7 +4248,14 @@ namespace AgOpenGPS.AutoPlan
                 int id = kv.Key;
                 double dist = endDist != null && endDist.TryGetValue(id, out double dv) ? dv : W;
                 var (inset, idOf) = InsetFor(dist);
-                if (inset == null || inset.Count < 10) continue;
+                if (inset == null || inset.Count < 10)
+                {
+                    // a narrow field: the inset of the whole boundary is gone, the end's own edge is
+                    // offset instead
+                    List<V2> narrow = EndOffsetLine(fence, kv.Value, dist, W, s);
+                    if (narrow != null) result.Add(narrow);
+                    continue;
+                }
                 int m = inset.Count;
                 // longest run of the inset loop (cyclic) next to this end
                 int bestStart = -1, bestLen = 0;
@@ -4241,7 +4273,12 @@ namespace AgOpenGPS.AutoPlan
                     }
                     else curLen = 0;
                 }
-                if (bestLen < 3) continue;
+                if (bestLen < 3)
+                {
+                    List<V2> narrow2 = EndOffsetLine(fence, kv.Value, dist, W, s);
+                    if (narrow2 != null) result.Add(narrow2);
+                    continue;
+                }
                 var line = new List<V2>(bestLen);
                 for (int c = 0; c < bestLen; c++) line.Add(inset[(bestStart + c) % m]);
                 line = ResampleOpen(line, s);
