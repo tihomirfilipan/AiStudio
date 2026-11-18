@@ -114,7 +114,7 @@ namespace AgOpenGPS.Forms.Field
             buttons.Controls.Add(btnCancel);
             CancelButton = btnCancel;
 
-            var edgeRow = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 64, WrapContents = false };
+            var edgeRow = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 128, WrapContents = true };   // two rows: nothing runs off to the right
             var btnPrev = SmallButton("◀");
             var btnNext = SmallButton("▶");
             lblEdge = new Label { AutoSize = false, Size = new Size(230, 56), TextAlign = ContentAlignment.MiddleCenter, Font = new Font("Tahoma", 10.5F) };
@@ -124,10 +124,23 @@ namespace AgOpenGPS.Forms.Field
             btnPrev.Click += (s, e) => { edgeIndex = edgeIndex <= -1 ? edges.Count - 1 : edgeIndex - 1; OptionsChanged(); };
             btnNext.Click += (s, e) => { edgeIndex = edgeIndex >= edges.Count - 1 ? -1 : edgeIndex + 1; OptionsChanged(); };
             btnRecommended.Click += (s, e) => Recommended();
+            // one click: the recommended options with the reversing turns and the short turn KK, and
+            // the plan is made at once
+            var btnQuickKK = SmallButton(T("KK in one click", "KK jednim klikom"));
+            btnQuickKK.Width = 190;
+            btnQuickKK.BackColor = Color.FromArgb(31, 122, 58);
+            btnQuickKK.Click += (s, e) =>
+            {
+                Recommended();
+                tileTurnsEdge.Selected = false; tileTurnsShort.Selected = false; tileTurnsReverse.Selected = true;
+                tileKK.Selected = true;
+                BtnOk_Click(s, e);
+            };
             edgeRow.Controls.Add(btnPrev);
             edgeRow.Controls.Add(lblEdge);
             edgeRow.Controls.Add(btnNext);
             edgeRow.Controls.Add(btnRecommended);
+            edgeRow.Controls.Add(btnQuickKK);
 
             lblPreview = new Label { Dock = DockStyle.Bottom, Height = 70, ForeColor = Color.Silver, Font = new Font("Tahoma", 10F) };
             preview = new PictureBox { Dock = DockStyle.Fill, BackColor = Color.FromArgb(24, 28, 32), SizeMode = PictureBoxSizeMode.Zoom };
