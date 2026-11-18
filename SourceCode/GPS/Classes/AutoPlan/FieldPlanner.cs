@@ -2328,20 +2328,33 @@ namespace AgOpenGPS.AutoPlan
             var grid = new SegmentGrid(loop, true, Math.Max(5.0, dist));
             var tester = new PolygonTester(loop);
 
-            // offset end points (with their inward normal), raw side points
+            // offset end points (with their inward normal), raw side points.
+            // On a narrow field the strict clearance would drop most end points: then only a
+            // small clearance is required (the sides are joined by HitFence below).
             var pts = new List<V2>(n);
             var nrm = new List<V2>(n);   // inward normal for offset points, zero for side points
-            for (int i = 0; i < n; i++)
+            for (int attempt = 0; attempt < 2; attempt++)
             {
-                if (endRunId[i] < 0) { pts.Add(loop[i]); nrm.Add(new V2(0, 0)); continue; }
-                V2 d = Dir(loop[(i - 1 + n) % n], loop[(i + 1) % n]);
-                V2 inN = new V2(-d.N, d.E);
-                double wi = width[i];
-                V2 p = loop[i] + inN * wi;
-                if (grid.MinDistance(p, wi) < Math.Min(dist, wi) * 0.98) continue;
-                if (!tester.Inside(p)) continue;
-                pts.Add(p);
-                nrm.Add(inN);
+                pts.Clear();
+                nrm.Clear();
+                int ends = 0, kept = 0;
+                for (int i = 0; i < n; i++)
+                {
+                    if (endRunId[i] < 0) { pts.Add(loop[i]); nrm.Add(new V2(0, 0)); continue; }
+                    ends++;
+                    V2 d = Dir(loop[(i - 1 + n) % n], loop[(i + 1) % n]);
+                    V2 inN = new V2(-d.N, d.E);
+                    double wi = width[i];
+                    V2 p = loop[i] + inN * wi;
+                    double clear = Math.Min(dist, wi) * 0.98;
+                    if (attempt == 1) clear = Math.Min(clear, 1.0);
+                    if (grid.MinDistance(p, wi) < clear) continue;
+                    if (!tester.Inside(p)) continue;
+                    pts.Add(p);
+                    nrm.Add(inN);
+                    kept++;
+                }
+                if (attempt == 0 && kept * 10 >= ends) break;
             }
             int m = pts.Count;
             if (m < 3) return new List<V2>();
