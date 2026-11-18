@@ -48,6 +48,8 @@ namespace AgOpenGPS.Properties
         public bool setAutoPlan_kTurn = true;
         public bool setAutoPlan_klvTurn = true;
         public bool setAutoPlan_findTurn = true;
+        public bool setAutoPlan_pearTurn = true;
+        public bool setAutoPlan_tearTurn = true;
         public bool setAutoPlan_avoidWorked = false;
         public bool setAutoPlan_splitField = false;
         public bool setAutoPlan_wedgeField = false;

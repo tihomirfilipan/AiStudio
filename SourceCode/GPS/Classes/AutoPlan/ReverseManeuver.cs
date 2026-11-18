@@ -10,6 +10,12 @@ namespace AgOpenGPS.AutoPlan
     /// </summary>
     public static class ReverseManeuver
     {
+        // Turns switched off in the options: set by the planner for the thread that is building a plan, so a
+        // turn that is off is not used at any place (all false = all on)
+        [ThreadStatic] public static bool DisableK, DisableKLV, DisableKK, DisableFind, DisablePear, DisableTear;
+
+        public static void ResetSwitches() { DisableK = DisableKLV = DisableKK = DisableFind = DisablePear = DisableTear = false; }
+
         public struct Pose
         {
             public V2 P;
@@ -40,6 +46,7 @@ namespace AgOpenGPS.AutoPlan
         public static List<Pose> KTurn(V2 p0, double h0, V2 p1, double h1, double R, double spacing, Func<V2, bool> inside,
             bool nearBoundary = true)
         {
+            if (DisableK) return null;
             double dh = Math.IEEERemainder(h1 - h0 - Math.PI, 2.0 * Math.PI);
             // gores meeting on the middle line of a wedge are not quite parallel
             if (Math.Abs(dh) > (nearBoundary ? 0.2 : 0.5)) return null;
@@ -126,6 +133,7 @@ namespace AgOpenGPS.AutoPlan
         public static List<Pose> KLV1(V2 p0, double h0, V2 p1, double h1, double R, double spacing, Func<V2, bool> inside,
             bool nearBoundary = true)
         {
+            if (DisableKLV) return null;
             double dh = Math.IEEERemainder(h1 - h0 - Math.PI, 2.0 * Math.PI);
             if (Math.Abs(dh) > (nearBoundary ? 0.2 : 0.5)) return null;
             V2 d = new V2(Math.Sin(h0), Math.Cos(h0));
@@ -211,6 +219,7 @@ namespace AgOpenGPS.AutoPlan
         public static List<Pose> KK(V2 p0, double h0, V2 p1, double h1, double R, double spacing, Func<V2, bool> inside,
             Func<V2, bool> noseInside, double frontReach, double wheelbase = 0.0)
         {
+            if (DisableKK) return null;
             double dh = Math.IEEERemainder(h1 - h0 - Math.PI, 2.0 * Math.PI);
             if (Math.Abs(dh) > 0.2) return null;
             V2 d = new V2(Math.Sin(h0), Math.Cos(h0));
@@ -287,6 +296,108 @@ namespace AgOpenGPS.AutoPlan
             return null;
         }
 
+        /// <summary>
+        /// Loop turns that are driven forward only, away from the next pass and back onto it: the pear (KRU:
+        /// away 270 degrees, straight on towards the pass, back 90 degrees) and the teardrop (SUZ: away 225
+        /// degrees, straight on, back 45 degrees). The straight part is as long as it takes to land on the
+        /// next pass; the turn is made as close to the boundary as it fits. Null when the passes are not side
+        /// by side in opposite directions or it does not fit inside.
+        /// </summary>
+        public static List<Pose> LoopTurn(V2 p0, double h0, V2 p1, double h1, double R, double spacing, Func<V2, bool> inside,
+            double awayDeg, bool nearBoundary = true)
+        {
+            if (awayDeg > 250.0 ? DisablePear : DisableTear) return null;
+            double dh = Math.IEEERemainder(h1 - h0 - Math.PI, 2.0 * Math.PI);
+            if (Math.Abs(dh) > (nearBoundary ? 0.2 : 0.5)) return null;
+            V2 d = new V2(Math.Sin(h0), Math.Cos(h0));
+            V2 r = new V2(Math.Cos(h0), -Math.Sin(h0));
+            V2 rel = p1 - p0;
+            double along = rel.E * d.E + rel.N * d.N;
+            double lat = rel.E * r.E + rel.N * r.N;
+            double L = Math.Abs(lat);
+            if (L < 0.5 || L >= 4.0 * R) return null;
+            V2 u = r * Math.Sign(lat);                          // towards the next pass
+            double away = awayDeg * Math.PI / 180.0;
+            double back = away - Math.PI;                       // the way back: the turn that ends facing the pass
+            double step = Math.Max(0.2, spacing);
+            int Steps(double len) => Math.Max(2, (int)Math.Ceiling(len / step));
+
+            // local frame: x towards the next pass (at x = L), y along the pass; heading phi from +y towards +x
+            double x = 0, y = 0, phi = 0;
+            void Arc(double sgn, double theta, List<(double x, double y)> pts)
+            {
+                double cx = x + sgn * R * Math.Cos(phi), cy = y - sgn * R * Math.Sin(phi);
+                int n = Steps(R * theta);
+                for (int i = 1; i <= n; i++)
+                {
+                    double ph = phi + sgn * theta * i / n;
+                    pts.Add((cx - sgn * R * Math.Cos(ph), cy + sgn * R * Math.Sin(ph)));
+                }
+                double ph2 = phi + sgn * theta;
+                x = cx - sgn * R * Math.Cos(ph2); y = cy + sgn * R * Math.Sin(ph2); phi = ph2;
+            }
+            // dry run to find the straight part that lands on the next pass
+            var tmp = new List<(double x, double y)>();
+            Arc(-1.0, away, tmp);
+            double hx = Math.Sin(phi), hy = Math.Cos(phi);
+            if (hx < 0.2) return null;                           // it must go on towards the next pass
+            double x0 = x, y0 = y, phi0 = phi;
+            double straight = (L - x0) / hx;
+            if (straight < 0) return null;
+            // the end of the turn: straight, then the arc back
+            double xs = x0 + hx * straight, ys = y0 + hy * straight;
+            x = xs; y = ys; phi = phi0;
+            var tmp2 = new List<(double x, double y)>();
+            Arc(1.0, back, tmp2);
+            double yEnd = y;                                     // relative to the start of the loop
+
+            double eMin = Math.Max(0.0, along - yEnd);
+            List<Pose> Make(double e)
+            {
+                V2 a0 = p0 + d * e;
+                V2 Wp(double lx, double ly) => a0 + u * lx + d * ly;
+                var pts = new List<Pose>();
+                void Add(V2 q) { pts.Add(new Pose { P = q, Reverse = false }); }
+                Add(p0);
+                int n = Steps(e);
+                for (int i = 1; i <= n && e > 1e-6; i++) Add(p0 + d * (e * i / n));
+                x = 0; y = 0; phi = 0;
+                var arc1 = new List<(double x, double y)>();
+                Arc(-1.0, away, arc1);
+                foreach (var q in arc1) Add(Wp(q.x, q.y));
+                int ns = Steps(straight);
+                for (int i = 1; i <= ns; i++) Add(Wp(x + hx * straight * i / ns, y + hy * straight * i / ns));
+                x += hx * straight; y += hy * straight;
+                var arc2 = new List<(double x, double y)>();
+                Arc(1.0, back, arc2);
+                foreach (var q in arc2) Add(Wp(q.x, q.y));
+                V2 qEnd = Wp(x, y);
+                V2 toP = p1 - qEnd;
+                V2 d1 = new V2(Math.Sin(h1), Math.Cos(h1));
+                if (toP.E * d1.E + toP.N * d1.N < -0.01) return null;
+                double len = toP.Length;
+                int ne = Steps(len);
+                for (int i = 1; i <= ne && len > 1e-6; i++) Add(qEnd + toP * (i / (double)ne));
+                foreach (Pose pp in pts) if (!inside(pp.P)) return null;
+                return pts;
+            }
+            if (!nearBoundary)
+            {
+                for (double e = eMin; e <= eMin + 40.0; e += 0.5)
+                {
+                    List<Pose> k = Make(e);
+                    if (k != null) return k;
+                }
+                return null;
+            }
+            for (double e = eMin + 40.0; e >= eMin - 1e-9; e -= 0.5)
+            {
+                List<Pose> k = Make(e);
+                if (k != null) return k;
+            }
+            return null;
+        }
+
         /// <summary>Room the three point turn needs past its start (towards the boundary).</summary>
         public static double KTurnReach(double W, double R)
         {
@@ -297,6 +408,7 @@ namespace AgOpenGPS.AutoPlan
         public static List<Pose> Find(V2 p0, double h0, V2 p1, double h1, double R, double spacing,
             Func<V2, bool> inside, int maxExpansions = 60000)
         {
+            if (DisableFind) return null;
             // the standard three point turn first, the search only where it does not fit
             List<Pose> k = KTurn(p0, h0, p1, h1, R, spacing, inside);
             if (k != null) return k;

@@ -102,6 +102,8 @@ namespace AgOpenGPS.AutoPlan
 
         /// <summary>Each reversing turn can be switched off: K (KL/KD), KLV (KLV1/KDV1) and R (searched reversing turn).</summary>
         public bool UseK = true, UseKLV = true, UseFind = true;
+        /// <summary>The loop turns that are driven forward only: pear (KRU) and teardrop (SUZ).</summary>
+        public bool UsePear = true, UseTear = true;
 
         /// <summary>Distance from the pivot (rear axle) to the front end of the vehicle, meters.</summary>
         public double FrontReach = 3.7;
@@ -245,6 +247,19 @@ namespace AgOpenGPS.AutoPlan
         private const double TwoPi = Math.PI * 2.0;
 
         public static FieldPlanResult Build(IList<V2> fence, FieldPlanSettings set, V2 startPos, double startHeading)
+        {
+            // a turn that is switched off in the options is not used anywhere in this plan
+            ReverseManeuver.DisableK = !set.UseK;
+            ReverseManeuver.DisableKLV = !set.UseKLV;
+            ReverseManeuver.DisableKK = !set.UseKK;
+            ReverseManeuver.DisableFind = !set.UseFind;
+            ReverseManeuver.DisablePear = !set.UsePear;
+            ReverseManeuver.DisableTear = !set.UseTear;
+            try { return BuildCore(fence, set, startPos, startHeading); }
+            finally { ReverseManeuver.ResetSwitches(); }
+        }
+
+        private static FieldPlanResult BuildCore(IList<V2> fence, FieldPlanSettings set, V2 startPos, double startHeading)
         {
             // the drive may start at any corner: also try the first pass along the long edge on the other side
             // whose end is nearest to the vehicle, and take that plan when it is not worse
@@ -1488,6 +1503,8 @@ namespace AgOpenGPS.AutoPlan
                             // ordinary K-turn (KL/KD) first; KLV1 (KDV1 on the other side) only where it does not pass
                             if (set.UseK) man = ReverseManeuver.KTurn(pj, lastH, pts[0], entryH, R, s, fenceGrid.Clear);
                             if (man == null && set.UseKLV) man = ReverseManeuver.KLV1(pj, lastH, pts[0], entryH, R, s, fenceGrid.Clear);
+                            if (man == null && set.UsePear) man = ReverseManeuver.LoopTurn(pj, lastH, pts[0], entryH, R, s, fenceGrid.Clear, 270.0);
+                            if (man == null && set.UseTear) man = ReverseManeuver.LoopTurn(pj, lastH, pts[0], entryH, R, s, fenceGrid.Clear, 225.0);
                             if (man != null) { cut = j + 1; break; }
                         }
                         if (man == null) { if (set.UseFind) man = ReverseManeuver.Find(lastP, lastH, pts[0], entryH, R, s, fenceGrid.Clear); }
@@ -4183,6 +4200,8 @@ namespace AgOpenGPS.AutoPlan
                 if (j < path.Count - 1 && AheadEdgeDistance(fenceGrid, pj, lastH, 100.0) > lineRev + 0.5) break;
                 if (set.UseK) man = ReverseManeuver.KTurn(pj, lastH, start, entryH, R, s, fenceGrid.Clear);
                 if (man == null && set.UseKLV) man = ReverseManeuver.KLV1(pj, lastH, start, entryH, R, s, fenceGrid.Clear);
+                if (man == null && set.UsePear) man = ReverseManeuver.LoopTurn(pj, lastH, start, entryH, R, s, fenceGrid.Clear, 270.0);
+                if (man == null && set.UseTear) man = ReverseManeuver.LoopTurn(pj, lastH, start, entryH, R, s, fenceGrid.Clear, 225.0);
                 if (man != null) cut = j + 1;
             }
             return man;
