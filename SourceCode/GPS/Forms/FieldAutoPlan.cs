@@ -70,6 +70,67 @@ namespace AgOpenGPS
             btnAutoPlan.Click += (s, e) => AutoPlanField(null);
             panelBottom.Controls.Add(btnAutoPlan);
             panelBottom.Controls.SetChildIndex(btnAutoPlan, panelBottom.Controls.GetChildIndex(btnTrack) + 1);
+
+            // the icon is in colour while a path is selected (loaded in the path panel or being
+            // driven) and grey otherwise; the autosteer button shows "on" while the path is driven
+            autoPlanIconOn = AutoPlanIcon(48);
+            autoPlanIconOff = GreyIcon(autoPlanIconOn);
+            btnAutoPlan.Image = autoPlanIconOff;
+            var stateTimer = new Timer { Interval = 400 };
+            stateTimer.Tick += (s, e) => UpdateAutoPlanButtons();
+            stateTimer.Start();
+        }
+
+        private Bitmap autoPlanIconOn, autoPlanIconOff;
+        private int autoPlanButtonState = -1;
+        private bool autoPlanSteerLit;
+
+        /// <summary>A path is selected: it is loaded and its panel is open, or it is being driven.</summary>
+        private bool IsAutoPathActive => recPath.recList.Count > 4 && !recPath.isRecordOn
+            && (panelDrag.Visible || recPath.isDrivingRecordedPath);
+
+        private void UpdateAutoPlanButtons()
+        {
+            if (btnAutoPlan == null || btnAutoPlan.IsDisposed) return;
+
+            int state = IsAutoPathActive ? 1 : 0;
+            if (state != autoPlanButtonState)
+            {
+                autoPlanButtonState = state;
+                btnAutoPlan.Image = state == 1 ? autoPlanIconOn : autoPlanIconOff;
+            }
+
+            // autosteer button: lit while the path is driven (it starts and stops the path)
+            bool driving = recPath.isDrivingRecordedPath;
+            if (driving != autoPlanSteerLit)
+            {
+                autoPlanSteerLit = driving;
+                if (driving)
+                    btnAutoSteer.Image = trk.isAutoSnapToPivot ? Properties.Resources.AutoSteerOnSnapToPivot : Properties.Resources.AutoSteerOn;
+                else if (!isBtnAutoSteerOn)
+                    btnAutoSteer.Image = trk.isAutoSnapToPivot ? Properties.Resources.AutoSteerOffSnapToPivot : Properties.Resources.AutoSteerOff;
+            }
+        }
+
+        /// <summary>Grey, faded copy of an icon (the button of an inactive function).</summary>
+        private static Bitmap GreyIcon(Bitmap src)
+        {
+            var grey = new Bitmap(src.Width, src.Height);
+            var m = new System.Drawing.Imaging.ColorMatrix(new[]
+            {
+                new[] { 0.30f, 0.30f, 0.30f, 0f, 0f },
+                new[] { 0.59f, 0.59f, 0.59f, 0f, 0f },
+                new[] { 0.11f, 0.11f, 0.11f, 0f, 0f },
+                new[] { 0f, 0f, 0f, 0.45f, 0f },
+                new[] { 0f, 0f, 0f, 0f, 1f }
+            });
+            using (var attr = new System.Drawing.Imaging.ImageAttributes())
+            using (Graphics g = Graphics.FromImage(grey))
+            {
+                attr.SetColorMatrix(m);
+                g.DrawImage(src, new Rectangle(0, 0, src.Width, src.Height), 0, 0, src.Width, src.Height, GraphicsUnit.Pixel, attr);
+            }
+            return grey;
         }
 
         /// <summary>Icon: field with passes and a U-turn at the edge.</summary>
