@@ -827,7 +827,8 @@ namespace AgOpenGPS
 
                 btnContourLock.Visible = ct.isContourBtnOn;
 
-                if (trk.idx > -1 || ct.isContourBtnOn)
+                // path mode (the path panel is open): the button is Play, no track needed
+                if (trk.idx > -1 || ct.isContourBtnOn || (panelDrag.Visible && !recPath.isRecordOn) || recPath.isDrivingRecordedPath)
                     btnAutoSteer.Enabled = true;
                 else
                 {

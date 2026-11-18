@@ -116,6 +116,11 @@ namespace AgOpenGPS
                 btnTrack.Image = trackState == 1 ? trackIconOn : trackIconOff;
             }
 
+            // the autosteer button must be pressable in path mode even with no track selected (it is
+            // Play there); the track based rule of the panel update would grey it out
+            if ((panelDrag.Visible && !recPath.isRecordOn || recPath.isDrivingRecordedPath) && !btnAutoSteer.Enabled)
+                btnAutoSteer.Enabled = true;
+
             // autosteer button in path mode (path panel open) with no path to drive: grey
             bool grey = panelDrag.Visible && !recPath.isRecordOn && recPath.recList.Count <= 4;
             if (grey)

@@ -317,7 +317,9 @@ namespace AgOpenGPS
                 else
                 {
                     StopDrivingRecordedPath();
-                    // the plan is done: guidance goes on with the nearer headland track
+                    // the plan is done: path mode is left (the panel closes, the autopilot button is
+                    // off) and guidance goes on with the nearer headland track
+                    mf.panelDrag.Visible = false;
                     mf.SwitchToNearestHeadlandTrack();
                     return;
 
