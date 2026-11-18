@@ -87,6 +87,9 @@ namespace AgOpenGPS.AutoPlan
         /// </summary>
         public double FullLockRadius = 0;
 
+        /// <summary>Use the short three point turn KK with the reversing option (needs FullLockRadius).</summary>
+        public bool UseKK = true;
+
         /// <summary>Distance from the pivot (rear axle) to the front end of the vehicle, meters.</summary>
         public double FrontReach = 3.7;
 
@@ -1363,7 +1366,7 @@ namespace AgOpenGPS.AutoPlan
                         int cut = path.Count;
                         // short three point turn (KK) first: straight on until the front end is at the
                         // boundary, back at full lock, forward at full lock into the next pass
-                        if (set.FullLockRadius > 0)
+                        if (set.UseKK && set.FullLockRadius > 0)
                             man = ReverseManeuver.KK(lastP, lastH, pts[0], entryH, set.FullLockRadius, s, fenceGrid.Clear, fenceGrid.Inside, set.FrontReach);
                         for (int j = path.Count - 1; j >= 0 && man == null; j--)
                         {

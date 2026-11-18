@@ -24,7 +24,7 @@ namespace AgOpenGPS.Forms.Field
         private readonly PictureTile tileEnds, tileAllAround;
         private readonly PictureTile tileTurnsEdge, tileTurnsShort, tileTurnsReverse;
         private readonly PictureTile tileOrderAuto, tileOrderNeighbour, tileOrderSkip;
-        private readonly PictureTile tileWorkHeadland, tileExtraPass, tileAddTrack, tileAvoidWorked, tileSplit, tileSlant, tileWedge, tileMiddle;
+        private readonly PictureTile tileWorkHeadland, tileExtraPass, tileAddTrack, tileAvoidWorked, tileKK, tileSplit, tileSlant, tileWedge, tileMiddle;
 
         // live preview
         private readonly List<V2> fence;
@@ -199,6 +199,8 @@ namespace AgOpenGPS.Forms.Field
             tileExtraPass.Selected = set.setAutoPlan_extraPass;
             tileAddTrack.Selected = set.setAutoPlan_addTrack;
             tileAvoidWorked.Selected = set.setAutoPlan_avoidWorked;
+            tileKK = new PictureTile(T("Short turn KK (with reversing)", "Kratki okret KK (uz vožnju unazad)"), DrawKK);
+            tileKK.Selected = set.setAutoPlan_kkTurn;
             tileSplit = new PictureTile(T("Split field (own direction per part)", "Podijeli parcelu (svaki dio svoj smjer)"), DrawSplit);
             tileSplit.Selected = set.setAutoPlan_splitField;
             tileSlant = new PictureTile(T("Pass along a gently slanted edge", "Prohod uz kosu među"), DrawSlantPass);
@@ -208,7 +210,7 @@ namespace AgOpenGPS.Forms.Field
             tileMiddle = new PictureTile(T("Start in the middle", "Početak iz sredine"), DrawStartMiddle);
             tileMiddle.Selected = set.setAutoPlan_startMiddle;
             AddGroup(extras, T("Extras (tap to switch on/off)", "Dodatno (dodir uključi/isključi)"), false, -1,
-                tileWorkHeadland, tileExtraPass, tileAddTrack, tileAvoidWorked, tileSplit, tileSlant, tileWedge, tileMiddle);
+                tileWorkHeadland, tileExtraPass, tileAddTrack, tileAvoidWorked, tileKK, tileSplit, tileSlant, tileWedge, tileMiddle);
             // a wedge field starts in the middle (can be switched off again); after the group's own
             // click handler, so the wedge tile is already switched
             tileWedge.Click += (s, e) => { if (tileWedge.Selected) tileMiddle.Selected = true; };
@@ -218,7 +220,7 @@ namespace AgOpenGPS.Forms.Field
             previewTimer = new Timer { Interval = 450 };
             previewTimer.Tick += (s, e) => { previewTimer.Stop(); StartPreview(); };
             foreach (PictureTile t in new[] { tilePath, tileGuidance, tileEnds, tileAllAround, tileTurnsEdge, tileTurnsShort, tileTurnsReverse,
-                tileOrderAuto, tileOrderNeighbour, tileOrderSkip, tileWorkHeadland, tileExtraPass, tileAddTrack, tileAvoidWorked, tileSplit, tileSlant, tileWedge, tileMiddle })
+                tileOrderAuto, tileOrderNeighbour, tileOrderSkip, tileWorkHeadland, tileExtraPass, tileAddTrack, tileAvoidWorked, tileKK, tileSplit, tileSlant, tileWedge, tileMiddle })
                 t.Click += (s, e) => OptionsChanged();
             nudWidth.ValueChanged += (s, e) => OptionsChanged();
             nudRadius.ValueChanged += (s, e) => OptionsChanged();
@@ -338,6 +340,7 @@ namespace AgOpenGPS.Forms.Field
                 OrderMode = order,
                 TurnsAtBoundary = tileTurnsEdge.Selected,
                 HeadlandReverseTurns = tileTurnsReverse.Selected,
+                UseKK = tileKK.Selected,
                 AvoidWorked = tileAvoidWorked.Selected,
                 SplitField = tileSplit.Selected,
                 SlantEdgePass = tileSlant.Selected,
@@ -361,6 +364,7 @@ namespace AgOpenGPS.Forms.Field
             tileExtraPass.Selected = true;
             tileAddTrack.Selected = true;
             tileAvoidWorked.Selected = false;
+            tileKK.Selected = true;
             tileSplit.Selected = false;
             tileSlant.Selected = false;
             tileWedge.Selected = false;
@@ -431,6 +435,7 @@ namespace AgOpenGPS.Forms.Field
             set.setAutoPlan_orderMode = Settings.OrderMode;
             set.setAutoPlan_turnsAtBoundary = tileTurnsEdge.Selected;
             set.setAutoPlan_reverseTurns = tileTurnsReverse.Selected;
+            set.setAutoPlan_kkTurn = tileKK.Selected;
             set.setAutoPlan_avoidWorked = tileAvoidWorked.Selected;
             set.setAutoPlan_splitField = tileSplit.Selected;
             set.setAutoPlan_slantPass = tileSlant.Selected;
@@ -589,6 +594,23 @@ namespace AgOpenGPS.Forms.Field
                 g.DrawArc(p, xb, r.Top + 12, 32, 44, 270, 90);              // forward into the next pass
             using (var f = new Font("Tahoma", 9F, FontStyle.Bold))
                 g.DrawString("R", f, Brushes.White, r.Right - 24, r.Top + 4);
+        }
+
+        private static void DrawKK(Graphics g, Rectangle r)
+        {
+            // short three point turn: straight on to the boundary, back at full lock, forward at full
+            // lock into the neighbour pass
+            Field(g, r);
+            using (var p = new Pen(Color.FromArgb(150, CHead), 1f) { DashStyle = DashStyle.Dash })
+                g.DrawLine(p, r.Left + 4, r.Top + 34, r.Right - 4, r.Top + 34);
+            Passes(g, r.Left + 30, r.Right - 30, r.Top + 34, r.Bottom - 6, 4, CPass);
+            int xa = r.Left + 30, xb = r.Left + 30 + (r.Width - 60) / 3;
+            using (var p = new Pen(Color.White, 2.6f) { DashStyle = DashStyle.Dash })
+                g.DrawArc(p, xa, r.Top + 12, xb - xa, 30, 180, -150);          // back at full lock
+            using (Pen p = P(CTurn2, 2.6f))
+                g.DrawArc(p, xa + (xb - xa) / 2, r.Top + 12, xb - xa, 30, 30, 150);   // forward into the next pass
+            using (var f = new Font("Tahoma", 9F, FontStyle.Bold))
+                g.DrawString("KK", f, Brushes.White, r.Right - 30, r.Top + 4);
         }
 
         private static void DrawSplit(Graphics g, Rectangle r)
