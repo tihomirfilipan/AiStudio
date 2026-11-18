@@ -265,7 +265,7 @@ namespace AgOpenGPS.AutoPlan
             ReverseManeuver.DisablePear = !set.UsePear;
             ReverseManeuver.DisableTear = !set.UseTear;
             try { return BuildCore(fence, set, startPos, startHeading); }
-            finally { ReverseManeuver.ResetSwitches(); workAreaTester = null; }
+            finally { ReverseManeuver.ResetSwitches(); workAreaTester = null; planFenceRaw = null; }
         }
 
         private static FieldPlanResult BuildCore(IList<V2> fence, FieldPlanSettings set, V2 startPos, double startHeading)
@@ -355,6 +355,10 @@ namespace AgOpenGPS.AutoPlan
         // inside of the work area (without the headland): a pass is worked only there, the straight run on of a turn is not
         [ThreadStatic] private static PolygonTester workAreaTester;
         [ThreadStatic] private static double planWorkWidth;
+        // the boundary as it was given (not resampled)
+        [ThreadStatic] private static List<V2> planFenceRaw;
+        // direction of the passes (tells an end of the boundary from its long sides)
+        [ThreadStatic] private static V2 planLaneDir;
         // the cut lines of the narrow field headland (the headland track of an end lies on them)
         [ThreadStatic] private static List<List<V2>> endCutLines;
 
@@ -982,6 +986,7 @@ namespace AgOpenGPS.AutoPlan
             // --- Boundary, resampled and counter clockwise ---
             var fenceRaw = new List<V2>(fenceIn);
             if (SignedArea(fenceRaw) < 0) fenceRaw.Reverse();
+            planFenceRaw = fenceRaw;
             double perimeter = LoopLength(fenceRaw);
             double s = Math.Max(set.PointSpacing, perimeter / 6000.0);
             List<V2> fence = ResampleLoop(fenceRaw, s);
@@ -1031,6 +1036,7 @@ namespace AgOpenGPS.AutoPlan
             // Which side of the edge is inside the field? (fence is CCW, so normally left)
             int mid = refEdge.Count / 2;
             V2 midDir = Dir(refEdge[Math.Max(0, mid - 2)], refEdge[Math.Min(refEdge.Count - 1, mid + 2)]);
+            planLaneDir = midDir;
             V2 leftN = new V2(-midDir.N, midDir.E);
             double side = PointInPolygon(fence, refEdge[mid] + leftN * (W * 0.5)) ? 1.0 : -1.0;
 
@@ -4571,124 +4577,23 @@ namespace AgOpenGPS.AutoPlan
             if (start < 0 || laps < 1 || W <= 0) return;
             var tester = new PolygonTester(fence);
             // contiguous stretches of end points (an end may be several pieces with different ids)
-            var stretches = new List<List<V2>>();
-            List<V2> cur = null;
+            var stretchIdx = new List<List<int>>();
+            List<int> curI = null;
             for (int c = 1; c <= n; c++)
             {
                 int i = (start + c) % n;
-                if (endRunId[i] >= 0) { if (cur == null) { cur = new List<V2>(); stretches.Add(cur); } cur.Add(fence[i]); }
-                else cur = null;
+                if (endRunId[i] >= 0) { if (curI == null) { curI = new List<int>(); stretchIdx.Add(curI); } curI.Add(i); }
+                else curI = null;
             }
-            foreach (var st in stretches)
+            foreach (var si in stretchIdx)
             {
-                if (st.Count < 3 || OpenLength(st) < 2.0 * W) continue;
-                // an end that is (nearly) straight: the passes are parallel straight lines. The line is fitted
-                // through the middle of the end (its points near the corners bend away).
-                {
-                    int lo = st.Count / 5, hi = st.Count - 1 - st.Count / 5;
-                    if (hi - lo >= 2)
-                    {
-                        double cE = 0, cN = 0;
-                        for (int k = lo; k <= hi; k++) { cE += st[k].E; cN += st[k].N; }
-                        cE /= hi - lo + 1; cN /= hi - lo + 1;
-                        double sEE = 0, sNN = 0, sEN = 0;
-                        for (int k = lo; k <= hi; k++)
-                        {
-                            double de = st[k].E - cE, dn = st[k].N - cN;
-                            sEE += de * de; sNN += dn * dn; sEN += de * dn;
-                        }
-                        double ang = 0.5 * Math.Atan2(2 * sEN, sEE - sNN);
-                        V2 ld = new V2(Math.Cos(ang), Math.Sin(ang));
-                        V2 ln = new V2(-ld.N, ld.E);
-                        double dev = 0;
-                        for (int k = lo; k <= hi; k++) dev = Math.Max(dev, Math.Abs((st[k].E - cE) * ln.E + (st[k].N - cN) * ln.N));
-                        if (dev < 1.0)
-                        {
-                            V2 cen = new V2(cE, cN);
-                            if (!tester.Inside(cen + ln * 1.5)) ln = new V2(-ln.E, -ln.N);
-                            var sl = new List<List<V2>>();
-                            for (int k = 0; k < laps; k++)
-                            {
-                                V2 org = cen + ln * ((k + 0.5) * W);
-                                var line = new List<V2>();
-                                for (double t = -400; t <= 400; t += 0.5)
-                                {
-                                    V2 q = org + ld * t;
-                                    if (tester.Inside(q)) line.Add(q);
-                                    else if (line.Count > 0 && t > 0) break;
-                                    else if (t < 0) line.Clear();
-                                }
-                                sl.Add(line.Count >= 3 ? line : new List<V2>());
-                            }
-                            int tr = 0;
-                            double bd = double.MaxValue;
-                            for (int h = 0; h < res.HeadlandTracks.Count && h < 2; h++)
-                                foreach (V2 tp in res.HeadlandTracks[h])
-                                {
-                                    double dd = (tp - cen).Length;
-                                    if (dd < bd) { bd = dd; tr = h; }
-                                }
-                            res.EndPassLines.Add(sl);
-                            res.EndPassTrack.Add(tr);
-                            continue;
-                        }
-                    }
-                }
-                var end = new List<V2>(st);
-                for (int it = 0; it < 2; it++)
-                {
-                    var q = new List<V2> { end[0] };
-                    for (int k = 0; k + 1 < end.Count; k++)
-                    {
-                        V2 a = end[k], b = end[k + 1];
-                        q.Add(new V2(0.75 * a.E + 0.25 * b.E, 0.75 * a.N + 0.25 * b.N));
-                        q.Add(new V2(0.25 * a.E + 0.75 * b.E, 0.25 * a.N + 0.75 * b.N));
-                    }
-                    q.Add(end[end.Count - 1]);
-                    end = q;
-                }
-                end = ResampleOpen(end, 0.5);
-                if (end.Count < 4) continue;
-                var arc = new double[end.Count];
-                for (int k = 1; k < end.Count; k++) arc[k] = arc[k - 1] + (end[k] - end[k - 1]).Length;
-                double reach = laps * W + 1.0;
-                double minE = double.MaxValue, maxE = double.MinValue, minN = double.MaxValue, maxN = double.MinValue;
-                foreach (V2 p in end)
-                {
-                    minE = Math.Min(minE, p.E); maxE = Math.Max(maxE, p.E);
-                    minN = Math.Min(minN, p.N); maxN = Math.Max(maxN, p.N);
-                }
-                double cell = Math.Max(0.25, Math.Min(1.0, arc[arc.Length - 1] / 250.0));
-                var bins = new SortedDictionary<int, (double e, double n, int c)>[laps];
-                for (int k = 0; k < laps; k++) bins[k] = new SortedDictionary<int, (double e, double n, int c)>();
-                for (double e = minE - reach; e <= maxE + reach; e += cell)
-                    for (double nn = minN - reach; nn <= maxN + reach; nn += cell)
-                    {
-                        var c = new V2(e, nn);
-                        double best = double.MaxValue, bestArc = 0;
-                        for (int k = 0; k + 1 < end.Count; k++)
-                        {
-                            V2 ab = end[k + 1] - end[k];
-                            double l2 = ab.E * ab.E + ab.N * ab.N;
-                            double t = l2 > 1e-12 ? Math.Max(0, Math.Min(1, ((c.E - end[k].E) * ab.E + (c.N - end[k].N) * ab.N) / l2)) : 0;
-                            double dd = (c - (end[k] + ab * t)).Length;
-                            if (dd < best) { best = dd; bestArc = arc[k] + t * Math.Sqrt(l2); }
-                        }
-                        int level = (int)Math.Round(best / W - 0.5);
-                        if (level < 0 || level >= laps || Math.Abs(best - (level + 0.5) * W) > cell * 0.7 || !tester.Inside(c)) continue;
-                        int key = (int)Math.Round(bestArc / (cell * 2.0));
-                        bins[level].TryGetValue(key, out var acc);
-                        bins[level][key] = (acc.e + e, acc.n + nn, acc.c + 1);
-                    }
-                var lines = new List<List<V2>>();
-                for (int k = 0; k < laps; k++)
-                {
-                    var line = new List<V2>();
-                    foreach (var kv in bins[k]) line.Add(new V2(kv.Value.e / kv.Value.c, kv.Value.n / kv.Value.c));
-                    lines.Add(line.Count >= 3 ? line : new List<V2>());
-                }
+                if (si.Count < 2) continue;
+                var st = new List<V2>(si.Count);
+                foreach (int i in si) st.Add(fence[i]);
+                // the guidance line of the end is a plain copy of its boundary line (nothing smoothed or corrected)
+                var copy = SnapToRawBoundary(EndCornerToCorner(fence, si, st));
                 // which headland track (U1/U2) this end belongs to: the nearest one
-                V2 mid = end[end.Count / 2];
+                V2 mid = copy[copy.Count / 2];
                 int track = 0;
                 double bestD = double.MaxValue;
                 for (int h = 0; h < res.HeadlandTracks.Count && h < 2; h++)
@@ -4697,9 +4602,179 @@ namespace AgOpenGPS.AutoPlan
                         double dd = (tp - mid).Length;
                         if (dd < bestD) { bestD = dd; track = h; }
                     }
-                res.EndPassLines.Add(lines);
+                // the copy moved along the passes into the field by half a pass, one and a half passes ...: every
+                // line is the same shape as the boundary of the end, nothing changed
+                var tester2 = new PolygonTester(fence);
+                var shifted = new List<List<V2>>();
+                {
+                    double ll = Math.Sqrt(planLaneDir.E * planLaneDir.E + planLaneDir.N * planLaneDir.N);
+                    V2 v = ll > 0.5 ? new V2(planLaneDir.E / ll, planLaneDir.N / ll) : Dir(copy[0], copy[copy.Count - 1]);
+                    V2 midC = copy[copy.Count / 2];
+                    if (!tester2.Inside(midC + v * 1.5)) v = new V2(-v.E, -v.N);
+                    for (int k = 0; k < laps; k++)
+                    {
+                        var line = new List<V2>(copy.Count);
+                        foreach (V2 p in copy) line.Add(p + v * ((k + 0.5) * W));
+                        // the ends that fall outside the field (a corner moved past the side) are cut off
+                        while (line.Count > 2 && !tester2.Inside(line[0])) line.RemoveAt(0);
+                        while (line.Count > 2 && !tester2.Inside(line[line.Count - 1])) line.RemoveAt(line.Count - 1);
+                        shifted.Add(line);
+                    }
+                }
+                res.EndPassLines.Add(shifted);
                 res.EndPassTrack.Add(track);
             }
+        }
+
+        /// <summary>
+        /// The boundary line of an end from corner to corner. Only part of an end is marked as end and the
+        /// boundary is resampled (the corners are rounded), so each corner is found as the crossing of the
+        /// end's own line and the line of the long side that follows it.
+        /// </summary>
+        private static List<V2> EndCornerToCorner(List<V2> fence, List<int> si, List<V2> st)
+        {
+            int n = fence.Count;
+            // line through points (principal direction)
+            bool Fit(List<V2> pts, out V2 p0, out V2 d)
+            {
+                p0 = new V2(0, 0); d = new V2(1, 0);
+                if (pts.Count < 3) return false;
+                double cE = 0, cN = 0;
+                foreach (V2 p in pts) { cE += p.E; cN += p.N; }
+                cE /= pts.Count; cN /= pts.Count;
+                double sEE = 0, sNN = 0, sEN = 0;
+                foreach (V2 p in pts) { double de = p.E - cE, dn = p.N - cN; sEE += de * de; sNN += dn * dn; sEN += de * dn; }
+                double ang = 0.5 * Math.Atan2(2 * sEN, sEE - sNN);
+                p0 = new V2(cE, cN);
+                d = new V2(Math.Cos(ang), Math.Sin(ang));
+                return true;
+            }
+            // vertices of the side beyond one end of the marked part, 3 to 20 m away
+            List<V2> SidePoints(int from, int dir)
+            {
+                var res = new List<V2>();
+                double len = 0;
+                int i = from;
+                for (int k = 0; k < n; k++)
+                {
+                    int j = ((i + dir) % n + n) % n;
+                    len += (fence[j] - fence[i]).Length;
+                    i = j;
+                    if (len > 20.0) break;
+                    if (len >= 3.0) res.Add(fence[j]);
+                }
+                return res;
+            }
+            // the end line near one corner: 3 to 10 m from that end of the marked part (its very end may already
+            // lie on the side)
+            List<V2> EndPart(bool first)
+            {
+                var res = new List<V2>();
+                double len = 0;
+                int k0 = first ? 0 : st.Count - 1, step = first ? 1 : -1;
+                for (int k = k0 + step; k >= 0 && k < st.Count && len <= 10.0; k += step)
+                {
+                    len += (st[k] - st[k - step]).Length;
+                    if (len >= 3.0) res.Add(st[k]);
+                }
+                return res;
+            }
+            bool Cross(V2 pa, V2 da, V2 pb, V2 db, out V2 x)
+            {
+                x = new V2(0, 0);
+                double den = da.E * db.N - da.N * db.E;
+                if (Math.Abs(den) < 0.15) return false;     // nearly parallel
+                double t = ((pb.E - pa.E) * db.N - (pb.N - pa.N) * db.E) / den;
+                x = pa + da * t;
+                return true;
+            }
+            var copy = new List<V2>(st);
+            // corner at the start of the marked part (side beyond it) and at its end
+            for (int side = 0; side < 2; side++)
+            {
+                bool first = side == 0;
+                int from = first ? si[0] : si[si.Count - 1];
+                var sp = SidePoints(from, first ? -1 : 1);
+                var ep = EndPart(first);
+                V2 anchor = first ? st[0] : st[st.Count - 1];
+                // the vertex with the sharpest turn of the boundary within 12 m of the end of the marked part
+                int sharp = from;
+                {
+                    double bestTurn = -1;
+                    foreach (int dir in new[] { -1, 1 })
+                    {
+                        double len = 0;
+                        int i = from;
+                        for (int k = 0; k < n; k++)
+                        {
+                            V2 din = Dir(fence[(i - 1 + n) % n], fence[i]);
+                            V2 dout = Dir(fence[i], fence[(i + 1) % n]);
+                            double turn = Math.Acos(Math.Max(-1.0, Math.Min(1.0, din.E * dout.E + din.N * dout.N)));
+                            if (turn > bestTurn) { bestTurn = turn; sharp = i; }
+                            int j = ((i + dir) % n + n) % n;
+                            len += (fence[j] - fence[i]).Length;
+                            if (len > 12.0) break;
+                            i = j;
+                        }
+                    }
+                }
+                V2 corner = fence[sharp];
+                // the boundary is resampled and the corner rounded off: the crossing of the end line and the side
+                // line puts it back, but only where it lies close to that vertex (an arc has no such crossing)
+                if (Fit(sp, out V2 sp0, out V2 sd) && Fit(ep, out V2 ep0, out V2 ed) && Cross(ep0, ed, sp0, sd, out V2 x)
+                    && (x - corner).Length < 0.6) corner = x;
+                // drop the marked points that lie beyond the corner, then start / finish exactly in the corner
+                V2 inward = first ? Dir(st[0], st[Math.Min(3, st.Count - 1)]) : Dir(st[st.Count - 1], st[Math.Max(0, st.Count - 4)]);
+                var kept = new List<V2>();
+                foreach (V2 p in copy)
+                    if ((p - corner).E * inward.E + (p - corner).N * inward.N >= 0) kept.Add(p);
+                if (kept.Count < 2) continue;
+                if (first) kept.Insert(0, corner); else kept.Add(corner);
+                copy = kept;
+            }
+            return copy;
+        }
+
+        /// <summary>
+        /// The copy of an end as the given (not resampled) boundary has it: the points of the original boundary
+        /// between the two ends of the copy, so corners and arcs are exactly as drawn.
+        /// </summary>
+        private static List<V2> SnapToRawBoundary(List<V2> copy)
+        {
+            List<V2> raw = planFenceRaw;
+            if (raw == null || raw.Count < 3 || copy.Count < 2) return copy;
+            int m = raw.Count;
+            int Nearest(V2 p)
+            {
+                int bi = 0; double bd = double.MaxValue;
+                for (int i = 0; i < m; i++) { double d = (raw[i] - p).Length; if (d < bd) { bd = d; bi = i; } }
+                return bd < 1.0 ? bi : -1;
+            }
+            int iA = Nearest(copy[0]), iB = Nearest(copy[copy.Count - 1]);
+            if (iA < 0 || iB < 0 || iA == iB) return copy;
+            double DistToCopy(V2 p)
+            {
+                double best = double.MaxValue;
+                for (int k = 0; k + 1 < copy.Count; k++) best = Math.Min(best, SegDistance(p, copy[k], copy[k + 1]));
+                return best;
+            }
+            List<V2> bestPath = null;
+            double bestErr = double.MaxValue;
+            foreach (int dir in new[] { 1, -1 })
+            {
+                var path = new List<V2>();
+                int i = iA;
+                double err = 0;
+                for (int k = 0; k <= m; k++)
+                {
+                    path.Add(raw[i]);
+                    err = Math.Max(err, DistToCopy(raw[i]));
+                    if (i == iB) break;
+                    i = ((i + dir) % m + m) % m;
+                }
+                if (path.Count > 1 && err < bestErr) { bestErr = err; bestPath = path; }
+            }
+            return bestPath != null && bestErr < 1.0 ? bestPath : copy;
         }
 
         private static List<List<V2>> EndTracks(List<V2> fence, int[] endRunId, double W, double s, Dictionary<int, double> endDist = null)
