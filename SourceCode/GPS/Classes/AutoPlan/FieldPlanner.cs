@@ -2365,8 +2365,10 @@ namespace AgOpenGPS.AutoPlan
                 List<int> idx = kv.Value;
                 if (idx.Count < 2) continue;
                 // straight line through the first and the last point of the end
+                // (the middle part of the end: its first and last points bend into the corners)
                 V2 a = loop[idx[0]], b = loop[idx[idx.Count - 1]];
-                V2 d = Dir(a, b);
+                int ia = idx.Count / 4, ib = idx.Count - 1 - idx.Count / 4;
+                V2 d = ib > ia ? Dir(loop[idx[ia]], loop[idx[ib]]) : Dir(a, b);
                 V2 nrm = new V2(-d.N, d.E);
                 V2 mid = new V2((a.E + b.E) * 0.5, (a.N + b.N) * 0.5);
                 // a point just inside the field next to the end gives the inward side
