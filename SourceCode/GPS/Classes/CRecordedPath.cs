@@ -82,6 +82,8 @@ namespace AgOpenGPS
         // When the sim speed buttons are used, the new ratio to the path speed is kept, so turns
         // stay slower than passes but at the speed level the user picked.
         private double simSpeedFactor = 1.0;
+        private bool lastPathReverse;
+        private int cuspHoldTicks;
         private double lastSimStep = double.NaN;
 
         private void SetSimSpeed(double pathStep)
@@ -98,6 +100,8 @@ namespace AgOpenGPS
         public bool StartDrivingRecordedPath()
         {
             lastSimStep = double.NaN;
+            lastPathReverse = false;
+            cuspHoldTicks = 0;
             //create the dubins path based on start and goal to start of recorded path
             A = B = C = 0;
 
@@ -273,7 +277,18 @@ namespace AgOpenGPS
                 //if end of the line then stop
                 if (!isEndOfTheRecLine)
                 {
-                    SetSimSpeed(recList[C].speed / 34.86);
+                    // at a change of driving direction (cusp of a three point turn) the simulated vehicle
+                    // stops until the wheels have turned to the other side, as a driver does; moving off
+                    // with the wheels still turned the wrong way ran the second arc up to 2 m off the path
+                    double stepSpeed = recList[C].speed / 34.86;
+                    bool nowReverse = recList[C].speed < 0;
+                    if (nowReverse != lastPathReverse) { lastPathReverse = nowReverse; cuspHoldTicks = 60; }
+                    if (cuspHoldTicks > 0)
+                    {
+                        cuspHoldTicks--;
+                        if (Math.Abs(mf.mc.actualSteerAngleDegrees - steerAngleRP) > 2.0) stepSpeed = 0;
+                    }
+                    SetSimSpeed(stepSpeed);
                     north = recList[C].northing;
 
                     pathCount = recList.Count - C;
