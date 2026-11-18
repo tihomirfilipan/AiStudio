@@ -389,6 +389,9 @@ namespace AgOpenGPS
             // Active path of the field, plus a named copy for the path picker
             FileSaveRecPath("RecPath.txt");
             FileSaveRecPath("AutoPlan.rec");
+            // and a copy under its own name (date and time), so earlier plans of the field stay in
+            // the path picker and can be loaded later
+            FileSaveRecPath("AutoPlan " + DateTime.Now.ToString("yyyy-MM-dd HH.mm.ss", CultureInfo.InvariantCulture) + ".rec");
 
             recPath.resumeState = 0;
             recPath.currentPositonIndex = 0;

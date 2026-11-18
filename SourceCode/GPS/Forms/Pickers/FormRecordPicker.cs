@@ -76,47 +76,52 @@ namespace AgOpenGPS.Forms.Pickers
                 string selectedRecord = lvLines.SelectedItems[0].SubItems[0].Text;
                 string selectedRecordPath = Path.Combine(RegistrySettings.fieldsDirectory, mf.currentFieldDirectory, selectedRecord + ".rec");
 
-                // Copy the selected record file to the original record name inside the field dir:
-                // ( this will load the last selected path automatically when this field is opened again)
-                File.Copy(selectedRecordPath, Path.Combine(RegistrySettings.fieldsDirectory, mf.currentFieldDirectory, "RecPath.txt"), true);
-                // and load the selected path into the recPath object:
-                string line;
-                if (File.Exists(selectedRecordPath))
+                // a path that is being driven is stopped first: its position index does not
+                // belong to the path loaded now (index past the end of a shorter path)
+                mf.recPath.StopDrivingRecordedPath();
+                mf.recPath.currentPositonIndex = 0;
+                mf.recPath.resumeState = 0;
+
+                if (!File.Exists(selectedRecordPath))
                 {
+                    FormDialog.Show(gStr.gsRecordedPathFileIsCorrupt, selectedRecord, DialogSeverity.Error);
+                    return;
+                }
+
+                try
+                {
+                    // read the whole file first, so a damaged file leaves the current path as it is
+                    var loaded = new List<CRecPathPt>();
                     using (StreamReader reader = new StreamReader(selectedRecordPath))
                     {
-                        try
+                        reader.ReadLine();                      // header
+                        int numPoints = int.Parse((reader.ReadLine() ?? "0").Trim(), CultureInfo.InvariantCulture);
+                        for (int v = 0; v < numPoints; v++)
                         {
-                            //read header
-                            line = reader.ReadLine();
-                            line = reader.ReadLine();
-                            int numPoints = int.Parse(line);
-                            mf.recPath.recList.Clear();
-
-                            while (!reader.EndOfStream)
-                            {
-                                for (int v = 0; v < numPoints; v++)
-                                {
-                                    line = reader.ReadLine();
-                                    string[] words = line.Split(',');
-                                    CRecPathPt point = new CRecPathPt(
-                                        double.Parse(words[0], CultureInfo.InvariantCulture),
-                                        double.Parse(words[1], CultureInfo.InvariantCulture),
-                                        double.Parse(words[2], CultureInfo.InvariantCulture),
-                                        double.Parse(words[3], CultureInfo.InvariantCulture),
-                                        bool.Parse(words[4]));
-
-                                    //add the point
-                                    mf.recPath.recList.Add(point);
-                                }
-                            }
-                        }
-                        catch (Exception ex)
-                        {
-                            FormDialog.Show(gStr.gsRecordedPathFileIsCorrupt, gStr.gsButFieldIsLoaded, DialogSeverity.Error);
-                            Log.EventWriter("Load Recorded Path" + ex.ToString());
+                            string line = reader.ReadLine();
+                            if (line == null) break;
+                            string[] words = line.Split(',');
+                            if (words.Length < 5) continue;
+                            loaded.Add(new CRecPathPt(
+                                double.Parse(words[0], CultureInfo.InvariantCulture),
+                                double.Parse(words[1], CultureInfo.InvariantCulture),
+                                double.Parse(words[2], CultureInfo.InvariantCulture),
+                                double.Parse(words[3], CultureInfo.InvariantCulture),
+                                bool.Parse(words[4].Trim())));
                         }
                     }
+
+                    mf.recPath.recList.Clear();
+                    mf.recPath.recList.AddRange(loaded);
+
+                    // the selected path becomes the active one of the field (loaded again when the
+                    // field is opened)
+                    mf.FileSaveRecPath();
+                }
+                catch (Exception ex)
+                {
+                    FormDialog.Show(gStr.gsRecordedPathFileIsCorrupt, gStr.gsButFieldIsLoaded, DialogSeverity.Error);
+                    Log.EventWriter("Load Recorded Path" + ex.ToString());
                 }
             }
         }

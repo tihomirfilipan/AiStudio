@@ -376,6 +376,11 @@ namespace AgOpenGPS
             double minDistA = 9999999999;
             double dist, dx, dz;
 
+            // the path can have been replaced (another one loaded) since the last position
+            if (ptCount < 2) return;
+            if (currentPositonIndex < 0 || currentPositonIndex > ptCount - 1) currentPositonIndex = 0;
+            A = Math.Max(0, Math.Min(ptCount - 1, A));
+
             //set the search range close to current position
             int top = currentPositonIndex + 5;
             if (top > ptCount) top = ptCount;

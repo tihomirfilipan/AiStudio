@@ -337,7 +337,16 @@ namespace AgOpenGPS
         // Save recorded path.
         public void FileSaveRecPath(string name = "RecPath.Txt")
         {
-            RecPathFiles.Save(GetFieldDir(true), recPath.recList, name);
+            try
+            {
+                RecPathFiles.Save(GetFieldDir(true), recPath.recList, name);
+            }
+            catch (Exception ex)
+            {
+                // a name the file system refuses, a locked file or a full disk must not close the app
+                Log.EventWriter("Save Recorded Path " + name + ": " + ex.ToString());
+                TimedMessageBox(3000, gStr.gsRecordedPathFileIsCorrupt, name);
+            }
         }
 
         // Load RecPath.txt (message if missing).
