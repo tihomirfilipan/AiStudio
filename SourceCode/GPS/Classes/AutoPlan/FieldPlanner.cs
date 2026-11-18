@@ -4582,6 +4582,58 @@ namespace AgOpenGPS.AutoPlan
             foreach (var st in stretches)
             {
                 if (st.Count < 3 || OpenLength(st) < 2.0 * W) continue;
+                // an end that is (nearly) straight: the passes are parallel straight lines. The line is fitted
+                // through the middle of the end (its points near the corners bend away).
+                {
+                    int lo = st.Count / 5, hi = st.Count - 1 - st.Count / 5;
+                    if (hi - lo >= 2)
+                    {
+                        double cE = 0, cN = 0;
+                        for (int k = lo; k <= hi; k++) { cE += st[k].E; cN += st[k].N; }
+                        cE /= hi - lo + 1; cN /= hi - lo + 1;
+                        double sEE = 0, sNN = 0, sEN = 0;
+                        for (int k = lo; k <= hi; k++)
+                        {
+                            double de = st[k].E - cE, dn = st[k].N - cN;
+                            sEE += de * de; sNN += dn * dn; sEN += de * dn;
+                        }
+                        double ang = 0.5 * Math.Atan2(2 * sEN, sEE - sNN);
+                        V2 ld = new V2(Math.Cos(ang), Math.Sin(ang));
+                        V2 ln = new V2(-ld.N, ld.E);
+                        double dev = 0;
+                        for (int k = lo; k <= hi; k++) dev = Math.Max(dev, Math.Abs((st[k].E - cE) * ln.E + (st[k].N - cN) * ln.N));
+                        if (dev < 1.0)
+                        {
+                            V2 cen = new V2(cE, cN);
+                            if (!tester.Inside(cen + ln * 1.5)) ln = new V2(-ln.E, -ln.N);
+                            var sl = new List<List<V2>>();
+                            for (int k = 0; k < laps; k++)
+                            {
+                                V2 org = cen + ln * ((k + 0.5) * W);
+                                var line = new List<V2>();
+                                for (double t = -400; t <= 400; t += 0.5)
+                                {
+                                    V2 q = org + ld * t;
+                                    if (tester.Inside(q)) line.Add(q);
+                                    else if (line.Count > 0 && t > 0) break;
+                                    else if (t < 0) line.Clear();
+                                }
+                                sl.Add(line.Count >= 3 ? line : new List<V2>());
+                            }
+                            int tr = 0;
+                            double bd = double.MaxValue;
+                            for (int h = 0; h < res.HeadlandTracks.Count && h < 2; h++)
+                                foreach (V2 tp in res.HeadlandTracks[h])
+                                {
+                                    double dd = (tp - cen).Length;
+                                    if (dd < bd) { bd = dd; tr = h; }
+                                }
+                            res.EndPassLines.Add(sl);
+                            res.EndPassTrack.Add(tr);
+                            continue;
+                        }
+                    }
+                }
                 var end = new List<V2>(st);
                 for (int it = 0; it < 2; it++)
                 {
