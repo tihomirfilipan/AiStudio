@@ -2327,6 +2327,72 @@ namespace AgOpenGPS.AutoPlan
         /// Ends moved inwards by their width, each offset line running straight on until it meets
         /// the side boundary; side points behind such a line (in the headland) are left out.
         /// </summary>
+        /// <summary>
+        /// Narrow field: the work area is the field cut by a straight line at the headland width
+        /// from every end (the line follows the end), nothing else is moved.
+        /// </summary>
+        private static List<V2> ClipEndsStraight(List<V2> loop, int[] endRunId, double[] width, PolygonTester tester, double s)
+        {
+            int n = loop.Count;
+            var runs = new Dictionary<int, List<int>>();
+            for (int i = 0; i < n; i++)
+                if (endRunId[i] >= 0)
+                {
+                    if (!runs.TryGetValue(endRunId[i], out var l)) runs[endRunId[i]] = l = new List<int>();
+                    l.Add(i);
+                }
+            List<V2> poly = new List<V2>(loop);
+            foreach (var kv in runs)
+            {
+                List<int> idx = kv.Value;
+                if (idx.Count < 2) continue;
+                // straight line through the first and the last point of the end
+                V2 a = loop[idx[0]], b = loop[idx[idx.Count - 1]];
+                V2 d = Dir(a, b);
+                V2 nrm = new V2(-d.N, d.E);
+                V2 mid = new V2((a.E + b.E) * 0.5, (a.N + b.N) * 0.5);
+                // a point just inside the field next to the end gives the inward side
+                var inside = new V2(0, 0);
+                double w = 0;
+                foreach (int i in idx) w += width[i];
+                w /= idx.Count;
+                bool found = false;
+                foreach (int i in idx)
+                {
+                    V2 q = loop[i];
+                    V2 t = Dir(loop[(i - 1 + n) % n], loop[(i + 1) % n]);
+                    V2 c = q + new V2(-t.N, t.E) * 1.0;
+                    if (tester.Inside(c)) { inside = c; found = true; break; }
+                }
+                if (!found) continue;
+                if ((inside.E - mid.E) * nrm.E + (inside.N - mid.N) * nrm.N < 0) nrm = new V2(-nrm.E, -nrm.N);
+                V2 origin = mid + nrm * w;
+                poly = ClipHalfPlane(poly, origin, nrm);
+                if (poly.Count < 3) return new List<V2>();
+            }
+            return ResampleLoop(poly, s);
+        }
+
+        // Sutherland-Hodgman: the part of the polygon on the side of the normal
+        private static List<V2> ClipHalfPlane(List<V2> poly, V2 origin, V2 nrm)
+        {
+            var res = new List<V2>();
+            int m = poly.Count;
+            double Side(V2 p) => (p.E - origin.E) * nrm.E + (p.N - origin.N) * nrm.N;
+            for (int i = 0; i < m; i++)
+            {
+                V2 p = poly[i], q = poly[(i + 1) % m];
+                double sp = Side(p), sq = Side(q);
+                if (sp >= 0) res.Add(p);
+                if ((sp >= 0) != (sq >= 0))
+                {
+                    double t = sp / (sp - sq);
+                    res.Add(new V2(p.E + (q.E - p.E) * t, p.N + (q.N - p.N) * t));
+                }
+            }
+            return res;
+        }
+
         private static List<V2> InsetEndsStraight(List<V2> loop, int[] endRunId, double[] width, double dist, double s)
         {
             int n = loop.Count;
@@ -2360,6 +2426,7 @@ namespace AgOpenGPS.AutoPlan
                     kept++;
                 }
                 if (attempt == 0 && kept * 10 >= ends) break;
+                if (attempt == 1) return ClipEndsStraight(loop, endRunId, width, tester, s);
             }
             int m = pts.Count;
             if (m < 3) return new List<V2>();
