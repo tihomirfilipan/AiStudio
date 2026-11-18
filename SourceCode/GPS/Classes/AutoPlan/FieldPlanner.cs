@@ -259,7 +259,7 @@ namespace AgOpenGPS.AutoPlan
             ReverseManeuver.DisablePear = !set.UsePear;
             ReverseManeuver.DisableTear = !set.UseTear;
             try { return BuildCore(fence, set, startPos, startHeading); }
-            finally { ReverseManeuver.ResetSwitches(); }
+            finally { ReverseManeuver.ResetSwitches(); workAreaTester = null; }
         }
 
         private static FieldPlanResult BuildCore(IList<V2> fence, FieldPlanSettings set, V2 startPos, double startHeading)
@@ -346,6 +346,8 @@ namespace AgOpenGPS.AutoPlan
         }
 
         [ThreadStatic] private static bool LastWedgeParallel;
+        // inside of the work area (without the headland): a pass is worked only there, the straight run on of a turn is not
+        [ThreadStatic] private static PolygonTester workAreaTester;
 
         public static List<List<V2>> SplitWedge(IList<V2> fenceIn, double turnRoom, out List<List<V2>> refs)
         {
@@ -777,6 +779,8 @@ namespace AgOpenGPS.AutoPlan
                     double along = (man[i].P - p0).E * d.E + (man[i].P - p0).N * d.N;
                     work = along <= level + 0.01;
                 }
+                // the headland is not worked: the straight run on past the work area is only driven
+                if (work && workAreaTester != null && !workAreaTester.Inside(man[i].P)) work = false;
                 path.Add(new PlanPoint { E = man[i].P.E, N = man[i].P.N, IsWork = work && !man[i].Reverse, IsReverse = man[i].Reverse });
             }
         }
@@ -1052,6 +1056,7 @@ namespace AgOpenGPS.AutoPlan
                 return;
             }
             res.WorkArea = work;
+            workAreaTester = new PolygonTester(work);
 
             // two pass families of a nearly parallel wedge, split between the long edges (the
             // passes of the two families meet side by side, not across a straight cut)
