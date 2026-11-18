@@ -44,6 +44,9 @@ namespace AgOpenGPS.Properties
         public bool setAutoPlan_turnsAtBoundary = true;
         public bool setAutoPlan_reverseTurns = false;
         public bool setAutoPlan_kkTurn = true;
+        public bool setAutoPlan_kTurn = true;
+        public bool setAutoPlan_klvTurn = true;
+        public bool setAutoPlan_findTurn = true;
         public bool setAutoPlan_avoidWorked = false;
         public bool setAutoPlan_splitField = false;
         public bool setAutoPlan_wedgeField = false;

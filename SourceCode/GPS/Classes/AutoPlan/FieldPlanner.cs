@@ -90,6 +90,9 @@ namespace AgOpenGPS.AutoPlan
         /// <summary>Use the short three point turn KK with the reversing option (needs FullLockRadius).</summary>
         public bool UseKK = true;
 
+        /// <summary>Each reversing turn can be switched off: K (KL/KD), KLV (KLV1/KDV1) and R (searched reversing turn).</summary>
+        public bool UseK = true, UseKLV = true, UseFind = true;
+
         /// <summary>Distance from the pivot (rear axle) to the front end of the vehicle, meters.</summary>
         public double FrontReach = 3.7;
 
@@ -1350,6 +1353,23 @@ namespace AgOpenGPS.AutoPlan
 
                 if (i > 0 && directTurns != null && directTurns.TryGetValue(i, out List<V2> dturn))
                 {
+                    // with the reversing option a turn between passes that run side by side in opposite
+                    // directions is KK, K or KLV1 where one fits (the planned half turn only otherwise)
+                    if (set.HeadlandReverseTurns)
+                    {
+                        LastPose(path, s, out V2 dlp, out double dlh);
+                        double deh = HeadingOf(pts[0], pts[Math.Min(3, pts.Count - 1)]);
+                        var dman = PickReverseTurn(path, dlp, dlh, pts[0], deh, set, fenceGrid, W, R, s, out int dcut);
+                        if (dman != null)
+                        {
+                            if (dcut < path.Count) path.RemoveRange(dcut, path.Count - dcut);
+                            AddManoeuvreWorked(path, dman);
+                            NoteTurnStart(dman);
+                            res.Turns++;
+                            AppendPoints(path, pts, true, true);
+                            continue;
+                        }
+                    }
                     AppendPoints(path, dturn, false, true);
                     if (CountOutside(dturn, fenceGrid) > 0) res.TurnsLeavingField++;
                     res.Turns++;
@@ -1381,11 +1401,11 @@ namespace AgOpenGPS.AutoPlan
                             if ((pj - lastP).Length > 2.0 * R) break;
                             if (j < path.Count - 1 && AheadEdgeDistance(fenceGrid, pj, lastH, 100.0) > lineRev + 0.5) break;
                             // ordinary K-turn (KL/KD) first; KLV1 (KDV1 on the other side) only where it does not pass
-                            man = ReverseManeuver.KTurn(pj, lastH, pts[0], entryH, R, s, fenceGrid.Clear)
-                                ?? ReverseManeuver.KLV1(pj, lastH, pts[0], entryH, R, s, fenceGrid.Clear);
+                            if (set.UseK) man = ReverseManeuver.KTurn(pj, lastH, pts[0], entryH, R, s, fenceGrid.Clear);
+                            if (man == null && set.UseKLV) man = ReverseManeuver.KLV1(pj, lastH, pts[0], entryH, R, s, fenceGrid.Clear);
                             if (man != null) { cut = j + 1; break; }
                         }
-                        if (man == null) man = ReverseManeuver.Find(lastP, lastH, pts[0], entryH, R, s, fenceGrid.Clear);
+                        if (man == null) { if (set.UseFind) man = ReverseManeuver.Find(lastP, lastH, pts[0], entryH, R, s, fenceGrid.Clear); }
                         else if (cut < path.Count) path.RemoveRange(cut, path.Count - cut);
                         if (man != null)
                         {
@@ -4020,6 +4040,30 @@ namespace AgOpenGPS.AutoPlan
 
         /// <summary>Distance rounded up to a whole number of work widths: the headland lines and tracks lie on the grid of the passes.</summary>
         private static double LapsDistance(double d, double W) => Math.Max(1, Math.Ceiling(d / W - 0.02)) * W;
+
+        /// <summary>
+        /// KK first, then the K-turn / KLV1 (starting up to two radii back on the pass), for a turn into the
+        /// pass that starts at 'start'. Null when none of them fits; cut is where the last pass point stays.
+        /// </summary>
+        private static List<ReverseManeuver.Pose> PickReverseTurn(List<PlanPoint> path, V2 lastP, double lastH, V2 start, double entryH,
+            FieldPlanSettings set, PolygonTester fenceGrid, double W, double R, double s, out int cut)
+        {
+            cut = path.Count;
+            List<ReverseManeuver.Pose> man = null;
+            if (set.UseKK && set.FullLockRadius > 0)
+                man = ReverseManeuver.KK(lastP, lastH, start, entryH, set.FullLockRadius, s, fenceGrid.Clear, fenceGrid.Inside, set.FrontReach, set.Wheelbase);
+            double lineRev = ReverseManeuver.KTurnReach(W, R) + W * 0.5 + 0.3;
+            for (int j = path.Count - 1; j >= 0 && man == null; j--)
+            {
+                V2 pj = new V2(path[j].E, path[j].N);
+                if ((pj - lastP).Length > 2.0 * R) break;
+                if (j < path.Count - 1 && AheadEdgeDistance(fenceGrid, pj, lastH, 100.0) > lineRev + 0.5) break;
+                if (set.UseK) man = ReverseManeuver.KTurn(pj, lastH, start, entryH, R, s, fenceGrid.Clear);
+                if (man == null && set.UseKLV) man = ReverseManeuver.KLV1(pj, lastH, start, entryH, R, s, fenceGrid.Clear);
+                if (man != null) cut = j + 1;
+            }
+            return man;
+        }
 
         private static List<V2> ResampleOpen(List<V2> line, double s)
         {

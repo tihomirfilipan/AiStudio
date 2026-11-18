@@ -24,7 +24,7 @@ namespace AgOpenGPS.Forms.Field
         private readonly PictureTile tileEnds, tileAllAround;
         private readonly PictureTile tileTurnsEdge, tileTurnsShort, tileTurnsReverse;
         private readonly PictureTile tileOrderAuto, tileOrderNeighbour, tileOrderSkip;
-        private readonly PictureTile tileWorkHeadland, tileExtraPass, tileAddTrack, tileAvoidWorked, tileKK, tileSplit, tileSlant, tileWedge, tileMiddle;
+        private readonly PictureTile tileWorkHeadland, tileExtraPass, tileAddTrack, tileAvoidWorked, tileKK, tileK, tileKLV, tileFind, tileSplit, tileSlant, tileWedge, tileMiddle;
 
         // live preview
         private readonly List<V2> fence;
@@ -212,8 +212,15 @@ namespace AgOpenGPS.Forms.Field
             tileExtraPass.Selected = set.setAutoPlan_extraPass;
             tileAddTrack.Selected = set.setAutoPlan_addTrack;
             tileAvoidWorked.Selected = set.setAutoPlan_avoidWorked;
-            tileKK = new PictureTile(T("Short turn KK (with reversing)", "Kratki okret KK (uz vožnju unazad)"), DrawKK);
+            // the reversing turns, each with its short name in the icon, each can be switched on and off
+            tileKK = new PictureTile(T("KK short turn", "KK kratki okret"), DrawKK);
             tileKK.Selected = set.setAutoPlan_kkTurn;
+            tileK = new PictureTile(T("K turn (KL/KD)", "K okret (KL/KD)"), DrawKTurn);
+            tileK.Selected = set.setAutoPlan_kTurn;
+            tileKLV = new PictureTile(T("KLV turn (KLV1/KDV1)", "KLV okret (KLV1/KDV1)"), DrawKLVTurn);
+            tileKLV.Selected = set.setAutoPlan_klvTurn;
+            tileFind = new PictureTile(T("RF searched reversing turn", "RF traženi okret unazad"), DrawFindTurn);
+            tileFind.Selected = set.setAutoPlan_findTurn;
             tileSplit = new PictureTile(T("Split field (own direction per part)", "Podijeli parcelu (svaki dio svoj smjer)"), DrawSplit);
             tileSplit.Selected = set.setAutoPlan_splitField;
             tileSlant = new PictureTile(T("Pass along a gently slanted edge", "Prohod uz kosu među"), DrawSlantPass);
@@ -223,7 +230,7 @@ namespace AgOpenGPS.Forms.Field
             tileMiddle = new PictureTile(T("Start in the middle", "Početak iz sredine"), DrawStartMiddle);
             tileMiddle.Selected = set.setAutoPlan_startMiddle;
             AddGroup(extras, T("Extras (tap to switch on/off)", "Dodatno (dodir uključi/isključi)"), false, -1,
-                tileWorkHeadland, tileExtraPass, tileAddTrack, tileAvoidWorked, tileKK, tileSplit, tileSlant, tileWedge, tileMiddle);
+                tileWorkHeadland, tileExtraPass, tileAddTrack, tileAvoidWorked, tileKK, tileK, tileKLV, tileFind, tileSplit, tileSlant, tileWedge, tileMiddle);
             // a wedge field starts in the middle (can be switched off again); after the group's own
             // click handler, so the wedge tile is already switched
             tileWedge.Click += (s, e) => { if (tileWedge.Selected) tileMiddle.Selected = true; };
@@ -233,7 +240,7 @@ namespace AgOpenGPS.Forms.Field
             previewTimer = new Timer { Interval = 450 };
             previewTimer.Tick += (s, e) => { previewTimer.Stop(); StartPreview(); };
             foreach (PictureTile t in new[] { tilePath, tileGuidance, tileEnds, tileAllAround, tileTurnsEdge, tileTurnsShort, tileTurnsReverse,
-                tileOrderAuto, tileOrderNeighbour, tileOrderSkip, tileWorkHeadland, tileExtraPass, tileAddTrack, tileAvoidWorked, tileKK, tileSplit, tileSlant, tileWedge, tileMiddle })
+                tileOrderAuto, tileOrderNeighbour, tileOrderSkip, tileWorkHeadland, tileExtraPass, tileAddTrack, tileAvoidWorked, tileKK, tileK, tileKLV, tileFind, tileSplit, tileSlant, tileWedge, tileMiddle })
                 t.Click += (s, e) => OptionsChanged();
             nudWidth.ValueChanged += (s, e) => OptionsChanged();
             nudRadius.ValueChanged += (s, e) => OptionsChanged();
@@ -356,6 +363,9 @@ namespace AgOpenGPS.Forms.Field
                 TurnsAtBoundary = tileTurnsEdge.Selected,
                 HeadlandReverseTurns = tileTurnsReverse.Selected,
                 UseKK = tileKK.Selected,
+                UseK = tileK.Selected,
+                UseKLV = tileKLV.Selected,
+                UseFind = tileFind.Selected,
                 AvoidWorked = tileAvoidWorked.Selected,
                 SplitField = tileSplit.Selected,
                 SlantEdgePass = tileSlant.Selected,
@@ -379,7 +389,7 @@ namespace AgOpenGPS.Forms.Field
             tileExtraPass.Selected = true;
             tileAddTrack.Selected = true;
             tileAvoidWorked.Selected = false;
-            tileKK.Selected = true;
+            tileKK.Selected = true; tileK.Selected = true; tileKLV.Selected = true; tileFind.Selected = true;
             tileSplit.Selected = false;
             tileSlant.Selected = false;
             tileWedge.Selected = false;
@@ -451,6 +461,9 @@ namespace AgOpenGPS.Forms.Field
             set.setAutoPlan_turnsAtBoundary = tileTurnsEdge.Selected;
             set.setAutoPlan_reverseTurns = tileTurnsReverse.Selected;
             set.setAutoPlan_kkTurn = tileKK.Selected;
+            set.setAutoPlan_kTurn = tileK.Selected;
+            set.setAutoPlan_klvTurn = tileKLV.Selected;
+            set.setAutoPlan_findTurn = tileFind.Selected;
             set.setAutoPlan_avoidWorked = tileAvoidWorked.Selected;
             set.setAutoPlan_splitField = tileSplit.Selected;
             set.setAutoPlan_slantPass = tileSlant.Selected;
@@ -577,6 +590,7 @@ namespace AgOpenGPS.Forms.Field
                     new Point(r.Left + 116, r.Top + 66), new Point(r.Left + 71, r.Top + 66)
                 });
             }
+            NameTag(g, r, "UM");
         }
 
         private static void DrawTurnsShort(Graphics g, Rectangle r)
@@ -588,9 +602,10 @@ namespace AgOpenGPS.Forms.Field
             int step = (r.Width - 36) / 5;
             for (int i = 0; i < 5; i += 2)
                 UTurn(g, i % 4 == 0 ? CTurn : CTurn2, r.Left + 18 + i * step, r.Left + 18 + (i + 1) * step, r.Top + 30, true);
+            NameTag(g, r, "KN");
         }
 
-        private static void DrawTurnsReverse(Graphics g, Rectangle r)
+        private static void ThreePointPicture(Graphics g, Rectangle r)
         {
             // three point turn into the neighbour pass: forward turn, back, forward
             Field(g, r);
@@ -607,8 +622,12 @@ namespace AgOpenGPS.Forms.Field
             }
             using (Pen p = P(CTurn2, 2.6f))
                 g.DrawArc(p, xb, r.Top + 12, 32, 44, 270, 90);              // forward into the next pass
-            using (var f = new Font("Tahoma", 9F, FontStyle.Bold))
-                g.DrawString("R", f, Brushes.White, r.Right - 24, r.Top + 4);
+        }
+
+        private static void DrawTurnsReverse(Graphics g, Rectangle r)
+        {
+            ThreePointPicture(g, r);
+            NameTag(g, r, "R");
         }
 
         private static void DrawKK(Graphics g, Rectangle r)
@@ -624,8 +643,57 @@ namespace AgOpenGPS.Forms.Field
                 g.DrawArc(p, xa, r.Top + 12, xb - xa, 30, 180, -150);          // back at full lock
             using (Pen p = P(CTurn2, 2.6f))
                 g.DrawArc(p, xa + (xb - xa) / 2, r.Top + 12, xb - xa, 30, 30, 150);   // forward into the next pass
-            using (var f = new Font("Tahoma", 9F, FontStyle.Bold))
-                g.DrawString("KK", f, Brushes.White, r.Right - 30, r.Top + 4);
+            NameTag(g, r, "KK");
+        }
+
+        private static void NameTag(Graphics g, Rectangle r, string name)
+        {
+            // short name of the turn in the corner of its icon
+            using (var f = new Font("Tahoma", 10F, FontStyle.Bold))
+            using (var bg = new SolidBrush(Color.FromArgb(170, 20, 24, 28)))
+            {
+                SizeF sz = g.MeasureString(name, f);
+                g.FillRectangle(bg, r.Right - sz.Width - 6, r.Top + 2, sz.Width + 4, sz.Height);
+                g.DrawString(name, f, Brushes.White, r.Right - sz.Width - 4, r.Top + 3);
+            }
+        }
+
+        private static void DrawKTurn(Graphics g, Rectangle r)
+        {
+            // K: forward arc towards the next pass (more than a quarter), short way back, forward into the pass
+            ThreePointPicture(g, r);
+            NameTag(g, r, "K");
+        }
+
+        private static void DrawKLVTurn(Graphics g, Rectangle r)
+        {
+            // KLV: forward arc away from the next pass, reversing arc back onto it, forward into the pass
+            Field(g, r);
+            using (var p = new Pen(Color.FromArgb(150, CHead), 1f) { DashStyle = DashStyle.Dash })
+                g.DrawLine(p, r.Left + 4, r.Top + 34, r.Right - 4, r.Top + 34);
+            Passes(g, r.Left + 30, r.Right - 30, r.Top + 34, r.Bottom - 6, 4, CPass);
+            int xa = r.Left + 30, xb = r.Left + 30 + (r.Width - 60) / 3;
+            using (Pen p = P(CTurn, 2.6f))
+                g.DrawArc(p, xa - 22, r.Top + 12, 44, 44, 0, -75);                // forward, away
+            using (var p = new Pen(Color.White, 2.6f) { DashStyle = DashStyle.Dash })
+                g.DrawArc(p, xa - 10, r.Top + 4, xb - xa + 20, 40, 210, -150);   // back onto the next pass
+            NameTag(g, r, "KLV");
+        }
+
+        private static void DrawFindTurn(Graphics g, Rectangle r)
+        {
+            // R: a searched turn of several short forward and reverse pieces
+            Field(g, r);
+            using (var p = new Pen(Color.FromArgb(150, CHead), 1f) { DashStyle = DashStyle.Dash })
+                g.DrawLine(p, r.Left + 4, r.Top + 34, r.Right - 4, r.Top + 34);
+            Passes(g, r.Left + 30, r.Right - 30, r.Top + 34, r.Bottom - 6, 4, CPass);
+            using (Pen p = P(CTurn, 2.4f))
+                g.DrawLines(p, new[] { new Point(r.Left + 30, r.Top + 34), new Point(r.Left + 44, r.Top + 16), new Point(r.Left + 62, r.Top + 12) });
+            using (var p = new Pen(Color.White, 2.4f) { DashStyle = DashStyle.Dash })
+                g.DrawLines(p, new[] { new Point(r.Left + 62, r.Top + 12), new Point(r.Left + 52, r.Top + 24), new Point(r.Left + 70, r.Top + 30) });
+            using (Pen p = P(CTurn2, 2.4f))
+                g.DrawLines(p, new[] { new Point(r.Left + 70, r.Top + 30), new Point(r.Left + 82, r.Top + 20), new Point(r.Left + 90, r.Top + 34) });
+            NameTag(g, r, "RF");
         }
 
         private static void DrawSplit(Graphics g, Rectangle r)
