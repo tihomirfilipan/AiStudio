@@ -85,7 +85,6 @@ namespace AgOpenGPS
         private bool lastPathReverse;
         private bool pathHasPlannedReverse;
         private int cuspHoldTicks;
-        private int cuspSettleTicks = -1;
         private double lastSimStep = double.NaN;
 
         private void SetSimSpeed(double pathStep)
@@ -105,7 +104,6 @@ namespace AgOpenGPS
             lastPathReverse = false;
             pathHasPlannedReverse = recList.Exists(q => q.speed < 0);
             cuspHoldTicks = 0;
-            cuspSettleTicks = -1;
             //create the dubins path based on start and goal to start of recorded path
             A = B = C = 0;
 
@@ -286,7 +284,7 @@ namespace AgOpenGPS
                     // with the wheels still turned the wrong way ran the second arc up to 2 m off the path
                     double stepSpeed = recList[C].speed / 34.86;
                     bool nowReverse = recList[C].speed < 0;
-                    if (nowReverse != lastPathReverse) { lastPathReverse = nowReverse; cuspHoldTicks = 150; cuspSettleTicks = -1; }
+                    if (nowReverse != lastPathReverse) { lastPathReverse = nowReverse; cuspHoldTicks = 150; }
                     if (cuspHoldTicks > 0)
                     {
                         cuspHoldTicks--;
@@ -294,7 +292,6 @@ namespace AgOpenGPS
                         if (Math.Abs(mf.mc.actualSteerAngleDegrees - steerAngleRP * 0.9) > 2.0)
                         {
                             stepSpeed = 0;                 // the wheels are still turning
-                            cuspSettleTicks = -1;
                         }
                         else cuspHoldTicks = 0;        // wheels turned: move off at once
                     }
