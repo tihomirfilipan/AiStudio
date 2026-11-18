@@ -14,7 +14,33 @@ namespace AgOpenGPS.AutoPlan
         // turn that is off is not used at any place (all false = all on)
         [ThreadStatic] public static bool DisableK, DisableKLV, DisableKK, DisableFind, DisablePear, DisableTear;
 
-        public static void ResetSwitches() { DisableK = DisableKLV = DisableKK = DisableFind = DisablePear = DisableTear = false; }
+        public static void ResetSwitches() { DisableK = DisableKLV = DisableKK = DisableFind = DisablePear = DisableTear = false; NoseOk = null; BodyReach = 0; }
+
+        /// <summary>
+        /// The front end of the vehicle: BodyReach metres ahead of the rear axle, in the direction the vehicle
+        /// faces; NoseOk says where it may be (inside the field, a clearance from the boundary). Set by the
+        /// planner for the thread that builds a plan; without it the body is not checked.
+        /// </summary>
+        [ThreadStatic] public static Func<V2, bool> NoseOk;
+        [ThreadStatic] public static double BodyReach;
+
+        /// <summary>True when the front end stays where it may be along the whole manoeuvre.</summary>
+        public static bool BodyFits(List<Pose> pts)
+        {
+            if (NoseOk == null || BodyReach <= 0 || pts.Count < 2) return true;
+            for (int i = 0; i < pts.Count; i++)
+            {
+                int a = i < pts.Count - 1 ? i : i - 1, b = a + 1;
+                V2 mv = pts[b].P - pts[a].P;
+                double len = mv.Length;
+                if (len < 1e-6) continue;
+                // nose heading: the direction of travel, the opposite one when reversing
+                double sgn = pts[i].Reverse ? -1.0 : 1.0;
+                V2 nose = pts[i].P + mv * (sgn * BodyReach / len);
+                if (!NoseOk(nose)) return false;
+            }
+            return true;
+        }
 
         public struct Pose
         {
@@ -99,6 +125,7 @@ namespace AgOpenGPS.AutoPlan
                 n = Steps(len);
                 for (int i = 1; i <= n; i++) Add(q + (p1 - q) * (i / (double)n), false);
                 foreach (Pose pp in pts) if (!inside(pp.P)) return null;
+                if (!BodyFits(pts)) return null;
                 return pts;
             }
 
@@ -187,6 +214,7 @@ namespace AgOpenGPS.AutoPlan
                 n = Steps(len);
                 for (int i = 1; i <= n; i++) Add(q + toP * (i / (double)n), false);
                 foreach (Pose pp in pts) if (!inside(pp.P)) return null;
+                if (!BodyFits(pts)) return null;
                 return pts;
             }
 
@@ -379,6 +407,7 @@ namespace AgOpenGPS.AutoPlan
                 int ne = Steps(len);
                 for (int i = 1; i <= ne && len > 1e-6; i++) Add(qEnd + toP * (i / (double)ne));
                 foreach (Pose pp in pts) if (!inside(pp.P)) return null;
+                if (!BodyFits(pts)) return null;
                 return pts;
             }
             if (!nearBoundary)

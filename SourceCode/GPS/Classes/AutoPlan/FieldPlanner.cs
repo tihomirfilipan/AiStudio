@@ -93,6 +93,9 @@ namespace AgOpenGPS.AutoPlan
         /// <summary>Headland passes worked along each end of the passes (the outermost ones first); 0 = all laps of the headland.</summary>
         public int EndPasses = 1;
 
+        /// <summary>Smallest distance of the front end of the vehicle from the boundary at the pass ends, meters (a ravine or a tree beyond the boundary).</summary>
+        public double EndClearance = 1.0;
+
         /// <summary>
         /// The drive may start at any corner of the field: of the long edges that run alike the one with the end
         /// nearest to the vehicle gets the first pass (not with an edge picked by hand, a start from the middle,
@@ -1265,6 +1268,13 @@ namespace AgOpenGPS.AutoPlan
 
             // --- Order passes and build turns ---
             var fenceGrid = new PolygonTester(fence);
+            // the front end must keep a distance from the boundary in every turn: K, KLV, KK and the loops
+            ReverseManeuver.BodyReach = set.FrontReach;
+            {
+                PolygonTester fg = fenceGrid;
+                double endClear = Math.Max(0.0, set.EndClearance);
+                ReverseManeuver.NoseOk = p => fg.Inside(p) && (endClear <= 0.0 || fg.EdgeDistance(p, endClear + 1.0) >= endClear);
+            }
             // turns and transfers must keep the tool inside: half a width from the boundary
             fenceGrid.SetClearance(fence, Math.Max(0.0, W * 0.5 - 0.3));
             // pass along gently slanted ends, parallel to the boundary: driven first, from its end
@@ -1494,7 +1504,7 @@ namespace AgOpenGPS.AutoPlan
                         // short three point turn (KK) first: straight on until the front end is at the
                         // boundary, back at full lock, forward at full lock into the next pass
                         if (set.UseKK && set.FullLockRadius > 0)
-                            man = ReverseManeuver.KK(lastP, lastH, pts[0], entryH, set.FullLockRadius, s, fenceGrid.Clear, fenceGrid.Inside, set.FrontReach, set.Wheelbase);
+                            man = ReverseManeuver.KK(lastP, lastH, pts[0], entryH, set.FullLockRadius, s, fenceGrid.Clear, ReverseManeuver.NoseOk ?? fenceGrid.Inside, set.FrontReach, set.Wheelbase);
                         for (int j = path.Count - 1; j >= 0 && man == null; j--)
                         {
                             V2 pj = new V2(path[j].E, path[j].N);
@@ -4191,7 +4201,7 @@ namespace AgOpenGPS.AutoPlan
             cut = path.Count;
             List<ReverseManeuver.Pose> man = null;
             if (set.UseKK && set.FullLockRadius > 0)
-                man = ReverseManeuver.KK(lastP, lastH, start, entryH, set.FullLockRadius, s, fenceGrid.Clear, fenceGrid.Inside, set.FrontReach, set.Wheelbase);
+                man = ReverseManeuver.KK(lastP, lastH, start, entryH, set.FullLockRadius, s, fenceGrid.Clear, ReverseManeuver.NoseOk ?? fenceGrid.Inside, set.FrontReach, set.Wheelbase);
             double lineRev = ReverseManeuver.KTurnReach(W, R) + W * 0.5 + 0.3;
             for (int j = path.Count - 1; j >= 0 && man == null; j--)
             {
