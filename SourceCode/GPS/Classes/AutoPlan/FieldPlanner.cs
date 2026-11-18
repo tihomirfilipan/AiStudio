@@ -348,6 +348,9 @@ namespace AgOpenGPS.AutoPlan
         [ThreadStatic] private static bool LastWedgeParallel;
         // inside of the work area (without the headland): a pass is worked only there, the straight run on of a turn is not
         [ThreadStatic] private static PolygonTester workAreaTester;
+        [ThreadStatic] private static double planWorkWidth;
+        // the cut lines of the narrow field headland (the headland track of an end lies on them)
+        [ThreadStatic] private static List<List<V2>> endCutLines;
 
         public static List<List<V2>> SplitWedge(IList<V2> fenceIn, double turnRoom, out List<List<V2>> refs)
         {
@@ -963,6 +966,8 @@ namespace AgOpenGPS.AutoPlan
         private static void BuildInternal(IList<V2> fenceIn, FieldPlanSettings set, V2 startPos, double startHeading, FieldPlanResult res)
         {
             double W = set.WorkWidth;
+            planWorkWidth = W;
+            endCutLines = new List<List<V2>>();
             double R = set.TurnRadius;
             if (fenceIn == null || fenceIn.Count < 3) { res.Error = "No boundary"; return; }
             if (W < 0.5) { res.Error = "Work width too small"; return; }
@@ -1836,6 +1841,17 @@ namespace AgOpenGPS.AutoPlan
                             if (endId >= 0 && !trackDist.ContainsKey(endId)) trackDist[endId] = LapsDistance(lineD, W);
                     }
                     res.HeadlandTracks = EndTracks(fence, endRunId, W, s, trackDist);
+                    // an end that got no track (a narrow field) gets one on its cut line
+                    if (endCutLines != null)
+                        foreach (var cl in endCutLines)
+                        {
+                            V2 cm = cl[cl.Count / 2];
+                            bool have = false;
+                            foreach (var tr in res.HeadlandTracks)
+                                foreach (V2 tp in tr)
+                                    if ((tp - cm).Length < 3.0 * W) { have = true; break; }
+                            if (!have && res.HeadlandTracks.Count < 2) res.HeadlandTracks.Add(cl);
+                        }
                 }
             }
             else
@@ -2369,8 +2385,41 @@ namespace AgOpenGPS.AutoPlan
                 if (!found) continue;
                 if ((inside.E - mid.E) * nrm.E + (inside.N - mid.N) * nrm.N < 0) nrm = new V2(-nrm.E, -nrm.N);
                 V2 origin = mid + nrm * w;
-                poly = ClipHalfPlane(poly, origin, nrm);
+                List<V2> chordCut = ClipHalfPlane(poly, origin, nrm);
+                // the cut follows the end (the same line as the headland track), where the end bends
+                List<V2> followed = null;
+                List<V2> track = planWorkWidth > 0 ? EndOffsetLine(loop, idx, w, planWorkWidth, s) : null;
+                if (track != null && track.Count >= 3)
+                {
+                    followed = poly;
+                    int step = Math.Max(1, track.Count / 12);
+                    for (int k = 0; k + step < track.Count + step && followed.Count >= 3; k += step)
+                    {
+                        V2 u = track[k], v = track[Math.Min(track.Count - 1, k + step)];
+                        if ((v - u).Length < 1e-6) break;
+                        V2 td = Dir(u, v);
+                        V2 tn = new V2(-td.N, td.E);
+                        if ((inside.E - u.E) * tn.E + (inside.N - u.N) * tn.N < 0) tn = new V2(-tn.E, -tn.N);
+                        followed = ClipHalfPlane(followed, u, tn);
+                        if (k + step >= track.Count - 1) break;
+                    }
+                }
+                // not worth following when it cuts away far more than the straight cut
+                if (followed != null && followed.Count >= 3 && Math.Abs(SignedArea(followed)) >= 0.85 * Math.Abs(SignedArea(chordCut)))
+                    poly = followed;
+                else
+                    poly = chordCut;
                 if (poly.Count < 3) return new List<V2>();
+                // the cut line itself (inside the field) is where the headland track runs
+                var cutLine = new List<V2>();
+                for (double t = -300; t <= 300; t += s)
+                {
+                    V2 q = origin + d * t;
+                    if (tester.Inside(q)) cutLine.Add(q);
+                    else if (cutLine.Count > 0 && t > 0) break;
+                    else if (t < 0) cutLine.Clear();
+                }
+                if (cutLine.Count >= 3 && endCutLines != null) endCutLines.Add(cutLine);
             }
             return ResampleLoop(poly, s);
         }
