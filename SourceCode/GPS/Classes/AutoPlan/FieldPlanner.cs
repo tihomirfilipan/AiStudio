@@ -1109,7 +1109,10 @@ namespace AgOpenGPS.AutoPlan
                         if (nearFirst != null)
                         {
                             var apart = new List<List<V2>>();
-                            foreach (var run in runs) apart.AddRange(RunsWhere(run, p => firstPts.Count == 0 || MinDistTo(firstPts, p) >= 0.8 * W));
+                            // (a pass may come as close as 0.6 widths to one of the first family: where the field is
+                            // only about seven passes wide the lane between them is kept, otherwise the strip
+                            // between the two families was left unworked)
+                            foreach (var run in runs) apart.AddRange(RunsWhere(run, p => firstPts.Count == 0 || MinDistTo(firstPts, p) >= 0.6 * W));
                             runs = apart;
                         }
                         List<V2> best = null;
