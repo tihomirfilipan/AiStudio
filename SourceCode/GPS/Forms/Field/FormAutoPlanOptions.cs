@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Globalization;
+using System.Linq;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 
@@ -697,20 +698,78 @@ namespace AgOpenGPS.Forms.Field
             NameTag(g, r, "R");
         }
 
-        private static void DrawKK(Graphics g, Rectangle r)
+        private static void DrawKK(Graphics g, Rectangle r) => TurnIcon(g, r, "KK");
+
+        // Icons of the reversing turns are drawn from the real manoeuvre the planner makes
+        // (the same ReverseManeuver code) on a model scene: pass 1 ends on the headland line,
+        // the turn goes to pass 2, which is then driven back.
+        private static readonly Dictionary<string, List<ReverseManeuver.Pose>> turnIconCache = new Dictionary<string, List<ReverseManeuver.Pose>>();
+
+        private static List<ReverseManeuver.Pose> IconTurn(string kind, out double gap)
         {
-            // short three point turn: straight on to the boundary, back at full lock, forward at full
-            // lock into the neighbour pass
+            gap = kind == "KK" || kind == "KRU" || kind == "SUZ" ? 3.0 : kind == "RF" ? 5.0 : 8.0;
+            if (turnIconCache.TryGetValue(kind, out var cached)) return cached;
+            double R = 5.6, Rk = 1.15 * 2.72 / Math.Tan(52 * Math.PI / 180);
+            double bound = kind == "KRU" || kind == "SUZ" ? 30.0 : kind == "RF" ? 6.0 : 14.0;
+            Func<V2, bool> inside = q => q.N <= bound;
+            var a = new V2(0, 0);
+            var b = new V2(gap, 0);
+            List<ReverseManeuver.Pose> res = null;
+            try
+            {
+                switch (kind)
+                {
+                    case "K": res = ReverseManeuver.KTurn(a, 0, b, Math.PI, R, 0.25, inside); break;
+                    case "KK": res = ReverseManeuver.KK(a, 0, b, Math.PI, Rk, 0.25, inside, inside, 3.72, 2.72); break;
+                    case "KLV": res = ReverseManeuver.KLV1(a, 0, b, Math.PI, R, 0.25, inside); break;
+                    case "KRU": res = ReverseManeuver.LoopTurn(a, 0, b, Math.PI, R, 0.25, inside, 270.0); break;
+                    case "SUZ": res = ReverseManeuver.LoopTurn(a, 0, b, Math.PI, R, 0.25, inside, 225.0); break;
+                    case "RF": res = ReverseManeuver.Find(a, 0, b, Math.PI, R, 0.25, inside); break;
+                }
+            }
+            catch { res = null; }
+            turnIconCache[kind] = res;
+            return res;
+        }
+
+        private static void TurnIcon(Graphics g, Rectangle r, string kind)
+        {
             Field(g, r);
-            using (var p = new Pen(Color.FromArgb(150, CHead), 1f) { DashStyle = DashStyle.Dash })
-                g.DrawLine(p, r.Left + 4, r.Top + 34, r.Right - 4, r.Top + 34);
-            Passes(g, r.Left + 30, r.Right - 30, r.Top + 34, r.Bottom - 6, 4, CPass);
-            int xa = r.Left + 30, xb = r.Left + 30 + (r.Width - 60) / 3;
-            using (var p = new Pen(Color.White, 2.6f) { DashStyle = DashStyle.Dash })
-                g.DrawArc(p, xa, r.Top + 12, xb - xa, 30, 180, -150);          // back at full lock
-            using (Pen p = P(CTurn2, 2.6f))
-                g.DrawArc(p, xa + (xb - xa) / 2, r.Top + 12, xb - xa, 30, 30, 150);   // forward into the next pass
-            NameTag(g, r, "KK");
+            List<ReverseManeuver.Pose> pts = IconTurn(kind, out double gap);
+            if (pts != null && pts.Count > 1)
+            {
+                double minE = Math.Min(0, pts.Min(q => q.P.E)), maxE = Math.Max(gap, pts.Max(q => q.P.E));
+                double minN = -4.0, maxN = Math.Max(1.0, pts.Max(q => q.P.N));
+                double sc = Math.Min((r.Width - 24) / Math.Max(1, maxE - minE), (r.Height - 24) / Math.Max(1, maxN - minN));
+                float ox = r.Left + (float)((r.Width - (maxE - minE) * sc) / 2), oy = r.Top + 18 + (float)((r.Height - 24 - (maxN - minN) * sc) / 2);
+                PointF Q(double e, double n) => new PointF(ox + (float)((e - minE) * sc), oy + (float)((maxN - n) * sc));
+                // headland line and the passes
+                using (var p = new Pen(Color.FromArgb(150, CHead), 1f) { DashStyle = DashStyle.Dash })
+                    g.DrawLine(p, r.Left + 4, Q(0, 0).Y, r.Right - 4, Q(0, 0).Y);
+                using (Pen p = P(CPass, 1.6f))
+                    for (int k = -3; k <= 4; k++)
+                    {
+                        double e = k * gap;
+                        if (e < minE - 0.5 * gap || e > maxE + 0.5 * gap) continue;
+                        g.DrawLine(p, Q(e, 0), Q(e, minN));
+                    }
+                // pass 2, driven back after the turn
+                using (Pen p = P(CTurn2, 2.6f)) g.DrawLine(p, Q(gap, 0), Q(gap, minN));
+                // the turn: forward solid, reverse white dashed
+                int i0 = 0;
+                while (i0 < pts.Count - 1)
+                {
+                    bool rev = pts[i0 + 1].Reverse;
+                    int i1 = i0 + 1;
+                    while (i1 + 1 < pts.Count && pts[i1 + 1].Reverse == rev) i1++;
+                    var line = new PointF[i1 - i0 + 1];
+                    for (int k = i0; k <= i1; k++) line[k - i0] = Q(pts[k].P.E, pts[k].P.N);
+                    using (var pen = rev ? new Pen(Color.White, 2.6f) { DashStyle = DashStyle.Dash } : P(CTurn, 2.6f))
+                        g.DrawLines(pen, line);
+                    i0 = i1;
+                }
+            }
+            NameTag(g, r, kind);
         }
 
         private static void NameTag(Graphics g, Rectangle r, string name)
@@ -725,79 +784,15 @@ namespace AgOpenGPS.Forms.Field
             }
         }
 
-        private static void DrawKTurn(Graphics g, Rectangle r)
-        {
-            // K: forward arc towards the next pass (more than a quarter), short way back, forward into the pass
-            ThreePointPicture(g, r);
-            NameTag(g, r, "K");
-        }
+        private static void DrawKTurn(Graphics g, Rectangle r) => TurnIcon(g, r, "K");
 
-        private static void DrawKLVTurn(Graphics g, Rectangle r)
-        {
-            // KLV: forward arc away from the next pass, reversing arc back onto it, forward into the pass
-            Field(g, r);
-            using (var p = new Pen(Color.FromArgb(150, CHead), 1f) { DashStyle = DashStyle.Dash })
-                g.DrawLine(p, r.Left + 4, r.Top + 34, r.Right - 4, r.Top + 34);
-            Passes(g, r.Left + 30, r.Right - 30, r.Top + 34, r.Bottom - 6, 4, CPass);
-            int xa = r.Left + 30, xb = r.Left + 30 + (r.Width - 60) / 3;
-            using (Pen p = P(CTurn, 2.6f))
-                g.DrawArc(p, xa - 22, r.Top + 12, 44, 44, 0, -75);                // forward, away
-            using (var p = new Pen(Color.White, 2.6f) { DashStyle = DashStyle.Dash })
-                g.DrawArc(p, xa - 10, r.Top + 4, xb - xa + 20, 40, 210, -150);   // back onto the next pass
-            NameTag(g, r, "KLV");
-        }
+        private static void DrawKLVTurn(Graphics g, Rectangle r) => TurnIcon(g, r, "KLV");
 
-        private static void DrawPearTurn(Graphics g, Rectangle r)
-        {
-            // KRU: out of the pass, a loop of 270 degrees away from the next pass, straight back across, 90 degrees into it
-            Field(g, r);
-            using (var p = new Pen(Color.FromArgb(150, CHead), 1f) { DashStyle = DashStyle.Dash })
-                g.DrawLine(p, r.Left + 4, r.Top + 40, r.Right - 4, r.Top + 40);
-            Passes(g, r.Left + 30, r.Right - 30, r.Top + 40, r.Bottom - 6, 4, CPass);
-            int xa = r.Left + 30, xb = r.Left + 30 + (r.Width - 60) / 3;
-            using (Pen p = P(CTurn, 2.6f))
-            {
-                g.DrawArc(p, xa - 26, r.Top + 12, 36, 36, 90, 270);                 // the loop away
-                g.DrawLine(p, xa - 8, r.Top + 12, xb - 8, r.Top + 12);              // straight towards the pass
-            }
-            using (Pen p = P(CTurn2, 2.6f))
-                g.DrawArc(p, xb - 8, r.Top + 12, 30, 30, 270, 90);                  // back into the pass
-            NameTag(g, r, "KRU");
-        }
+        private static void DrawPearTurn(Graphics g, Rectangle r) => TurnIcon(g, r, "KRU");
 
-        private static void DrawTearTurn(Graphics g, Rectangle r)
-        {
-            // SUZ: out of the pass, a loop of 225 degrees away, a diagonal straight across, 45 degrees into the pass
-            Field(g, r);
-            using (var p = new Pen(Color.FromArgb(150, CHead), 1f) { DashStyle = DashStyle.Dash })
-                g.DrawLine(p, r.Left + 4, r.Top + 40, r.Right - 4, r.Top + 40);
-            Passes(g, r.Left + 30, r.Right - 30, r.Top + 40, r.Bottom - 6, 4, CPass);
-            int xa = r.Left + 30, xb = r.Left + 30 + (r.Width - 60) / 3;
-            using (Pen p = P(CTurn, 2.6f))
-            {
-                g.DrawArc(p, xa - 22, r.Top + 14, 32, 32, 90, 225);
-                g.DrawLine(p, xa - 10, r.Top + 40, xb - 6, r.Top + 62);
-            }
-            using (Pen p = P(CTurn2, 2.6f))
-                g.DrawLine(p, xb - 6, r.Top + 62, xb, r.Bottom - 6);
-            NameTag(g, r, "SUZ");
-        }
+        private static void DrawTearTurn(Graphics g, Rectangle r) => TurnIcon(g, r, "SUZ");
 
-        private static void DrawFindTurn(Graphics g, Rectangle r)
-        {
-            // R: a searched turn of several short forward and reverse pieces
-            Field(g, r);
-            using (var p = new Pen(Color.FromArgb(150, CHead), 1f) { DashStyle = DashStyle.Dash })
-                g.DrawLine(p, r.Left + 4, r.Top + 34, r.Right - 4, r.Top + 34);
-            Passes(g, r.Left + 30, r.Right - 30, r.Top + 34, r.Bottom - 6, 4, CPass);
-            using (Pen p = P(CTurn, 2.4f))
-                g.DrawLines(p, new[] { new Point(r.Left + 30, r.Top + 34), new Point(r.Left + 44, r.Top + 16), new Point(r.Left + 62, r.Top + 12) });
-            using (var p = new Pen(Color.White, 2.4f) { DashStyle = DashStyle.Dash })
-                g.DrawLines(p, new[] { new Point(r.Left + 62, r.Top + 12), new Point(r.Left + 52, r.Top + 24), new Point(r.Left + 70, r.Top + 30) });
-            using (Pen p = P(CTurn2, 2.4f))
-                g.DrawLines(p, new[] { new Point(r.Left + 70, r.Top + 30), new Point(r.Left + 82, r.Top + 20), new Point(r.Left + 90, r.Top + 34) });
-            NameTag(g, r, "RF");
-        }
+        private static void DrawFindTurn(Graphics g, Rectangle r) => TurnIcon(g, r, "RF");
 
         private static void DrawSplit(Graphics g, Rectangle r)
         {
