@@ -926,7 +926,11 @@ namespace AgOpenGPS.AutoPlan
             if (set.HeadlandReverseTurns && W < 2.0 * R)
             {
                 double need = ReverseManeuver.KTurnReach(W, R) + W * 0.5 + 1.0;
-                laps = Math.Max(laps, (int)Math.Ceiling(need / W));
+                int lapsNeed = (int)Math.Ceiling(need / W);
+                // with the short turn KK the headland stays 3 to 4 passes wide (the driver works it by
+                // hand), however wide the K-turn would like it
+                if (set.UseKK && set.FullLockRadius > 0) lapsNeed = Math.Min(lapsNeed, Math.Max(3, (int)Math.Ceiling(12.0 / W)));
+                laps = Math.Max(laps, lapsNeed);
             }
             double headWidth = laps * W;
 
