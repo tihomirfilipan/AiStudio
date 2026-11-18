@@ -1000,7 +1000,9 @@ namespace AgOpenGPS.AutoPlan
                 // with the short turn KK the headland stays 3 to 4 passes wide (the driver works it by
                 // hand), however wide the K-turn would like it
                 if (set.UseKK && set.FullLockRadius > 0) lapsNeed = Math.Min(lapsNeed, Math.Max(3, (int)Math.Ceiling(12.0 / W)));
-                laps = Math.Max(laps, lapsNeed);
+                // the number of headland passes chosen (2, 3 or 4) is kept as it is with the short turn KK
+                if (set.UseKK && set.FullLockRadius > 0 && set.HeadlandLaps >= 2 && set.HeadlandLaps <= 4) laps = set.HeadlandLaps;
+                else laps = Math.Max(laps, lapsNeed);
             }
             double headWidth = laps * W;
 
