@@ -3414,6 +3414,27 @@ namespace AgOpenGPS.AutoPlan
                 if (eb > 1e-6) Arc(lb / eb, -eb);
                 return pts;
             }
+            // the arcs (out of the pass and into the next one) stay the same for every gap: they are solved for the
+            // reference gap at most, a wider gap is made up by a straight piece along the boundary at the top
+            double gSolve = Math.Min(g, 2.0 * R + 0.6);
+            List<V2> MakeFull(double y1, double rr, double ea, double la, double eb, double lb)
+            {
+                List<V2> m = Make(y1, rr, ea, la, eb, lb);
+                if (g - gSolve < 0.01) return m;
+                int ap = 0;
+                for (int i = 1; i < m.Count; i++) if (m[i].N > m[ap].N) ap = i;
+                if (ap < 1 || ap + 1 >= m.Count) return m;
+                double hAp = Math.Atan2(m[ap + 1].E - m[ap - 1].E, m[ap + 1].N - m[ap - 1].N);
+                double sinH = Math.Sin(hAp);
+                if (sinH < 0.5) return m;
+                double T = (g - gSolve) / sinH;
+                var full = new List<V2>(m.GetRange(0, ap + 1));
+                int steps = Math.Max(1, (int)(T / Step));
+                for (int k = 1; k <= steps; k++) full.Add(new V2(m[ap].E + Math.Sin(hAp) * T * k / steps, m[ap].N + Math.Cos(hAp) * T * k / steps));
+                V2 shift = new V2(Math.Sin(hAp) * T, Math.Cos(hAp) * T);
+                for (int i = ap + 1; i < m.Count; i++) full.Add(new V2(m[i].E + shift.E, m[i].N + shift.N));
+                return full;
+            }
             V2 ToGlobal(V2 q) => p0 + d0 * q.N + ns * q.E;
             bool Fits(List<V2> local)
             {
@@ -3431,13 +3452,13 @@ namespace AgOpenGPS.AutoPlan
             // radius of the arc so that the tractor ends on the line of the next pass
             double SolveRadius(double ea, double la, double eb, double lb)
             {
-                double lo = R, hi = g;
-                if (Make(0, lo, ea, la, eb, lb)[Make(0, lo, ea, la, eb, lb).Count - 1].E > g) return -1;   // gap too small for the smallest radius
+                double lo = R, hi = Math.Max(gSolve, R + 0.5);
+                if (Make(0, lo, ea, la, eb, lb)[Make(0, lo, ea, la, eb, lb).Count - 1].E > gSolve) return -1;   // gap too small for the smallest radius
                 for (int it = 0; it < 30; it++)
                 {
                     double mid = 0.5 * (lo + hi);
                     var m = Make(0, mid, ea, la, eb, lb);
-                    if (m[m.Count - 1].E < g) lo = mid; else hi = mid;
+                    if (m[m.Count - 1].E < gSolve) lo = mid; else hi = mid;
                 }
                 return 0.5 * (lo + hi);
             }
@@ -3447,16 +3468,16 @@ namespace AgOpenGPS.AutoPlan
                 y1 = 0; rr = SolveRadius(ea, la, eb, lb); path = null;
                 if (rr < 0) return false;
                 double lo = -22.0, hi = behind + 3.0;
-                if (!Fits(Make(lo, rr, ea, la, eb, lb))) return false;
-                if (Fits(Make(hi, rr, ea, la, eb, lb))) lo = hi;
+                if (!Fits(MakeFull(lo, rr, ea, la, eb, lb))) return false;
+                if (Fits(MakeFull(hi, rr, ea, la, eb, lb))) lo = hi;
                 else
                     for (int it = 0; it < 28; it++)
                     {
                         double mid = 0.5 * (lo + hi);
-                        if (Fits(Make(mid, rr, ea, la, eb, lb))) lo = mid; else hi = mid;
+                        if (Fits(MakeFull(mid, rr, ea, la, eb, lb))) lo = mid; else hi = mid;
                     }
                 y1 = lo;
-                path = Make(y1, rr, ea, la, eb, lb);
+                path = MakeFull(y1, rr, ea, la, eb, lb);
                 return true;
             }
             double eaA = 6.0 * Math.PI / 180.0, ebA = 18.0 * Math.PI / 180.0;
