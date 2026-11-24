@@ -3408,7 +3408,7 @@ namespace AgOpenGPS.AutoPlan
 
         private static ShapedModel BuildShapedModel(double R, double behind, double wheelbase, double headWidth)
         {
-            const double Step = 0.2, TW = 2.4, TLF = 1.0;
+            const double Step = 0.2, TW = 2.64, TLF = 1.0;
             // swing away (angle, length), return (angle, length): the swing grows with the distance of the machine behind
             // the tractor (4 m is the reference), a machine further behind needs more room to follow the tractor out
             double mk = Math.Max(0.5, Math.Min(2.0, behind / 4.0));
@@ -3463,16 +3463,12 @@ namespace AgOpenGPS.AutoPlan
                     V2 f = b0 + dir * (wb + TLF);
                     best = Math.Max(best, startY + Math.Max((f + perp * (TW / 2)).N, (f - perp * (TW / 2)).N));
                 }
-                // the machine (a point on the drawbar behind the tractor) follows the tractor path: it must stay clear too
-                double mx = 0, my = startY - behind;
-                for (int i = 0; i < basePath.Count; i++)
+                // the machine is rigid behind the tractor (a mounted machine): it is the tractor point
+                // moved back along the heading, so in a turn it swings outside the path of the tractor
+                for (int i = 1; i < basePath.Count; i++)
                 {
-                    double dx = basePath[i].E - mx, dy = startY + basePath[i].N - my;
-                    double dl = Math.Sqrt(dx * dx + dy * dy);
-                    if (dl < 1e-6) continue;
-                    mx = basePath[i].E - dx / dl * behind;
-                    my = startY + basePath[i].N - dy / dl * behind;
-                    best = Math.Max(best, my);
+                    V2 dm = Dir(basePath[i - 1], basePath[i]);
+                    best = Math.Max(best, startY + basePath[i].N - dm.N * behind);
                 }
                 return best;
             }
@@ -3508,7 +3504,7 @@ namespace AgOpenGPS.AutoPlan
             double g = Math.Abs(lat);
             if (g < 1.0 || g > 200.0) return null;     // the option is on: the shaped turn is made whatever the outcome
             V2 ns = lat > 0 ? nr : new V2(-nr.E, -nr.N);
-            const double Step = 0.2, TW = 2.4, TLF = 1.0;
+            const double Step = 0.2, TW = 2.64, TLF = 1.0;
             // the straight piece along the headland runs parallel to the boundary there: its direction is the direction of the
             // boundary next to the end of the passes, the swing, the radius of the arcs and the return are the same as in every turn
             V2 bdir = fence.EdgeDirection(new V2((p0.E + p1.E) * 0.5 + d0.E * model.HeadWidth, (p0.N + p1.N) * 0.5 + d0.N * model.HeadWidth));
