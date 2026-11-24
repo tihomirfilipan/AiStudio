@@ -1770,26 +1770,6 @@ namespace AgOpenGPS.AutoPlan
                 }
                 AppendPoints(path, pts, true, i > 0);
             }
-            // the machine is behind the tractor: the sections stay on that far past the end of a pass, so the machine
-            // works up to the headland line (the switching follows the work flag of the tractor)
-            if (set.OptimiseTurns && set.TurnStraight > 0.5)
-            {
-                var workEnds = new List<int>();
-                for (int k = 0; k + 1 < path.Count; k++)
-                    if (path[k].IsWork && !path[k + 1].IsWork) workEnds.Add(k);
-                foreach (int k in workEnds)
-                {
-                    if (shapedEnds.Contains(k)) continue;
-                    double accW = 0;
-                    for (int q = k + 1; q < path.Count && accW < set.TurnStraight && !path[q].IsReverse; q++)
-                    {
-                        accW += Math.Sqrt(Sq(path[q].E - path[q - 1].E) + Sq(path[q].N - path[q - 1].N));
-                        PlanPoint pw = path[q];
-                        pw.IsWork = true;
-                        path[q] = pw;
-                    }
-                }
-            }
             // the work of an extra strip pass is marked (its label: "3a" after pass 3)
             for (int i = 0; i < order.Count; i++)
             {
