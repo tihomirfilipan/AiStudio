@@ -98,7 +98,7 @@ namespace AgOpenGPS.AutoPlan
         public int EndPasses = 1;
 
         /// <summary>Smallest distance of the front end of the vehicle from the boundary at the pass ends, meters (a ravine or a tree beyond the boundary).</summary>
-        public double EndClearance = 1.0;
+        public double EndClearance = 0.3;
 
         /// <summary>
         /// The drive may start at any corner of the field: of the long edges that run alike the one with the end

@@ -477,7 +477,7 @@ namespace AgOpenGPS.Forms.Field
             nudRadius.Value = (decimal)appRadius;
             nudLaps.Value = 0;
             nudEndPasses.Value = 1;
-            nudEndClearance.Value = 1.0m;
+            nudEndClearance.Value = 0.3m;
             tilePath.Selected = true; tileGuidance.Selected = false;
             tileEnds.Selected = true; tileAllAround.Selected = false;
             tileTurnsEdge.Selected = true; tileTurnsShort.Selected = false; tileTurnsReverse.Selected = false;
