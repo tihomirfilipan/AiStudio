@@ -3433,7 +3433,9 @@ namespace AgOpenGPS.AutoPlan
             if (Math.Abs(x - g) > 0.1 || Math.Abs(y - along0) > 0.1) return null;
             V2 ToGlobal(V2 q) => p0 + d0 * q.N + ns * q.E;
             // the front wheels (outer corners) and the rear axle stay in the clear area
-            Func<V2, bool> clear = ReverseManeuver.NoseOk ?? fence.Inside;
+            // the front wheels may come to 0.3 m from the boundary (the model of this turn), whatever the general setting
+            const double NoseClear = 0.3;
+            Func<V2, bool> clear = p => fence.Inside(p) && fence.EdgeDistance(p, NoseClear + 1.0) >= NoseClear;
             const double TW = 2.4, TLF = 1.0;
             double wb = wheelbase > 0 ? wheelbase : 2.72;
             for (int i = 1; i < local.Count; i += 2)
