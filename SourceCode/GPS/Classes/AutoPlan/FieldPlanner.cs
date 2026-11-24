@@ -3454,7 +3454,10 @@ namespace AgOpenGPS.AutoPlan
                 bool tractorArcs = g < 2.0 * model.ArcR;
                 double rm = tractorArcs ? model.R : model.ArcR, lb = model.Behind;
                 var mxs = new List<double>(); var mys = new List<double>(); var mas = new List<double>();
-                double cx = 0, cy = sh - 20.0, ca = Math.PI / 2;
+                // the machine is on the pass line up to the end of the pass: the tractor, which is the machine's distance ahead of it,
+                // starts its own arc that far past the end of the pass (sh < 0 = earlier, when that does not fit next to the boundary)
+                double lead = tractorArcs ? lb : 0.0;
+                double cx = 0, cy = sh + lead - 20.0, ca = Math.PI / 2;
                 void AddM() { mxs.Add(cx); mys.Add(cy); mas.Add(ca); }
                 void LineM(double len)
                 {
@@ -3513,7 +3516,7 @@ namespace AgOpenGPS.AutoPlan
             double shiftUsed = 0, startUsed = 0;
             for (int si = 0; si < 49 && local == null; si++)
             {
-                double sh = si == 0 ? 0.0 : (si % 2 == 1 ? -1 : 1) * 0.25 * ((si + 1) / 2);
+                double sh = -0.25 * si;                   // the turn starts earlier and earlier until it fits (the machine leaves its line only then)
                 local = Build(sh, false);
                 if (local != null) { shiftUsed = sh; startUsed = tractorStartY; }
             }
