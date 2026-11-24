@@ -1466,42 +1466,36 @@ namespace AgOpenGPS.AutoPlan
                 // (not a turn inside the field, at the tip where the two sides meet)
                 if (d0 < 100.0 && !(set.StartFromMiddle && d0 > 2.0 * R + W)) NoteStraightEnd(a0, d0);
             }
-            // turn optimiser: the turn shaped for the machine; false when it does not fit (the other turns are made then)
+            // turn optimiser: one straight run S for every turn (the median of what the turns allow), so that every
+            // exit and every entry is the same; a turn that cannot have it is made the other way
+            double shapedS = 0;
+            if (set.OptimiseTurns && !set.HeadlandReverseTurns)
+            {
+                var allowed = new List<double>();
+                for (int i = 1; i < order.Count; i++)
+                {
+                    ExitPose(order[i - 1], out V2 ea, out double eah);
+                    EntryPose(order[i].Pass, order[i].Reverse, out V2 en, out double enh);
+                    double mx = MaxShapedStart(ea, eah, en, enh, R, set.Wheelbase, s, fenceGrid, set.TurnStraight + 2.0);
+                    if (mx >= 0) allowed.Add(mx);
+                }
+                if (allowed.Count > 0)
+                {
+                    allowed.Sort();
+                    shapedS = allowed[allowed.Count / 2];
+                }
+            }
             bool TryShaped(List<V2> passPts)
             {
                 if (!set.OptimiseTurns || set.HeadlandReverseTurns) return false;
                 LastPose(path, s, out V2 lastP, out double lastH);
                 double entryH = HeadingOf(passPts[0], passPts[Math.Min(3, passPts.Count - 1)]);
-                var shaped = ShapedTurn(lastP, lastH, passPts[0], entryH, R, set.TurnStraight, set.Wheelbase, s, fenceGrid, out double backBy, out int shapedWork, out double forwardBy, out int shapedEntry);
-                // the next pass starts later when the turn only reaches its line some metres into it
-                List<V2> entryPts = passPts;
-                if (shaped != null && forwardBy > 0.05)
-                {
-                    entryPts = new List<V2>(passPts);
-                    double accE = 0;
-                    while (entryPts.Count > 2 && accE < forwardBy)
-                    {
-                        accE += (entryPts[1] - entryPts[0]).Length;
-                        entryPts.RemoveAt(0);
-                    }
-                    if (accE < forwardBy - 0.5 || entryPts.Count < 2) shaped = null;
-                }
+                var shaped = ShapedTurn(lastP, lastH, passPts[0], entryH, R, shapedS, set.Wheelbase, s, fenceGrid);
                 if (shaped == null) return false;
-                // the turn may begin before the end of the pass: that part of the pass is replaced by it
-                double acc = 0;
-                int cutAt = path.Count - 1;
-                while (cutAt > 0 && acc < backBy)
-                {
-                    acc += Math.Sqrt(Sq(path[cutAt].E - path[cutAt - 1].E) + Sq(path[cutAt].N - path[cutAt - 1].N));
-                    cutAt--;
-                }
-                if (cutAt + 1 < path.Count) path.RemoveRange(cutAt + 1, path.Count - cutAt - 1);
-                AppendPoints(path, shaped.GetRange(0, shapedWork), true, true);
-                AppendPoints(path, shaped.GetRange(shapedWork, shapedEntry - shapedWork), false, true);
-                if (shapedEntry < shaped.Count) AppendPoints(path, shaped.GetRange(shapedEntry, shaped.Count - shapedEntry), true, true);
+                AppendPoints(path, shaped, false, true);
                 if (CountOutside(shaped, fenceGrid) > 0) res.TurnsLeavingField++;
                 res.Turns++;
-                AppendPoints(path, entryPts, true, true);
+                AppendPoints(path, passPts, true, true);
                 return true;
             }
             var stepStart = new int[order.Count];
@@ -3389,225 +3383,87 @@ namespace AgOpenGPS.AutoPlan
         }
 
         /// <summary>
-        /// U-turn shaped for the machine (a tractor with the implement a given distance behind it). Out of the pass
-        /// the tractor drives straight, or turns gently away from the next pass (so the implement leaves the pass
-        /// on its line), then the arc towards the next pass, and a gentle return onto the pass line (so the
-        /// implement is lined up when it enters). The arc starts as late as the room allows: the front wheels
-        /// reach the clear area limit. The turn may start before the end of the pass (back = how far); then the
-        /// last part of the pass is replaced by it. Null when it does not fit or the passes are not a U-turn apart
-        /// (neighbour passes get the other turns). workCount = the points at the start that are still worked.
+        /// U-turn for the machine, the same shape for every turn: out of the pass straight on for S, an arc of the
+        /// turning radius R, the straight piece along the headland (the only part that depends on the gap between the
+        /// passes), an arc of the turning radius R, and straight on for S into the next pass. The two arcs and the two
+        /// straight runs are the same in every turn, so the machine leaves and enters every pass the same way.
+        /// The passes are not touched: the turn lies between the end of one pass and the start of the next.
+        /// Null when the passes are not a U-turn apart (the gap must be more than two radii) or it does not fit.
         /// </summary>
-        private static List<V2> ShapedTurn(V2 p0, double h0, V2 p1, double h1, double R, double behind, double wheelbase, double s,
-            PolygonTester fence, out double back, out int workCount, out double forward, out int entryWork)
+        private static List<V2> ShapedTurn(V2 p0, double h0, V2 p1, double h1, double R, double S, double wheelbase, double s, PolygonTester fence)
         {
-            back = 0; workCount = 0; forward = 0; entryWork = 0;
             V2 d0 = new V2(Math.Sin(h0), Math.Cos(h0));
             V2 nr = new V2(Math.Cos(h0), -Math.Sin(h0));
             V2 rel = p1 - p0;
             double along0 = rel.E * d0.E + rel.N * d0.N, lat = rel.E * nr.E + rel.N * nr.N;
             if (Math.Abs(Math.IEEERemainder(h1 - h0 - Math.PI, 2.0 * Math.PI)) > 0.2) return null;
             double g = Math.Abs(lat);
-            // (the solver below says whether the smallest allowed radius still gives this gap: with the swings a gap a little under two radii works too)
-            if (g < 6.0 || g > 80.0 || Math.Abs(along0) > 3.0) return null;
+            if (g < 2.0 * R + 0.3 || g > 80.0 || Math.Abs(along0) > 3.0) return null;
             V2 ns = lat > 0 ? nr : new V2(-nr.E, -nr.N);
-            Func<V2, bool> clear = ReverseManeuver.NoseOk ?? fence.Inside;
-            const double Step = 0.2, TW = 2.4, TLF = 1.0;
-            double wb = wheelbase > 0 ? wheelbase : 2.72;
-
-            // path in the frame of the first pass: x towards the next pass, y along the pass, from (0, y1)
-            List<V2> Make(double y1, double rr, double ea, double la, double eb, double lb)
+            // the top piece joins the two arcs: its direction and length follow from the gap and the offset of the pass ends
+            double across = g - 2.0 * R;
+            double theta = Math.Atan2(across, along0);          // direction of the top piece, from the pass direction towards the next pass
+            double T = Math.Sqrt(across * across + along0 * along0);
+            const double Step = 0.2;
+            var local = new List<V2>();                          // x towards the next pass, y along the pass
+            double x = 0, y = 0, h = 0;
+            local.Add(new V2(x, y));
+            void Straight(double len)
             {
-                var pts = new List<V2>();
-                double x = 0, y = y1, h = 0;
-                pts.Add(new V2(x, y));
-                void Arc(double radius, double ang)
+                int n = Math.Max(1, (int)(len / Step));
+                for (int i = 0; i < n; i++) { x += Math.Sin(h) * len / n; y += Math.Cos(h) * len / n; local.Add(new V2(x, y)); }
+            }
+            void Arc(double ang)
+            {
+                int n = Math.Max(2, (int)(ang * R / Step));
+                for (int i = 0; i < n; i++)
                 {
-                    int n = Math.Max(2, (int)(Math.Abs(ang) * radius / Step));
-                    for (int i = 0; i < n; i++)
-                    {
-                        double dh = ang / n;
-                        x += Math.Sin(h + dh / 2) * radius * Math.Abs(dh);
-                        y += Math.Cos(h + dh / 2) * radius * Math.Abs(dh);
-                        h += dh;
-                        pts.Add(new V2(x, y));
-                    }
+                    double dh = ang / n;
+                    x += Math.Sin(h + dh / 2) * R * dh;
+                    y += Math.Cos(h + dh / 2) * R * dh;
+                    h += dh;
+                    local.Add(new V2(x, y));
                 }
-                if (ea > 1e-6) Arc(la / ea, -ea);
-                Arc(rr, Math.PI + ea + eb);
-                if (eb > 1e-6) Arc(lb / eb, -eb);
-                return pts;
             }
-            // the arcs (out of the pass and into the next one) stay the same for every gap: they are solved for the
-            // reference gap at most, a wider gap is made up by a straight piece along the boundary at the top
-            double gSolve = Math.Min(g, 2.0 * R + 0.6);
-            List<V2> MakeFull(double y1, double rr, double ea, double la, double eb, double lb)
-            {
-                List<V2> m = Make(y1, rr, ea, la, eb, lb);
-                if (g - gSolve < 0.01) return m;
-                int ap = 0;
-                for (int i = 1; i < m.Count; i++) if (m[i].N > m[ap].N) ap = i;
-                if (ap < 1 || ap + 1 >= m.Count) return m;
-                double hAp = Math.Atan2(m[ap + 1].E - m[ap - 1].E, m[ap + 1].N - m[ap - 1].N);
-                double sinH = Math.Sin(hAp);
-                if (sinH < 0.5) return m;
-                double T = (g - gSolve) / sinH;
-                var full = new List<V2>(m.GetRange(0, ap + 1));
-                int steps = Math.Max(1, (int)(T / Step));
-                for (int k = 1; k <= steps; k++) full.Add(new V2(m[ap].E + Math.Sin(hAp) * T * k / steps, m[ap].N + Math.Cos(hAp) * T * k / steps));
-                V2 shift = new V2(Math.Sin(hAp) * T, Math.Cos(hAp) * T);
-                for (int i = ap + 1; i < m.Count; i++) full.Add(new V2(m[i].E + shift.E, m[i].N + shift.N));
-                return full;
-            }
+            if (S > 0.05) Straight(S);
+            Arc(theta);
+            Straight(T);
+            Arc(Math.PI - theta);
+            if (S > 0.05) Straight(S);
+            if (Math.Abs(x - g) > 0.1 || Math.Abs(y - along0) > 0.1) return null;
             V2 ToGlobal(V2 q) => p0 + d0 * q.N + ns * q.E;
-            bool Fits(List<V2> local)
+            // the front wheels (outer corners) and the rear axle stay in the clear area
+            Func<V2, bool> clear = ReverseManeuver.NoseOk ?? fence.Inside;
+            const double TW = 2.4, TLF = 1.0;
+            double wb = wheelbase > 0 ? wheelbase : 2.72;
+            for (int i = 1; i < local.Count; i += 2)
             {
-                for (int i = 1; i < local.Count; i += 2)
-                {
-                    V2 a = ToGlobal(local[i - 1]), b = ToGlobal(local[i]);
-                    V2 dir = Dir(a, b);
-                    V2 perp = new V2(dir.N, -dir.E);
-                    if (!clear(b)) return false;
-                    V2 f = b + dir * (wb + TLF);
-                    if (!clear(f + perp * (TW / 2)) || !clear(f - perp * (TW / 2))) return false;
-                }
-                return true;
+                V2 a = ToGlobal(local[i - 1]), b = ToGlobal(local[i]);
+                V2 dir = Dir(a, b);
+                V2 perp = new V2(dir.N, -dir.E);
+                if (!clear(b)) return null;
+                V2 f = b + dir * (wb + TLF);
+                if (!clear(f + perp * (TW / 2)) || !clear(f - perp * (TW / 2))) return null;
             }
-            // radius of the arc so that the tractor ends on the line of the next pass
-            double SolveRadius(double ea, double la, double eb, double lb)
-            {
-                double lo = R, hi = Math.Max(gSolve, R + 0.5);
-                if (Make(0, lo, ea, la, eb, lb)[Make(0, lo, ea, la, eb, lb).Count - 1].E > gSolve) return -1;   // gap too small for the smallest radius
-                for (int it = 0; it < 30; it++)
-                {
-                    double mid = 0.5 * (lo + hi);
-                    var m = Make(0, mid, ea, la, eb, lb);
-                    if (m[m.Count - 1].E < gSolve) lo = mid; else hi = mid;
-                }
-                return 0.5 * (lo + hi);
-            }
-            // the latest start of the arc (y1) at which the front wheels still fit
-            bool Solve(double ea, double la, double eb, double lb, out double y1, out double rr, out List<V2> path)
-            {
-                y1 = 0; rr = SolveRadius(ea, la, eb, lb); path = null;
-                if (rr < 0) return false;
-                double lo = -22.0, hi = behind + 3.0;
-                if (!Fits(MakeFull(lo, rr, ea, la, eb, lb))) return false;
-                if (Fits(MakeFull(hi, rr, ea, la, eb, lb))) lo = hi;
-                else
-                    for (int it = 0; it < 28; it++)
-                    {
-                        double mid = 0.5 * (lo + hi);
-                        if (Fits(MakeFull(mid, rr, ea, la, eb, lb))) lo = mid; else hi = mid;
-                    }
-                y1 = lo;
-                path = MakeFull(y1, rr, ea, la, eb, lb);
-                return true;
-            }
-            // the swing out of the pass and the return onto the next one are searched for every turn: the least
-            // deviation of the machine from the pass lines in the last metres before the headland line
-            double Deg = Math.PI / 180.0;
-            double[] best = null;
-            double bestCost = double.MaxValue, bestY1 = 0;
-            List<V2> chosen = null;
-            double Evaluate(double[] prm, out double y1v, out List<V2> pathv)
-            {
-                y1v = 0; pathv = null;
-                if (!Solve(prm[0] * Deg, prm[1], prm[2] * Deg, prm[3], out double y1x, out double rrx, out List<V2> px)) return double.MaxValue;
-                // the machine, a point towed behind the tractor, over the path and 12 m of the straight after it
-                var ext = new List<V2>(px);
-                V2 e = px[px.Count - 1];
-                for (double yy = e.N - Step; yy > e.N - 12.0; yy -= Step) ext.Add(new V2(e.E, yy));
-                var imp = new List<V2>(ext.Count);
-                V2 m = new V2(ext[0].E, ext[0].N - behind);
-                imp.Add(m);
-                for (int i = 1; i < ext.Count; i++)
-                {
-                    V2 dv = ext[i] - m;
-                    double ln = dv.Length;
-                    if (ln > 1e-9) m = ext[i] - dv * (behind / ln);
-                    imp.Add(m);
-                }
-                int apexI = 0;
-                for (int i = 1; i < imp.Count; i++) if (imp[i].N > imp[apexI].N) apexI = i;
-                double exMax = 0, enMax = 0, ex0 = 0, en0 = 0;
-                bool gotEx0 = false, gotEn0 = false;
-                for (int i = 0; i < imp.Count; i++)
-                {
-                    if (i < apexI)
-                    {
-                        if (imp[i].N > -8.0 && imp[i].N < 0.0) exMax = Math.Max(exMax, Math.Abs(imp[i].E));
-                        if (!gotEx0 && imp[i].N >= 0.0) { ex0 = Math.Abs(imp[i].E); gotEx0 = true; }
-                    }
-                    else
-                    {
-                        if (imp[i].N > along0 - 8.0 && imp[i].N < along0) enMax = Math.Max(enMax, Math.Abs(imp[i].E - g));
-                        if (!gotEn0 && imp[i].N <= along0) { en0 = Math.Abs(imp[i].E - g); gotEn0 = true; }
-                    }
-                }
-                double backV = Math.Max(0.0, -y1x), fwdV = Math.Max(0.0, along0 - px[px.Count - 1].N);
-                y1v = y1x; pathv = px;
-                return Math.Max(exMax, enMax) + 0.5 * (ex0 + en0) + 0.004 * (backV + fwdV);
-            }
-            // start from the values found for a gap of 12 m with a 9 m headland, then a few steps of a local search
-            double[] cur = { 6.0, 5.0, 18.0, 6.0 };
-            double[] lowB = { 0.5, 2.0, 6.0, 3.0 }, highB = { 20.0, 8.0, 30.0, 10.0 }, stepB = { 3.0, 1.5, 6.0, 2.0 };
-            double curCost = Evaluate(cur, out double curY1, out List<V2> curPath);
-            if (curCost == double.MaxValue)
-            {
-                // nothing fits with these: a smaller swing, in case it is only a tight corner
-                cur = new[] { 0.5, 2.0, 12.0, 4.0 };
-                curCost = Evaluate(cur, out curY1, out curPath);
-                if (curCost == double.MaxValue) return null;
-            }
-            for (int round = 0; round < 4; round++)
-            {
-                bool improved = false;
-                for (int pi = 0; pi < 4; pi++)
-                    foreach (double dir in new[] { -1.0, 1.0 })
-                    {
-                        double[] cand = (double[])cur.Clone();
-                        cand[pi] = Math.Max(lowB[pi], Math.Min(highB[pi], cand[pi] + dir * stepB[pi]));
-                        if (cand[pi] == cur[pi]) continue;
-                        double c = Evaluate(cand, out double cy, out List<V2> cp);
-                        if (c < curCost - 1e-6) { cur = cand; curCost = c; curY1 = cy; curPath = cp; improved = true; }
-                    }
-                if (!improved) { for (int q = 0; q < 4; q++) stepB[q] *= 0.5; }
-                if (curCost < 0.03) break;
-            }
-            best = cur; bestCost = curCost; bestY1 = curY1; chosen = curPath;
-            double y1f = bestY1;
-            // the tractor drives straight on to the entry of the next pass
-            V2 end = chosen[chosen.Count - 1];
-            var whole = new List<V2>(chosen);
-            bool reachesEntry = end.N >= along0 - 0.01;
-            if (reachesEntry)
-            {
-                for (double y = end.N - Step; y > along0; y -= Step) whole.Add(new V2(end.E, y));
-                whole.Add(new V2(end.E, along0));
-            }
-            else forward = along0 - end.N;     // the tractor is on the pass line only this far into the next pass
-            var global = new List<V2>(whole.Count);
-            foreach (V2 q in whole) global.Add(ToGlobal(q));
-            if (reachesEntry) global[global.Count - 1] = p1;
+            var global = new List<V2>(local.Count);
+            foreach (V2 q in local) global.Add(ToGlobal(q));
+            global[global.Count - 1] = p1;
             var result = ResampleOpen(global, s);
-            if (result.Count < 3) return null;
-            back = Math.Max(0.0, -y1f);
-            // the points still worked: the machine is behind the tractor, it reaches the end of the pass
-            // when the tractor is that far past it
-            while (workCount < result.Count && (result[workCount] - p0).E * d0.E + (result[workCount] - p0).N * d0.N < behind && workCount < result.Count / 2) workCount++;
-            // the machine reaches the entry of the next pass when the tractor is that far before it: work again from there
-            int apexAt = 0;
-            double apexAlong = double.MinValue;
-            for (int i = 0; i < result.Count; i++)
+            return result.Count >= 3 ? result : null;
+        }
+
+        /// <summary>The longest straight run S (0 to max) at which this U-turn still fits; -1 when it does not fit even with S = 0 (or is no U-turn).</summary>
+        private static double MaxShapedStart(V2 p0, double h0, V2 p1, double h1, double R, double wheelbase, double s, PolygonTester fence, double max)
+        {
+            if (ShapedTurn(p0, h0, p1, h1, R, 0.0, wheelbase, s, fence) == null) return -1;
+            if (ShapedTurn(p0, h0, p1, h1, R, max, wheelbase, s, fence) != null) return max;
+            double lo = 0, hi = max;
+            for (int it = 0; it < 12; it++)
             {
-                double al = (result[i] - p0).E * d0.E + (result[i] - p0).N * d0.N;
-                if (al > apexAlong) { apexAlong = al; apexAt = i; }
+                double mid = 0.5 * (lo + hi);
+                if (ShapedTurn(p0, h0, p1, h1, R, mid, wheelbase, s, fence) != null) lo = mid; else hi = mid;
             }
-            entryWork = result.Count;
-            for (int i = apexAt; i < result.Count; i++)
-                if ((result[i] - p0).E * d0.E + (result[i] - p0).N * d0.N <= along0 - behind) { entryWork = i; break; }
-            if (entryWork < workCount) entryWork = workCount;
-            return result;
+            return lo;
         }
 
         /// <summary>
