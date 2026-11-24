@@ -3401,88 +3401,20 @@ namespace AgOpenGPS.AutoPlan
         /// </summary>
         private class ShapedModel
         {
-            public double ArcR, StartY, GSolve, HAp, Behind, Wheelbase, HeadWidth, Ea, La, Eb, Lb;
-            public List<V2> Exit = new List<V2>();    // from the start of the swing to the top of the arc (x towards the next pass, y along the pass, start (0, 0))
-            public List<V2> Entry = new List<V2>();   // from the top of the arc to the end of the return, (0, 0) = the top
+            public double R, ArcR, GSolve, Behind, Wheelbase, HeadWidth;
         }
 
+        /// <summary>
+        /// The ideal path of the MACHINE: straight along the pass up to the end of the pass, an arc, the straight piece
+        /// along the headland, an arc and straight into the next pass. The arc of the machine is wider than the one of
+        /// the tractor (the machine is rigid behind the rear axle): ArcR = sqrt(R^2 + Behind^2). The tractor is
+        /// computed from that path per turn.
+        /// </summary>
         private static ShapedModel BuildShapedModel(double R, double behind, double wheelbase, double headWidth)
         {
-            const double Step = 0.2, TW = 2.64, TLF = 1.0;
-            // swing away (angle, length), return (angle, length): the swing grows with the distance of the machine behind
-            // the tractor (4 m is the reference), a machine further behind needs more room to follow the tractor out
-            double mk = Math.Max(0.5, Math.Min(2.0, behind / 4.0));
-            double EaDeg = 6.3 * mk, La = 4.6 * mk;
-            const double EbDeg = 17.2, Lb = 6.5;
-            double ea = EaDeg * Math.PI / 180.0, eb = EbDeg * Math.PI / 180.0;
-            double wb = wheelbase > 0 ? wheelbase : 2.72;
-            List<V2> Make(double rr)
-            {
-                var pts = new List<V2>();
-                double x = 0, y = 0, h = 0;
-                pts.Add(new V2(x, y));
-                void Arc(double radius, double ang)
-                {
-                    int n = Math.Max(2, (int)(Math.Abs(ang) * radius / Step));
-                    for (int i = 0; i < n; i++)
-                    {
-                        double dh = ang / n;
-                        x += Math.Sin(h + dh / 2) * radius * Math.Abs(dh);
-                        y += Math.Cos(h + dh / 2) * radius * Math.Abs(dh);
-                        h += dh;
-                        pts.Add(new V2(x, y));
-                    }
-                }
-                Arc(La / ea, -ea);
-                Arc(rr, Math.PI + ea + eb);
-                Arc(Lb / eb, -eb);
-                return pts;
-            }
-            var m = new ShapedModel { Behind = behind, Wheelbase = wb, GSolve = 2.0 * R + 0.6, HeadWidth = headWidth, Ea = ea, La = La, Eb = eb, Lb = Lb };
-            // the arc is always the turning radius of the tractor; the smallest gap the turn makes without the straight piece
-            // is whatever swing, arc and return give, a wider gap is made by the straight piece along the headland only
-            m.ArcR = R;
-            m.GSolve = Make(R)[Make(R).Count - 1].E;
-            List<V2> basePath = Make(m.ArcR);
-            int ap = 0;
-            for (int i = 1; i < basePath.Count; i++) if (basePath[i].N > basePath[ap].N) ap = i;
-            if (ap < 1 || ap + 1 >= basePath.Count) return null;
-            m.HAp = Math.Atan2(basePath[ap + 1].E - basePath[ap - 1].E, basePath[ap + 1].N - basePath[ap - 1].N);
-            if (Math.Sin(m.HAp) < 0.5) return null;
-            for (int i = 0; i <= ap; i++) m.Exit.Add(basePath[i]);
-            for (int i = ap; i < basePath.Count; i++) m.Entry.Add(new V2(basePath[i].E - basePath[ap].E, basePath[i].N - basePath[ap].N));
-            // the start of the swing: the front wheels reach 0.3 m from the boundary of the headland (headWidth from the end of the passes)
-            double Top(double startY)
-            {
-                double best = double.MinValue;
-                for (int i = 1; i < basePath.Count; i++)
-                {
-                    V2 a0 = basePath[i - 1], b0 = basePath[i];
-                    V2 dir = Dir(a0, b0);
-                    V2 perp = new V2(dir.N, -dir.E);
-                    V2 f = b0 + dir * (wb + TLF);
-                    best = Math.Max(best, startY + Math.Max((f + perp * (TW / 2)).N, (f - perp * (TW / 2)).N));
-                }
-                // the machine is rigid behind the tractor (a mounted machine): it is the tractor point
-                // moved back along the heading, so in a turn it swings outside the path of the tractor
-                for (int i = 1; i < basePath.Count; i++)
-                {
-                    V2 dm = Dir(basePath[i - 1], basePath[i]);
-                    best = Math.Max(best, startY + basePath[i].N - dm.N * behind);
-                }
-                return best;
-            }
-            double sLo = -14.0, sHi = behind + 3.0, limit = headWidth - 0.3;
-            if (Top(sLo) > limit) return null;
-            if (Top(sHi) <= limit) sLo = sHi;
-            else
-                for (int it = 0; it < 30; it++)
-                {
-                    double mid = 0.5 * (sLo + sHi);
-                    if (Top(mid) <= limit) sLo = mid; else sHi = mid;
-                }
-            m.StartY = sLo;
-            return m;
+            double b = Math.Max(0.5, behind);
+            double rm = Math.Sqrt(R * R + b * b);
+            return new ShapedModel { R = R, ArcR = rm, GSolve = 2.0 * rm, Behind = b, Wheelbase = wheelbase > 0 ? wheelbase : 2.72, HeadWidth = headWidth };
         }
 
         /// <summary>
@@ -3511,44 +3443,58 @@ namespace AgOpenGPS.AutoPlan
             if (bdir.E * ns.E + bdir.N * ns.N < 0) bdir = new V2(-bdir.E, -bdir.N);
             double theta = Math.Atan2(bdir.E * ns.E + bdir.N * ns.N, bdir.E * d0.E + bdir.N * d0.N);   // direction of the top piece from the pass direction towards the next pass
             theta = Math.Max(1.0, Math.Min(2.1, theta));
-            // the same turn is slid along the pass until it fits next to the boundary: the passes do not all end
-            // the same distance from the headland (wedge, from the middle), the turn itself stays identical
             V2 ToGlobal(V2 q) => p0 + d0 * q.N + ns * q.E;
+            double tractorStartY = 0;
+            // the ideal path of the machine is given (pass line, arc, straight piece along the boundary, arc, next pass line);
+            // the tractor is worked out from it point by point, from the end of the turn back (that direction is stable)
             List<V2> Build(double sh, bool force)
             {
-                var pts0 = new List<V2>();
-                double px = 0, py = model.StartY + sh, ph = 0;
-                if (py > 0.01)
+                const double Ds = 0.1;
+                // a gap narrower than the arcs of the machine allow: the tractor itself turns on its own radius
+                bool tractorArcs = g < 2.0 * model.ArcR;
+                double rm = tractorArcs ? model.R : model.ArcR, lb = model.Behind;
+                var mxs = new List<double>(); var mys = new List<double>(); var mas = new List<double>();
+                double cx = 0, cy = sh - 20.0, ca = Math.PI / 2;
+                void AddM() { mxs.Add(cx); mys.Add(cy); mas.Add(ca); }
+                void LineM(double len)
                 {
-                    // the turn starts further on than the end of the pass: straight on first
-                    for (double yy = 0; yy < py; yy += Step) pts0.Add(new V2(0, yy));
+                    int cnt = (int)Math.Round(len / Ds);
+                    for (int i = 0; i < cnt; i++) { cx += Math.Cos(ca) * Ds; cy += Math.Sin(ca) * Ds; AddM(); }
                 }
-                pts0.Add(new V2(px, py));
-                void ArcOn(List<V2> pts, ref double x, ref double y, ref double h, double radius, double ang)
+                void TurnM(double rad, double ang)
                 {
-                    int n = Math.Max(2, (int)(Math.Abs(ang) * radius / Step));
-                    for (int i = 0; i < n; i++)
+                    int cnt = Math.Max(2, (int)(Math.Abs(ang) * rad / Ds));
+                    for (int i = 0; i < cnt; i++)
                     {
-                        double dh = ang / n;
-                        x += Math.Sin(h + dh / 2) * radius * Math.Abs(dh);
-                        y += Math.Cos(h + dh / 2) * radius * Math.Abs(dh);
-                        h += dh;
-                        pts?.Add(new V2(x, y));
+                        double da = ang / cnt, am = ca + da / 2;
+                        cx += Math.Cos(am) * rad * Math.Abs(da); cy += Math.Sin(am) * rad * Math.Abs(da); ca += da; AddM();
                     }
                 }
-                ArcOn(pts0, ref px, ref py, ref ph, model.La / model.Ea, -model.Ea);          // the gentle swing away from the next pass
-                ArcOn(pts0, ref px, ref py, ref ph, model.ArcR, theta + model.Ea);            // the arc up to the direction of the boundary
-                // what the entry (arc and return) takes, without the top piece, gives the length of the top piece
-                double qx = px, qy = py, qh = ph;
-                ArcOn(null, ref qx, ref qy, ref qh, model.ArcR, Math.PI + model.Eb - theta);
-                ArcOn(null, ref qx, ref qy, ref qh, model.Lb / model.Eb, -model.Eb);
-                double T = (g - (qx - px) - px) / Math.Sin(theta);
-                if (T < -0.01) { if (!force) return null; T = 0; }                            // the gap is too small for the arcs
-                int steps = T > 0.01 ? Math.Max(1, (int)(T / Step)) : 0;
-                for (int k = 1; k <= steps; k++) pts0.Add(new V2(px + Math.Sin(theta) * T * k / steps, py + Math.Cos(theta) * T * k / steps));
-                px += Math.Sin(theta) * Math.Max(0, T); py += Math.Cos(theta) * Math.Max(0, T); ph = theta;
-                ArcOn(pts0, ref px, ref py, ref ph, model.ArcR, Math.PI + model.Eb - theta);  // the arc into the direction of the next pass
-                ArcOn(pts0, ref px, ref py, ref ph, model.Lb / model.Eb, -model.Eb);          // the gentle return onto the pass line
+                AddM();
+                LineM(20.0);                                   // up to the end of the pass
+                TurnM(rm, -theta);                             // arc to the direction of the boundary
+                double top = (g - cx - rm * (Math.Cos(theta) + 1.0)) / Math.Sin(theta);
+                if (top < -0.01) { if (!force) return null; top = 0; }      // the gap is too small for the arcs
+                LineM(Math.Max(0.0, top));                     // the straight piece along the headland
+                TurnM(rm, -(Math.PI - theta));                 // arc into the next pass
+                LineM(24.0);                                   // straight into the next pass
+                int cn = mxs.Count;
+                var tha = new double[cn];
+                tha[cn - 1] = mas[cn - 1];
+                for (int i = cn - 1; i > 0; i--) tha[i - 1] = tractorArcs ? mas[i - 1] : tha[i] - Math.Sin(tha[i] - mas[i]) / lb * Ds;
+                var tx = new double[cn]; var ty = new double[cn];
+                for (int i = 0; i < cn; i++) { tx[i] = tractorArcs ? mxs[i] : mxs[i] + lb * Math.Cos(tha[i]); ty[i] = tractorArcs ? mys[i] : mys[i] + lb * Math.Sin(tha[i]); }
+                int k0 = 0;
+                while (k0 < cn - 1 && Math.Abs(tx[k0]) < 0.03) k0++;
+                k0 = Math.Max(0, k0 - 1);
+                int k1 = cn - 1;
+                while (k1 > k0 && Math.Abs(tx[k1] - g) < 0.03) k1--;
+                k1 = Math.Min(cn - 1, k1 + 1);
+                var pts0 = new List<V2>();
+                tractorStartY = ty[k0];
+                if (tractorStartY > 0.01)
+                    for (double yy = 0; yy < tractorStartY; yy += Step) pts0.Add(new V2(0, yy));
+                for (int i = k0; i <= k1; i++) pts0.Add(new V2(tx[i], ty[i]));
                 // the front wheels (outer corners) and the rear axle stay in the clear area (0.3 m from the boundary)
                 const double NoseClear = 0.3;
                 for (int i = 1; i < pts0.Count; i += 2)
@@ -3564,14 +3510,14 @@ namespace AgOpenGPS.AutoPlan
                 return pts0;
             }
             List<V2> local = null;
-            double shiftUsed = 0;
+            double shiftUsed = 0, startUsed = 0;
             for (int si = 0; si < 49 && local == null; si++)
             {
                 double sh = si == 0 ? 0.0 : (si % 2 == 1 ? -1 : 1) * 0.25 * ((si + 1) / 2);
                 local = Build(sh, false);
-                if (local != null) shiftUsed = sh;
+                if (local != null) { shiftUsed = sh; startUsed = tractorStartY; }
             }
-            if (local == null) local = Build(0.0, true);     // nothing fits: the same turn without the fit check
+            if (local == null) { local = Build(0.0, true); startUsed = tractorStartY; }     // nothing fits: the same turn without the fit check
             if (local == null) return null;
             V2 end = local[local.Count - 1];
             var whole = new List<V2>(local);
@@ -3587,7 +3533,7 @@ namespace AgOpenGPS.AutoPlan
             if (reachesEntry) global[global.Count - 1] = p1;
             var result = ResampleOpen(global, s);
             if (result.Count < 3) return null;
-            back = Math.Max(0.0, -(model.StartY + shiftUsed));
+            back = Math.Max(0.0, -startUsed);
             // the points still worked: the machine is behind the tractor, it reaches the end of the pass when the
             // tractor is that far (along the path) past it
             double AlongOf(V2 q) => (q - p0).E * d0.E + (q - p0).N * d0.N;
