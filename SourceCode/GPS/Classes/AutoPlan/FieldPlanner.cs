@@ -3477,7 +3477,7 @@ namespace AgOpenGPS.AutoPlan
             double along0 = rel.E * d0.E + rel.N * d0.N, lat = rel.E * nr.E + rel.N * nr.N;
             if (Math.Abs(Math.IEEERemainder(h1 - h0 - Math.PI, 2.0 * Math.PI)) > 0.2) return null;
             double g = Math.Abs(lat);
-            if (g < model.GSolve - 0.01 || g > 80.0 || Math.Abs(along0) > 9.0) return null;
+            if (g < 1.0 || g > 200.0) return null;     // the option is on: the shaped turn is made whatever the outcome
             V2 ns = lat > 0 ? nr : new V2(-nr.E, -nr.N);
             const double Step = 0.2, TW = 2.4, TLF = 1.0;
             // the straight piece along the headland runs parallel to the boundary there: its direction is the direction of the
@@ -3485,48 +3485,69 @@ namespace AgOpenGPS.AutoPlan
             V2 bdir = fence.EdgeDirection(new V2((p0.E + p1.E) * 0.5 + d0.E * model.HeadWidth, (p0.N + p1.N) * 0.5 + d0.N * model.HeadWidth));
             if (bdir.E * ns.E + bdir.N * ns.N < 0) bdir = new V2(-bdir.E, -bdir.N);
             double theta = Math.Atan2(bdir.E * ns.E + bdir.N * ns.N, bdir.E * d0.E + bdir.N * d0.N);   // direction of the top piece from the pass direction towards the next pass
-            if (theta < 1.0 || theta > 2.1) return null;
-            var local = new List<V2>();
-            double px = 0, py = model.StartY, ph = 0;
-            local.Add(new V2(px, py));
-            void ArcOn(List<V2> pts, ref double x, ref double y, ref double h, double radius, double ang)
-            {
-                int n = Math.Max(2, (int)(Math.Abs(ang) * radius / Step));
-                for (int i = 0; i < n; i++)
-                {
-                    double dh = ang / n;
-                    x += Math.Sin(h + dh / 2) * radius * Math.Abs(dh);
-                    y += Math.Cos(h + dh / 2) * radius * Math.Abs(dh);
-                    h += dh;
-                    pts?.Add(new V2(x, y));
-                }
-            }
-            ArcOn(local, ref px, ref py, ref ph, model.La / model.Ea, -model.Ea);          // the gentle swing away from the next pass
-            ArcOn(local, ref px, ref py, ref ph, model.ArcR, theta + model.Ea);            // the arc up to the direction of the boundary
-            // what the entry (arc and return) takes, without the top piece, gives the length of the top piece
-            double qx = px, qy = py, qh = ph;
-            ArcOn(null, ref qx, ref qy, ref qh, model.ArcR, Math.PI + model.Eb - theta);
-            ArcOn(null, ref qx, ref qy, ref qh, model.Lb / model.Eb, -model.Eb);
-            double T = (g - (qx - px) - px) / Math.Sin(theta);
-            if (T < -0.01) return null;                                                    // the gap is too small for the arcs
-            int steps = T > 0.01 ? Math.Max(1, (int)(T / Step)) : 0;
-            for (int k = 1; k <= steps; k++) local.Add(new V2(px + Math.Sin(theta) * T * k / steps, py + Math.Cos(theta) * T * k / steps));
-            px += Math.Sin(theta) * Math.Max(0, T); py += Math.Cos(theta) * Math.Max(0, T); ph = theta;
-            ArcOn(local, ref px, ref py, ref ph, model.ArcR, Math.PI + model.Eb - theta);  // the arc into the direction of the next pass
-            ArcOn(local, ref px, ref py, ref ph, model.Lb / model.Eb, -model.Eb);          // the gentle return onto the pass line
+            theta = Math.Max(1.0, Math.Min(2.1, theta));
+            // the same turn is slid along the pass until it fits next to the boundary: the passes do not all end
+            // the same distance from the headland (wedge, from the middle), the turn itself stays identical
             V2 ToGlobal(V2 q) => p0 + d0 * q.N + ns * q.E;
-            // the front wheels (outer corners) and the rear axle stay in the clear area (0.3 m from the boundary)
-            const double NoseClear = 0.3;
-            for (int i = 1; i < local.Count; i += 2)
+            List<V2> Build(double sh, bool force)
             {
-                V2 a = ToGlobal(local[i - 1]), b = ToGlobal(local[i]);
-                V2 dir = Dir(a, b);
-                V2 perp = new V2(dir.N, -dir.E);
-                bool Clear(V2 p) => fence.Inside(p) && fence.EdgeDistance(p, NoseClear + 1.0) >= NoseClear;
-                if (!Clear(b)) return null;
-                V2 f = b + dir * (model.Wheelbase + TLF);
-                if (!Clear(f + perp * (TW / 2)) || !Clear(f - perp * (TW / 2))) return null;
+                var local = new List<V2>();
+                double px = 0, py = model.StartY + sh, ph = 0;
+                if (py > 0.01)
+                {
+                    // the turn starts further on than the end of the pass: straight on first
+                    for (double yy = 0; yy < py; yy += Step) local.Add(new V2(0, yy));
+                }
+                local.Add(new V2(px, py));
+                void ArcOn(List<V2> pts, ref double x, ref double y, ref double h, double radius, double ang)
+                {
+                    int n = Math.Max(2, (int)(Math.Abs(ang) * radius / Step));
+                    for (int i = 0; i < n; i++)
+                    {
+                        double dh = ang / n;
+                        x += Math.Sin(h + dh / 2) * radius * Math.Abs(dh);
+                        y += Math.Cos(h + dh / 2) * radius * Math.Abs(dh);
+                        h += dh;
+                        pts?.Add(new V2(x, y));
+                    }
+                }
+                ArcOn(local, ref px, ref py, ref ph, model.La / model.Ea, -model.Ea);          // the gentle swing away from the next pass
+                ArcOn(local, ref px, ref py, ref ph, model.ArcR, theta + model.Ea);            // the arc up to the direction of the boundary
+                // what the entry (arc and return) takes, without the top piece, gives the length of the top piece
+                double qx = px, qy = py, qh = ph;
+                ArcOn(null, ref qx, ref qy, ref qh, model.ArcR, Math.PI + model.Eb - theta);
+                ArcOn(null, ref qx, ref qy, ref qh, model.Lb / model.Eb, -model.Eb);
+                double T = (g - (qx - px) - px) / Math.Sin(theta);
+                if (T < -0.01) { if (!force) return null; T = 0; }                            // the gap is too small for the arcs
+                int steps = T > 0.01 ? Math.Max(1, (int)(T / Step)) : 0;
+                for (int k = 1; k <= steps; k++) local.Add(new V2(px + Math.Sin(theta) * T * k / steps, py + Math.Cos(theta) * T * k / steps));
+                px += Math.Sin(theta) * Math.Max(0, T); py += Math.Cos(theta) * Math.Max(0, T); ph = theta;
+                ArcOn(local, ref px, ref py, ref ph, model.ArcR, Math.PI + model.Eb - theta);  // the arc into the direction of the next pass
+                ArcOn(local, ref px, ref py, ref ph, model.Lb / model.Eb, -model.Eb);          // the gentle return onto the pass line
+                // the front wheels (outer corners) and the rear axle stay in the clear area (0.3 m from the boundary)
+                const double NoseClear = 0.3;
+                for (int i = 1; i < local.Count; i += 2)
+                {
+                    V2 a = ToGlobal(local[i - 1]), b = ToGlobal(local[i]);
+                    V2 dir = Dir(a, b);
+                    V2 perp = new V2(dir.N, -dir.E);
+                    bool Clear(V2 p) => fence.Inside(p) && fence.EdgeDistance(p, NoseClear + 1.0) >= NoseClear;
+                    if (!force && !Clear(b)) return null;
+                    V2 f = b + dir * (model.Wheelbase + TLF);
+                    if (!force && (!Clear(f + perp * (TW / 2)) || !Clear(f - perp * (TW / 2)))) return null;
+                }
+                return local;
             }
+            List<V2> local = null;
+            double shiftUsed = 0;
+            for (int si = 0; si < 49 && local == null; si++)
+            {
+                double sh = si == 0 ? 0.0 : (si % 2 == 1 ? -1 : 1) * 0.25 * ((si + 1) / 2);
+                local = Build(sh, false);
+                if (local != null) shiftUsed = sh;
+            }
+            if (local == null) local = Build(0.0, true);     // nothing fits: the same turn without the fit check
+            if (local == null) return null;
             V2 end = local[local.Count - 1];
             var whole = new List<V2>(local);
             bool reachesEntry = end.N >= along0 - 0.01;
@@ -3541,7 +3562,7 @@ namespace AgOpenGPS.AutoPlan
             if (reachesEntry) global[global.Count - 1] = p1;
             var result = ResampleOpen(global, s);
             if (result.Count < 3) return null;
-            back = Math.Max(0.0, -model.StartY);
+            back = Math.Max(0.0, -(model.StartY + shiftUsed));
             // the points still worked: the machine is behind the tractor, it reaches the end of the pass when the
             // tractor is that far (along the path) past it
             double AlongOf(V2 q) => (q - p0).E * d0.E + (q - p0).N * d0.N;
