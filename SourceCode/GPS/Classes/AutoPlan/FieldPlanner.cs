@@ -1770,6 +1770,26 @@ namespace AgOpenGPS.AutoPlan
                 }
                 AppendPoints(path, pts, true, i > 0);
             }
+            // the machine is behind the tractor: the sections stay on that far past the end of a pass, so the machine
+            // works up to the headland line (the switching follows the work flag of the tractor)
+            if (set.OptimiseTurns && set.TurnStraight > 0.5)
+            {
+                var workEnds = new List<int>();
+                for (int k = 0; k + 1 < path.Count; k++)
+                    if (path[k].IsWork && !path[k + 1].IsWork) workEnds.Add(k);
+                foreach (int k in workEnds)
+                {
+                    if (shapedEnds.Contains(k)) continue;
+                    double accW = 0;
+                    for (int q = k + 1; q < path.Count && accW < set.TurnStraight && !path[q].IsReverse; q++)
+                    {
+                        accW += Math.Sqrt(Sq(path[q].E - path[q - 1].E) + Sq(path[q].N - path[q - 1].N));
+                        PlanPoint pw = path[q];
+                        pw.IsWork = true;
+                        path[q] = pw;
+                    }
+                }
+            }
             // the work of an extra strip pass is marked (its label: "3a" after pass 3)
             for (int i = 0; i < order.Count; i++)
             {
@@ -3389,7 +3409,11 @@ namespace AgOpenGPS.AutoPlan
         private static ShapedModel BuildShapedModel(double R, double behind, double wheelbase, double headWidth)
         {
             const double Step = 0.2, TW = 2.4, TLF = 1.0;
-            const double EaDeg = 6.3, La = 4.6, EbDeg = 17.2, Lb = 6.5;      // swing away (angle, length), return (angle, length)
+            // swing away (angle, length), return (angle, length): the swing grows with the distance of the machine behind
+            // the tractor (4 m is the reference), a machine further behind needs more room to follow the tractor out
+            double mk = Math.Max(0.5, Math.Min(2.0, behind / 4.0));
+            double EaDeg = 6.3 * mk, La = 4.6 * mk;
+            const double EbDeg = 17.2, Lb = 6.5;
             double ea = EaDeg * Math.PI / 180.0, eb = EbDeg * Math.PI / 180.0;
             double wb = wheelbase > 0 ? wheelbase : 2.72;
             List<V2> Make(double rr)
@@ -3444,6 +3468,17 @@ namespace AgOpenGPS.AutoPlan
                     V2 perp = new V2(dir.N, -dir.E);
                     V2 f = b0 + dir * (wb + TLF);
                     best = Math.Max(best, startY + Math.Max((f + perp * (TW / 2)).N, (f - perp * (TW / 2)).N));
+                }
+                // the machine (a point on the drawbar behind the tractor) follows the tractor path: it must stay clear too
+                double mx = 0, my = startY - behind;
+                for (int i = 0; i < basePath.Count; i++)
+                {
+                    double dx = basePath[i].E - mx, dy = startY + basePath[i].N - my;
+                    double dl = Math.Sqrt(dx * dx + dy * dy);
+                    if (dl < 1e-6) continue;
+                    mx = basePath[i].E - dx / dl * behind;
+                    my = startY + basePath[i].N - dy / dl * behind;
+                    best = Math.Max(best, my);
                 }
                 return best;
             }

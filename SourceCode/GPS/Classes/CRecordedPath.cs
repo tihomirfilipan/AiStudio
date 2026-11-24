@@ -312,11 +312,6 @@ namespace AgOpenGPS
                         ? mf.tool.lookAheadOffSetting + 4.0 / mf.gpsHz
                         : mf.tool.turnOffDelay);
                     bool wanted = autoBtn ? WorkFlagAhead(C, leadOff) : WorkFlagAhead(C, leadOn);
-                    //with a headland the sections are switched by the distance from the headland line,
-                    //not by the work flag of the path: the master stays on in the headland zone, inside
-                    //the field the work flag still decides (parts of passes grown from the middle)
-                    if (mf.bnd.isHeadlandOn && !mf.bnd.IsPointInsideHeadArea(
-                        new vec2(mf.toolPivotPos.easting, mf.toolPivotPos.northing))) wanted = true;
                     if (autoBtn != wanted) mf.btnSectionMasterAuto.PerformClick();
                 }
                 else
