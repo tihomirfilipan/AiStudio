@@ -3439,16 +3439,10 @@ namespace AgOpenGPS.AutoPlan
                 return pts;
             }
             var m = new ShapedModel { Behind = behind, Wheelbase = wb, GSolve = 2.0 * R + 0.6, HeadWidth = headWidth, Ea = ea, La = La, Eb = eb, Lb = Lb };
-            // the radius of the arc so that the reference gap is made
-            double lo = R, hi = m.GSolve;
-            if (Make(lo)[Make(lo).Count - 1].E > m.GSolve) return null;
-            for (int it = 0; it < 30; it++)
-            {
-                double mid = 0.5 * (lo + hi);
-                var t = Make(mid);
-                if (t[t.Count - 1].E < m.GSolve) lo = mid; else hi = mid;
-            }
-            m.ArcR = 0.5 * (lo + hi);
+            // the arc is always the turning radius of the tractor; the smallest gap the turn makes without the straight piece
+            // is whatever swing, arc and return give, a wider gap is made by the straight piece along the headland only
+            m.ArcR = R;
+            m.GSolve = Make(R)[Make(R).Count - 1].E;
             List<V2> basePath = Make(m.ArcR);
             int ap = 0;
             for (int i = 1; i < basePath.Count; i++) if (basePath[i].N > basePath[ap].N) ap = i;
