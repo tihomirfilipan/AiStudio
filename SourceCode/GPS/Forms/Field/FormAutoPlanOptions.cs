@@ -18,14 +18,14 @@ namespace AgOpenGPS.Forms.Field
     /// </summary>
     public class FormAutoPlanOptions : Form
     {
-        private readonly NudlessNumericUpDown nudWidth, nudRadius, nudLaps, nudEndPasses, nudEndClearance;
+        private readonly NudlessNumericUpDown nudWidth, nudRadius, nudLaps, nudEndPasses, nudEndClearance, nudTurnStraight;
         private readonly Label lblAutoLaps;
 
         private readonly PictureTile tilePath, tileGuidance;
         private readonly PictureTile tileEnds, tileAllAround;
         private readonly PictureTile tileTurnsEdge, tileTurnsShort, tileTurnsReverse;
         private readonly PictureTile tileOrderAuto, tileOrderNeighbour, tileOrderSkip;
-        private readonly PictureTile tileWorkHeadland, tileExtraPass, tileAddTrack, tileAvoidWorked, tileKK, tileK, tileKLV, tileFind, tilePear, tileTear, tileSplit, tileSlant, tileWedge, tileMiddle;
+        private readonly PictureTile tileWorkHeadland, tileExtraPass, tileAddTrack, tileAvoidWorked, tileKK, tileK, tileKLV, tileFind, tilePear, tileTear, tileSplit, tileSlant, tileWedge, tileMiddle, tileOptimise;
 
         // live preview
         private readonly List<V2> fence;
@@ -232,6 +232,7 @@ namespace AgOpenGPS.Forms.Field
             var numbers3 = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = new Padding(0, 0, 0, 4) };
             nudRadius = AddNumber(numbers3, T("Turning radius (m)", "Radijus okretanja (m)"), 1m, 60m, 1, (decimal)appRadius);
             nudEndClearance = AddNumber(numbers3, T("Front end from the boundary (m)", "Prednji dio od međe (m)"), 0m, 20m, 1, (decimal)Properties.Settings.Default.setAutoPlan_endClearance);
+            nudTurnStraight = AddNumber(numbers3, T("Machine behind the tractor (m)", "Stroj iza traktora (m)"), 0m, 30m, 1, (decimal)Properties.Settings.Default.setAutoPlan_turnStraight);
             page3.Controls.Add(StepNote(T("Step 3: the turns and the plan (the order of the passes).", "Korak 3: okreti i plan (redoslijed prohoda).")));
             page3.Controls.Add(numbers3);
             var columns = new FlowLayoutPanel { AutoSize = true, WrapContents = true, MaximumSize = new Size(1100, 0) };
@@ -252,7 +253,9 @@ namespace AgOpenGPS.Forms.Field
             tileAddTrack.Selected = set.setAutoPlan_addTrack;
             tileAvoidWorked = new PictureTile(T("Never drive over worked passes", "Ne vozi po obrađenom"), DrawAvoidWorked);
             tileAvoidWorked.Selected = set.setAutoPlan_avoidWorked;
-            AddGroup(colA, T("Plan", "Plan"), false, -1, tileMiddle, tileAddTrack, tileAvoidWorked);
+            tileOptimise = new PictureTile(T("Turn optimiser (adapted to the machine)", "Optimizator okretanja (prilagođen stroju)"), DrawOptimiseTurns);
+            tileOptimise.Selected = set.setAutoPlan_optimiseTurns;
+            AddGroup(colA, T("Plan", "Plan"), false, -1, tileMiddle, tileAddTrack, tileAvoidWorked, tileOptimise);
             columns.Controls.Add(colA);
 
             var colB = Column();
@@ -287,13 +290,14 @@ namespace AgOpenGPS.Forms.Field
             previewTimer = new Timer { Interval = 450 };
             previewTimer.Tick += (s, e) => { previewTimer.Stop(); StartPreview(); };
             foreach (PictureTile t in new[] { tilePath, tileGuidance, tileEnds, tileAllAround, tileTurnsEdge, tileTurnsShort, tileTurnsReverse,
-                tileOrderAuto, tileOrderNeighbour, tileOrderSkip, tileWorkHeadland, tileExtraPass, tileAddTrack, tileAvoidWorked, tileKK, tileK, tileKLV, tileFind, tilePear, tileTear, tileSplit, tileSlant, tileWedge, tileMiddle })
+                tileOrderAuto, tileOrderNeighbour, tileOrderSkip, tileWorkHeadland, tileExtraPass, tileAddTrack, tileAvoidWorked, tileKK, tileK, tileKLV, tileFind, tilePear, tileTear, tileSplit, tileSlant, tileWedge, tileMiddle, tileOptimise })
                 t.Click += (s, e) => OptionsChanged();
             nudWidth.ValueChanged += (s, e) => OptionsChanged();
             nudRadius.ValueChanged += (s, e) => OptionsChanged();
             nudLaps.ValueChanged += (s, e) => OptionsChanged();
             nudEndPasses.ValueChanged += (s, e) => OptionsChanged();
             nudEndClearance.ValueChanged += (s, e) => OptionsChanged();
+            nudTurnStraight.ValueChanged += (s, e) => OptionsChanged();
             preview.Resize += (s, e) => { if (Plan != null) ShowPlan(Plan); };
             // zoom with the mouse wheel (around the pointer), move with the left button, double click resets
             preview.MouseEnter += (s, e) => preview.Focus();
@@ -443,6 +447,8 @@ namespace AgOpenGPS.Forms.Field
                 HeadlandLaps = (int)nudLaps.Value,
                 EndPasses = (int)nudEndPasses.Value,
                 EndClearance = (double)nudEndClearance.Value,
+                OptimiseTurns = tileOptimise.Selected,
+                TurnStraight = (double)nudTurnStraight.Value,
                 HeadlandOnLongSides = tileAllAround.Selected,
                 WorkHeadland = tileWorkHeadland.Selected,
                 AddExtraPass = tileExtraPass.Selected,
@@ -609,6 +615,8 @@ namespace AgOpenGPS.Forms.Field
             set.setAutoPlan_findTurn = tileFind.Selected;
             set.setAutoPlan_pearTurn = tilePear.Selected;
             set.setAutoPlan_tearTurn = tileTear.Selected;
+            set.setAutoPlan_optimiseTurns = tileOptimise.Selected;
+            set.setAutoPlan_turnStraight = (double)nudTurnStraight.Value;
             set.setAutoPlan_avoidWorked = tileAvoidWorked.Selected;
             set.setAutoPlan_splitField = tileSplit.Selected;
             set.setAutoPlan_slantPass = tileSlant.Selected;
@@ -847,6 +855,24 @@ namespace AgOpenGPS.Forms.Field
                 }
             }
             NameTag(g, r, kind);
+        }
+
+        private static void DrawOptimiseTurns(Graphics g, Rectangle r)
+        {
+            // optimiser: out of the pass straight, a smooth turn, straight into the next pass
+            Field(g, r);
+            using (var p = new Pen(Color.FromArgb(150, CHead), 1f) { DashStyle = DashStyle.Dash })
+                g.DrawLine(p, r.Left + 4, r.Top + 40, r.Right - 4, r.Top + 40);
+            Passes(g, r.Left + 30, r.Right - 30, r.Top + 40, r.Bottom - 6, 4, CPass);
+            int xa = r.Left + 30, xb = r.Left + 30 + (r.Width - 60) / 3;
+            using (Pen p = P(CTurn, 2.6f))
+            {
+                g.DrawLine(p, xa, r.Top + 40, xa, r.Top + 26);                              // straight out
+                g.DrawArc(p, xa, r.Top + 10, xb - xa, 32, 180, 180);                         // the turn
+            }
+            using (Pen p = P(CTurn2, 2.6f))
+                g.DrawLine(p, xb, r.Top + 26, xb, r.Bottom - 6);                           // straight into the next pass
+            NameTag(g, r, "OKR");
         }
 
         private static void NameTag(Graphics g, Rectangle r, string name)
