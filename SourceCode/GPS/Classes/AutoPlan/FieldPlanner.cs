@@ -3451,8 +3451,13 @@ namespace AgOpenGPS.AutoPlan
             {
                 const double Ds = 0.1;
                 // a gap narrower than the arcs of the machine allow: the tractor itself turns on its own radius
-                bool tractorArcs = g < 2.0 * model.ArcR;
-                double rm = tractorArcs ? model.R : model.ArcR, lb = model.Behind;
+                // narrower than two exit arcs of the machine: the exit stays the same and the entry arc of the machine is adapted
+                // to the gap (smaller radius, no straight piece); when even that is not possible the tractor drives its own arcs
+                double rExit = model.ArcR, lb = model.Behind;
+                double rEntry = (g - rExit * (1.0 - Math.Cos(theta))) / (1.0 + Math.Cos(theta));
+                bool narrow = g < 2.0 * rExit, adapted = narrow && rEntry >= 1.0;
+                bool tractorArcs = narrow && !adapted;
+                double rm = tractorArcs ? model.R : rExit;
                 var mxs = new List<double>(); var mys = new List<double>(); var mas = new List<double>();
                 // the machine is on the pass line up to the end of the pass: the tractor, which is the machine's distance ahead of it,
                 // starts its own arc that far past the end of the pass (sh < 0 = earlier, when that does not fit next to the boundary)
@@ -3476,10 +3481,10 @@ namespace AgOpenGPS.AutoPlan
                 AddM();
                 LineM(20.0);                                   // up to the end of the pass
                 TurnM(rm, -theta);                             // arc to the direction of the boundary
-                double top = (g - cx - rm * (Math.Cos(theta) + 1.0)) / Math.Sin(theta);
+                double top = adapted ? 0.0 : (g - cx - rm * (Math.Cos(theta) + 1.0)) / Math.Sin(theta);
                 if (top < -0.01) { if (!force) return null; top = 0; }      // the gap is too small for the arcs
                 LineM(Math.Max(0.0, top));                     // the straight piece along the headland
-                TurnM(rm, -(Math.PI - theta));                 // arc into the next pass
+                TurnM(adapted ? rEntry : rm, -(Math.PI - theta));           // arc into the next pass
                 LineM(24.0);                                   // straight into the next pass
                 int cn = mxs.Count;
                 var tha = new double[cn];
