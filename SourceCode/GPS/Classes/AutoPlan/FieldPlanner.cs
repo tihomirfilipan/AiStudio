@@ -3496,7 +3496,9 @@ namespace AgOpenGPS.AutoPlan
                 while (k0 < cn - 1 && Math.Abs(tx[k0]) < 0.03) k0++;
                 k0 = Math.Max(0, k0 - 1);
                 int k1 = cn - 1;
-                while (k1 > k0 && Math.Abs(tx[k1] - g) < 0.03) k1--;
+                // the turn ends where the tractor is on the line of the next pass AND points along it (the approach is gradual,
+                // cutting it earlier would leave a heading error at the start of the pass)
+                while (k1 > k0 && Math.Abs(tx[k1] - g) < 0.03 && Math.Abs(tha[k1] - mas[k1]) < 0.005) k1--;
                 k1 = Math.Min(cn - 1, k1 + 1);
                 var pts0 = new List<V2>();
                 tractorStartY = ty[k0];
