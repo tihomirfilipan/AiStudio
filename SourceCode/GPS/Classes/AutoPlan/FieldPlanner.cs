@@ -1466,6 +1466,44 @@ namespace AgOpenGPS.AutoPlan
                 // (not a turn inside the field, at the tip where the two sides meet)
                 if (d0 < 100.0 && !(set.StartFromMiddle && d0 > 2.0 * R + W)) NoteStraightEnd(a0, d0);
             }
+            // turn optimiser: the turn shaped for the machine; false when it does not fit (the other turns are made then)
+            bool TryShaped(List<V2> passPts)
+            {
+                if (!set.OptimiseTurns || set.HeadlandReverseTurns) return false;
+                LastPose(path, s, out V2 lastP, out double lastH);
+                double entryH = HeadingOf(passPts[0], passPts[Math.Min(3, passPts.Count - 1)]);
+                var shaped = ShapedTurn(lastP, lastH, passPts[0], entryH, R, set.TurnStraight, set.Wheelbase, s, fenceGrid, out double backBy, out int shapedWork, out double forwardBy, out int shapedEntry);
+                // the next pass starts later when the turn only reaches its line some metres into it
+                List<V2> entryPts = passPts;
+                if (shaped != null && forwardBy > 0.05)
+                {
+                    entryPts = new List<V2>(passPts);
+                    double accE = 0;
+                    while (entryPts.Count > 2 && accE < forwardBy)
+                    {
+                        accE += (entryPts[1] - entryPts[0]).Length;
+                        entryPts.RemoveAt(0);
+                    }
+                    if (accE < forwardBy - 0.5 || entryPts.Count < 2) shaped = null;
+                }
+                if (shaped == null) return false;
+                // the turn may begin before the end of the pass: that part of the pass is replaced by it
+                double acc = 0;
+                int cutAt = path.Count - 1;
+                while (cutAt > 0 && acc < backBy)
+                {
+                    acc += Math.Sqrt(Sq(path[cutAt].E - path[cutAt - 1].E) + Sq(path[cutAt].N - path[cutAt - 1].N));
+                    cutAt--;
+                }
+                if (cutAt + 1 < path.Count) path.RemoveRange(cutAt + 1, path.Count - cutAt - 1);
+                AppendPoints(path, shaped.GetRange(0, shapedWork), true, true);
+                AppendPoints(path, shaped.GetRange(shapedWork, shapedEntry - shapedWork), false, true);
+                if (shapedEntry < shaped.Count) AppendPoints(path, shaped.GetRange(shapedEntry, shaped.Count - shapedEntry), true, true);
+                if (CountOutside(shaped, fenceGrid) > 0) res.TurnsLeavingField++;
+                res.Turns++;
+                AppendPoints(path, entryPts, true, true);
+                return true;
+            }
             var stepStart = new int[order.Count];
             for (int i = 0; i < order.Count; i++)
             {
@@ -1509,6 +1547,7 @@ namespace AgOpenGPS.AutoPlan
                             continue;
                         }
                     }
+                    if (TryShaped(pts)) continue;
                     AppendPoints(path, dturn, false, true);
                     if (CountOutside(dturn, fenceGrid) > 0) res.TurnsLeavingField++;
                     res.Turns++;
@@ -1606,42 +1645,7 @@ namespace AgOpenGPS.AutoPlan
                             || CrossesOtherPasses(pts[0], entryH + Math.PI, AheadEdgeDistance(fenceGrid, pts[0], entryH + Math.PI, 150.0), passes, st.Pass, order[i - 1].Pass, W))
                             atBoundary = false;
                     }
-                    if (set.OptimiseTurns && !set.HeadlandReverseTurns)
-                    {
-                        var shaped = ShapedTurn(lastP, lastH, pts[0], entryH, R, set.TurnStraight, set.Wheelbase, s, fenceGrid, out double backBy, out int shapedWork, out double forwardBy, out int shapedEntry);
-                        // the next pass starts later when the turn only reaches its line some metres into it
-                        List<V2> entryPts = pts;
-                        if (shaped != null && forwardBy > 0.05)
-                        {
-                            entryPts = new List<V2>(pts);
-                            double accE = 0;
-                            while (entryPts.Count > 2 && accE < forwardBy)
-                            {
-                                accE += (entryPts[1] - entryPts[0]).Length;
-                                entryPts.RemoveAt(0);
-                            }
-                            if (accE < forwardBy - 0.5 || entryPts.Count < 2) shaped = null;
-                        }
-                        if (shaped != null)
-                        {
-                            // the turn may begin before the end of the pass: that part of the pass is replaced by it
-                            double acc = 0;
-                            int cutAt = path.Count - 1;
-                            while (cutAt > 0 && acc < backBy)
-                            {
-                                acc += Math.Sqrt(Sq(path[cutAt].E - path[cutAt - 1].E) + Sq(path[cutAt].N - path[cutAt - 1].N));
-                                cutAt--;
-                            }
-                            if (cutAt + 1 < path.Count) path.RemoveRange(cutAt + 1, path.Count - cutAt - 1);
-                            AppendPoints(path, shaped.GetRange(0, shapedWork), true, true);
-                            AppendPoints(path, shaped.GetRange(shapedWork, shapedEntry - shapedWork), false, true);
-                            if (shapedEntry < shaped.Count) AppendPoints(path, shaped.GetRange(shapedEntry, shaped.Count - shapedEntry), true, true);
-                            if (CountOutside(shaped, fenceGrid) > 0) res.TurnsLeavingField++;
-                            res.Turns++;
-                            AppendPoints(path, entryPts, true, true);
-                            continue;
-                        }
-                    }
+                    if (TryShaped(pts)) continue;
                     var turn = set.OptimiseTurns
                         ? ConnectStraight(lastP, lastH, pts[0], entryH, R, W, s, fenceGrid, transferLoop, atBoundary, set.TurnStraight + 2.0)
                         : Connect(lastP, lastH, pts[0], entryH, R, W, s, fenceGrid, transferLoop, atBoundary);
@@ -1762,6 +1766,25 @@ namespace AgOpenGPS.AutoPlan
                     res.Turns++;
                 }
                 AppendPoints(path, pts, true, i > 0);
+            }
+            // the machine is behind the tractor: the sections stay on that far past the end of a pass, so the machine
+            // works up to the headland line (the switching follows the work flag of the tractor)
+            if (set.OptimiseTurns && set.TurnStraight > 0.5)
+            {
+                var workEnds = new List<int>();
+                for (int k = 0; k + 1 < path.Count; k++)
+                    if (path[k].IsWork && !path[k + 1].IsWork) workEnds.Add(k);
+                foreach (int k in workEnds)
+                {
+                    double accW = 0;
+                    for (int q = k + 1; q < path.Count && accW < set.TurnStraight && !path[q].IsReverse; q++)
+                    {
+                        accW += Math.Sqrt(Sq(path[q].E - path[q - 1].E) + Sq(path[q].N - path[q - 1].N));
+                        PlanPoint pw = path[q];
+                        pw.IsWork = true;
+                        path[q] = pw;
+                    }
+                }
             }
             // the work of an extra strip pass is marked (its label: "3a" after pass 3)
             for (int i = 0; i < order.Count; i++)
@@ -3480,14 +3503,79 @@ namespace AgOpenGPS.AutoPlan
                 path = MakeFull(y1, rr, ea, la, eb, lb);
                 return true;
             }
-            double eaA = 6.0 * Math.PI / 180.0, ebA = 18.0 * Math.PI / 180.0;
-            if (!Solve(eaA, 5.0, ebA, 6.0, out double yA, out double rA, out List<V2> pathA)) return null;
-            double y1f = yA; List<V2> chosen = pathA;
-            if (yA > 0.3)
+            // the swing out of the pass and the return onto the next one are searched for every turn: the least
+            // deviation of the machine from the pass lines in the last metres before the headland line
+            double Deg = Math.PI / 180.0;
+            double[] best = null;
+            double bestCost = double.MaxValue, bestY1 = 0;
+            List<V2> chosen = null;
+            double Evaluate(double[] prm, out double y1v, out List<V2> pathv)
             {
-                // room enough: the arc starts later, the swing away from the next pass is hardly needed
-                if (Solve(0.5 * Math.PI / 180.0, 2.0, ebA, 6.0, out double yB, out double rB, out List<V2> pathB)) { y1f = yB; chosen = pathB; }
+                y1v = 0; pathv = null;
+                if (!Solve(prm[0] * Deg, prm[1], prm[2] * Deg, prm[3], out double y1x, out double rrx, out List<V2> px)) return double.MaxValue;
+                // the machine, a point towed behind the tractor, over the path and 12 m of the straight after it
+                var ext = new List<V2>(px);
+                V2 e = px[px.Count - 1];
+                for (double yy = e.N - Step; yy > e.N - 12.0; yy -= Step) ext.Add(new V2(e.E, yy));
+                var imp = new List<V2>(ext.Count);
+                V2 m = new V2(ext[0].E, ext[0].N - behind);
+                imp.Add(m);
+                for (int i = 1; i < ext.Count; i++)
+                {
+                    V2 dv = ext[i] - m;
+                    double ln = dv.Length;
+                    if (ln > 1e-9) m = ext[i] - dv * (behind / ln);
+                    imp.Add(m);
+                }
+                int apexI = 0;
+                for (int i = 1; i < imp.Count; i++) if (imp[i].N > imp[apexI].N) apexI = i;
+                double exMax = 0, enMax = 0, ex0 = 0, en0 = 0;
+                bool gotEx0 = false, gotEn0 = false;
+                for (int i = 0; i < imp.Count; i++)
+                {
+                    if (i < apexI)
+                    {
+                        if (imp[i].N > -8.0 && imp[i].N < 0.0) exMax = Math.Max(exMax, Math.Abs(imp[i].E));
+                        if (!gotEx0 && imp[i].N >= 0.0) { ex0 = Math.Abs(imp[i].E); gotEx0 = true; }
+                    }
+                    else
+                    {
+                        if (imp[i].N > along0 - 8.0 && imp[i].N < along0) enMax = Math.Max(enMax, Math.Abs(imp[i].E - g));
+                        if (!gotEn0 && imp[i].N <= along0) { en0 = Math.Abs(imp[i].E - g); gotEn0 = true; }
+                    }
+                }
+                double backV = Math.Max(0.0, -y1x), fwdV = Math.Max(0.0, along0 - px[px.Count - 1].N);
+                y1v = y1x; pathv = px;
+                return Math.Max(exMax, enMax) + 0.5 * (ex0 + en0) + 0.004 * (backV + fwdV);
             }
+            // start from the values found for a gap of 12 m with a 9 m headland, then a few steps of a local search
+            double[] cur = { 6.0, 5.0, 18.0, 6.0 };
+            double[] lowB = { 0.5, 2.0, 6.0, 3.0 }, highB = { 20.0, 8.0, 30.0, 10.0 }, stepB = { 3.0, 1.5, 6.0, 2.0 };
+            double curCost = Evaluate(cur, out double curY1, out List<V2> curPath);
+            if (curCost == double.MaxValue)
+            {
+                // nothing fits with these: a smaller swing, in case it is only a tight corner
+                cur = new[] { 0.5, 2.0, 12.0, 4.0 };
+                curCost = Evaluate(cur, out curY1, out curPath);
+                if (curCost == double.MaxValue) return null;
+            }
+            for (int round = 0; round < 4; round++)
+            {
+                bool improved = false;
+                for (int pi = 0; pi < 4; pi++)
+                    foreach (double dir in new[] { -1.0, 1.0 })
+                    {
+                        double[] cand = (double[])cur.Clone();
+                        cand[pi] = Math.Max(lowB[pi], Math.Min(highB[pi], cand[pi] + dir * stepB[pi]));
+                        if (cand[pi] == cur[pi]) continue;
+                        double c = Evaluate(cand, out double cy, out List<V2> cp);
+                        if (c < curCost - 1e-6) { cur = cand; curCost = c; curY1 = cy; curPath = cp; improved = true; }
+                    }
+                if (!improved) { for (int q = 0; q < 4; q++) stepB[q] *= 0.5; }
+                if (curCost < 0.03) break;
+            }
+            best = cur; bestCost = curCost; bestY1 = curY1; chosen = curPath;
+            double y1f = bestY1;
             // the tractor drives straight on to the entry of the next pass
             V2 end = chosen[chosen.Count - 1];
             var whole = new List<V2>(chosen);
