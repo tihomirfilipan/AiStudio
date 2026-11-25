@@ -2384,13 +2384,13 @@ namespace AgOpenGPS
         }
         private void hsbarSteerAngle_Scroll(object sender, ScrollEventArgs e)
         {
-            sim.steerAngleScrollBar = (hsbarSteerAngle.Value - 400) * 0.1;
+            sim.steerAngleScrollBar = (hsbarSteerAngle.Value - 600) * 0.1;      // +-60 degrees (the largest value reached is Maximum - LargeChange + 1 = 1200)
             btnResetSteerAngle.Text = sim.steerAngleScrollBar.ToString("N1");
         }
         private void btnResetSteerAngle_Click(object sender, EventArgs e)
         {
             sim.steerAngleScrollBar = 0;
-            hsbarSteerAngle.Value = 400;
+            hsbarSteerAngle.Value = 600;
             btnResetSteerAngle.Text = sim.steerAngleScrollBar.ToString("N1");
         }
         private void btnResetSim_Click(object sender, EventArgs e)

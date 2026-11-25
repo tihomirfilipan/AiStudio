@@ -42,6 +42,7 @@ namespace AgOpenGPS.Forms.Field
         private readonly Timer previewTimer;
         private int version, planVersion = -1;
         private readonly double appWidth, appRadius;
+        private readonly double machineBehind, wheelbase;   // from the settings of the tool and of the vehicle (0 = not known)
 
         /// <summary>Also add the first pass line as a new curve track.</summary>
         public bool AddTrack => tileAddTrack.Selected || GuidanceMode;
@@ -69,9 +70,11 @@ namespace AgOpenGPS.Forms.Field
         private static readonly Color CTrack = Color.FromArgb(0, 229, 255);
 
         public FormAutoPlanOptions(double toolWidth, double toolOverlap, double turnRadius,
-            List<V2> fence, V2 startPos, double startHeading, List<V2> pickedEdge)
+            List<V2> fence, V2 startPos, double startHeading, List<V2> pickedEdge, double machineBehind = 0, double wheelbase = 0)
         {
             this.fence = fence;
+            this.machineBehind = machineBehind;
+            this.wheelbase = wheelbase;
             FormAutoPlanPreview.ResetView();
             this.startPos = startPos;
             this.startHeading = startHeading;
@@ -232,7 +235,7 @@ namespace AgOpenGPS.Forms.Field
             var numbers3 = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = new Padding(0, 0, 0, 4) };
             nudRadius = AddNumber(numbers3, T("Turning radius (m)", "Radijus okretanja (m)"), 1m, 60m, 1, (decimal)appRadius);
             nudEndClearance = AddNumber(numbers3, T("Front end from the boundary (m)", "Prednji dio od međe (m)"), 0m, 20m, 1, (decimal)Properties.Settings.Default.setAutoPlan_endClearance);
-            nudTurnStraight = AddNumber(numbers3, T("Machine behind the tractor (m)", "Stroj iza traktora (m)"), 0m, 30m, 1, (decimal)Properties.Settings.Default.setAutoPlan_turnStraight);
+            nudTurnStraight = AddNumber(numbers3, T("Machine behind the tractor (m)", "Stroj iza traktora (m)"), 0m, 30m, 1, (decimal)(machineBehind > 0.05 ? machineBehind : Properties.Settings.Default.setAutoPlan_turnStraight));
             page3.Controls.Add(StepNote(T("Step 3: the turns and the plan (the order of the passes).", "Korak 3: okreti i plan (redoslijed prohoda).")));
             page3.Controls.Add(numbers3);
             var columns = new FlowLayoutPanel { AutoSize = true, WrapContents = true, MaximumSize = new Size(1100, 0) };
@@ -449,6 +452,7 @@ namespace AgOpenGPS.Forms.Field
                 EndClearance = (double)nudEndClearance.Value,
                 OptimiseTurns = tileOptimise.Selected,
                 TurnStraight = (double)nudTurnStraight.Value,
+                Wheelbase = wheelbase,
                 HeadlandOnLongSides = tileAllAround.Selected,
                 WorkHeadland = tileWorkHeadland.Selected,
                 AddExtraPass = tileExtraPass.Selected,

@@ -658,11 +658,11 @@ namespace AgOpenGPS
             this.hsbarSteerAngle.ImeMode = System.Windows.Forms.ImeMode.NoControl;
             this.hsbarSteerAngle.LargeChange = 20;
             this.hsbarSteerAngle.Location = new System.Drawing.Point(158, 1);
-            this.hsbarSteerAngle.Maximum = 800;
+            this.hsbarSteerAngle.Maximum = 1219;
             this.hsbarSteerAngle.Name = "hsbarSteerAngle";
             this.hsbarSteerAngle.Size = new System.Drawing.Size(153, 40);
             this.hsbarSteerAngle.TabIndex = 179;
-            this.hsbarSteerAngle.Value = 400;
+            this.hsbarSteerAngle.Value = 600;
             this.hsbarSteerAngle.Scroll += new System.Windows.Forms.ScrollEventHandler(this.hsbarSteerAngle_Scroll);
             // 
             // btnSection8Man

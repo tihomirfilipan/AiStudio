@@ -258,8 +258,17 @@ namespace AgOpenGPS
             FieldPlanSettings settings;
             FieldPlanResult plan;
             bool addTrack, guidanceMode;
+            // the machine behind the tractor (from the hitch settings of the tool) and the wheelbase of the vehicle
+            double machineBehind = 0;
+            if (tool.isToolRearFixed || tool.isToolTrailing || tool.isToolTBT)
+            {
+                machineBehind = -tool.hitchLength;
+                if (tool.isToolTrailing) machineBehind -= tool.trailingHitchLength;
+                if (tool.isToolTBT && tool.isToolTrailing) machineBehind -= tool.tankTrailingHitchLength;
+            }
             using (var form = new Forms.Field.FormAutoPlanOptions(tool.width, tool.overlap, yt.youTurnRadius,
-                fence, new V2(start.E, start.N), start.Heading, refEdge))
+                fence, new V2(start.E, start.N), start.Heading, refEdge,
+                Math.Max(0.0, machineBehind), Properties.VehicleSettings.Default.setVehicle_wheelbase))
             {
                 if (form.ShowDialog(this) != DialogResult.OK) return;
                 settings = form.Settings;
