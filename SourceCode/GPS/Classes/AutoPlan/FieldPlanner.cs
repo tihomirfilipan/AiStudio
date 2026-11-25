@@ -1376,23 +1376,34 @@ namespace AgOpenGPS.AutoPlan
                     order.Add(new Step { Pass = ps, Reverse = rev });
                     at = rev ? ps.A : ps.B;
                 }
-                AddStep(famA[0]);
-                int kA = 1, kB = 0;
-                bool sideB = true;
-                for (int guard = 0; done.Count < passes.Count && guard < 4 * passes.Count; guard++, sideB = !sideB)
+                if (set.HeadlandReverseTurns && !set.ForwardTurns)
                 {
-                    var fam = sideB ? famB : famA;
-                    int k = sideB ? kB : kA;
-                    while (k < fam.Count && done.Contains(fam[k])) k++;
-                    if (k < fam.Count)
-                    {
-                        if (k + jump < fam.Count) AddStep(fam[k + jump]);
-                        AddStep(fam[k]);
-                        k++;
-                    }
-                    if (sideB) kB = k; else kA = k;
+                    // only the reversing turns are on: from the middle out along the neighbour passes of one half, then of the other,
+                    // every turn is a three point turn between neighbours (the same plan as without starting in the middle)
+                    foreach (Pass ps in famA) AddStep(ps);
+                    foreach (Pass ps in famB) AddStep(ps);
+                    orderName = "from the middle, neighbour passes";
                 }
-                orderName = "from the middle, halves in turn, out " + jump + " and back";
+                else
+                {
+                    AddStep(famA[0]);
+                    int kA = 1, kB = 0;
+                    bool sideB = true;
+                    for (int guard = 0; done.Count < passes.Count && guard < 4 * passes.Count; guard++, sideB = !sideB)
+                    {
+                        var fam = sideB ? famB : famA;
+                        int k = sideB ? kB : kA;
+                        while (k < fam.Count && done.Contains(fam[k])) k++;
+                        if (k < fam.Count)
+                        {
+                            if (k + jump < fam.Count) AddStep(fam[k + jump]);
+                            AddStep(fam[k]);
+                            k++;
+                        }
+                        if (sideB) kB = k; else kA = k;
+                    }
+                    orderName = "from the middle, halves in turn, out " + jump + " and back";
+                }
             }
 
             // from the middle: passes ending inside the field (where the two sides meet) go on
@@ -1400,7 +1411,8 @@ namespace AgOpenGPS.AutoPlan
             // the directions stay the same
             // narrow tool (a turn needs more than one and a half widths): the order is searched
             // for the least driving without work, the turns are made straight from it
-            bool narrowMiddle = nearFirst != null && firstFamilyCount > 0 && 2.0 * R > 1.5 * W;
+            // (only the reversing turns on: the neighbour passes and the three point turns, not the searched order)
+            bool narrowMiddle = nearFirst != null && firstFamilyCount > 0 && 2.0 * R > 1.5 * W && !(set.HeadlandReverseTurns && !set.ForwardTurns);
             Dictionary<int, List<V2>> directTurns = null;
             if (narrowMiddle)
             {
@@ -1420,7 +1432,8 @@ namespace AgOpenGPS.AutoPlan
             }
             else if (nearFirst != null && firstFamilyCount > 0)
             {
-                ExtendInsideEnds(passes, laneOf, work, fenceGrid, W, s, headWidth + R + 0.5 * W + 5.0);
+                // (the lines of the scheme are only shortened: with the reversing turns they are not grown)
+                if (!set.HeadlandReverseTurns) ExtendInsideEnds(passes, laneOf, work, fenceGrid, W, s, headWidth + R + 0.5 * W + 5.0);
                 // strips left between a pass of each side (in the middle of the field): one more
                 // pass along their middle, driven first - the plan starts in the middle anyway;
                 // from its end on to the first pass over ground not yet worked
