@@ -3584,10 +3584,11 @@ namespace AgOpenGPS.AutoPlan
             }
             List<V2> local = null;
             double startUsed = 0;
-            for (int si = 0; si < 81 && local == null; si++)
+            for (int si = 0; si <= 40 && local == null; si++)
             {
                 // the whole turn is moved along the pass until the front wheels are 0.3 m from the boundary: from the deepest position
-                // (the machine is switched off by the headland there) back to where it fits; its shape stays the same
+                // (the machine is switched off by the headland there) back to where it fits; its shape stays the same. It is never moved
+                // before the end of the pass (sh < 0): the line of the scheme is not cut short, no hole is left in it
                 double sh = 10.0 - 0.25 * si;
                 local = Build(sh, false);
                 if (local != null) startUsed = tractorStartY;

@@ -309,6 +309,17 @@ namespace AgOpenGPS.Forms.Field
                         g.DrawLines(pen, re);
                 }
 
+                // the lines of the pass scheme (step 1) whole, up to the headland: the plan is drawn over them, so the swing before
+                // the end of a pass (the tractor leaves the line earlier than the machine) never makes a hole in a line
+                if (plan.Scheme != null)
+                    foreach (PassScheme ps in plan.Scheme)
+                    {
+                        if (ps.Pts == null || ps.Pts.Count < 2) continue;
+                        var sl = new PointF[ps.Pts.Count];
+                        for (int k = 0; k < sl.Length; k++) sl[k] = P(ps.Pts[k].E, ps.Pts[k].N);
+                        using (var pen = new Pen(Color.FromArgb(255, 224, 102), 1.4f)) g.DrawLines(pen, sl);
+                    }
+
                 // path, run by run
                 var pts = plan.Points;
                 int turn = 0, i0 = 0;
