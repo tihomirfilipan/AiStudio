@@ -3506,7 +3506,7 @@ namespace AgOpenGPS.AutoPlan
                 Straight(20.0);
                 Bend(rx, theta);
                 if (topLen > 0.0) Straight(topLen);
-                Bend(re, Math.PI - theta - (lat > 0 ? 1.0 : -1.0) * eps);
+                Bend(re, Math.PI - theta + (lat > 0 ? 1.0 : -1.0) * eps);    // ends along the entry line: heading -90 degrees - sign * eps
                 Straight(24.0);
             }
             double XEnd(double rx, double re, double topLen) { MakePath(rx, re, topLen); return OffLine(mxs[mxs.Count - 1], mys[mys.Count - 1]); }
@@ -3584,11 +3584,11 @@ namespace AgOpenGPS.AutoPlan
             }
             List<V2> local = null;
             double startUsed = 0;
-            for (int si = 0; si <= 40 && local == null; si++)
+            for (int si = 0; si < 81 && local == null; si++)
             {
-                // the whole turn is moved along the pass until the front wheels are 0.3 m from the boundary: from the deepest position
-                // (the machine is switched off by the headland there) back to where it fits; its shape stays the same. It is never moved
-                // before the end of the pass (sh < 0): the line of the scheme is not cut short, no hole is left in it
+                // worked out from the boundary backwards: the whole turn is moved along the pass until the front wheels are 0.3 m from
+                // the boundary, from the deepest position (the machine is switched off by the headland there) back to where it fits; its
+                // shape stays the same and the line of the pass is only shortened where the turn starts before its end
                 double sh = 10.0 - 0.25 * si;
                 local = Build(sh, false);
                 if (local != null) startUsed = tractorStartY;
