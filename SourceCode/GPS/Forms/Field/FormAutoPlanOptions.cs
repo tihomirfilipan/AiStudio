@@ -23,7 +23,7 @@ namespace AgOpenGPS.Forms.Field
 
         private readonly PictureTile tilePath, tileGuidance;
         private readonly PictureTile tileEnds, tileAllAround;
-        private readonly PictureTile tileTurnsEdge, tileTurnsShort, tileTurnsReverse;
+        private readonly PictureTile tileTurnsEdge, tileTurnsShort, tileTurnsReverse, tileTurnsForward;
         private readonly PictureTile tileOrderAuto, tileOrderNeighbour, tileOrderSkip;
         private readonly PictureTile tileWorkHeadland, tileExtraPass, tileAddTrack, tileAvoidWorked, tileKK, tileK, tileKLV, tileFind, tilePear, tileTear, tileSplit, tileSlant, tileWedge, tileMiddle, tileOptimise;
 
@@ -70,7 +70,8 @@ namespace AgOpenGPS.Forms.Field
         private static readonly Color CTrack = Color.FromArgb(0, 229, 255);
 
         public FormAutoPlanOptions(double toolWidth, double toolOverlap, double turnRadius,
-            List<V2> fence, V2 startPos, double startHeading, List<V2> pickedEdge, double machineBehind = 0, double wheelbase = 0)
+            List<V2> fence, V2 startPos, double startHeading, List<V2> pickedEdge, double machineBehind = 0, double wheelbase = 0,
+            Func<bool> recordedPathActive = null, Action toggleRecordedPath = null)
         {
             this.fence = fence;
             this.machineBehind = machineBehind;
@@ -96,7 +97,7 @@ namespace AgOpenGPS.Forms.Field
             Size = new Size(Math.Min(1500, wa.Width - 10), Math.Min(980, wa.Height - 10));
 
             // --- right: preview, edge, recommended, buttons (always visible) ---
-            var right = new Panel { Dock = DockStyle.Right, Width = Math.Min(520, Width / 2 - 40), Padding = new Padding(8) };
+            var right = new Panel { Dock = DockStyle.Right, Width = Math.Max(300, ClientSize.Width / 2), Padding = new Padding(8) };   // the window is split in half: options | preview
             var buttons = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 74, FlowDirection = FlowDirection.RightToLeft, WrapContents = false };
             var btnOk = new Button
             {
@@ -120,6 +121,28 @@ namespace AgOpenGPS.Forms.Field
             btnOk.Click += BtnOk_Click;
             buttons.Controls.Add(btnOk);
             buttons.Controls.Add(btnCancel);
+            // switches the recorded path of the field on and off, the same as the Recorded path entry of the menu
+            if (recordedPathActive != null && toggleRecordedPath != null)
+            {
+                var btnRecPath = new Button
+                {
+                    Size = new Size(230, 62),
+                    BackColor = Color.FromArgb(150, 70, 30),
+                    ForeColor = Color.White,
+                    FlatStyle = FlatStyle.Flat,
+                    Font = new Font("Tahoma", 12F, FontStyle.Bold)
+                };
+                Action refreshRecPath = () =>
+                {
+                    bool on = recordedPathActive();
+                    btnRecPath.Text = on ? T("Recorded path ON - tap to switch off", "Snimljena putanja UKLJUČENA - dodir isključi")
+                                         : T("Recorded path off - tap to switch on", "Snimljena putanja isključena - dodir uključi");
+                    btnRecPath.BackColor = on ? Color.FromArgb(31, 122, 58) : Color.FromArgb(150, 70, 30);
+                };
+                btnRecPath.Click += (s, e) => { toggleRecordedPath(); refreshRecPath(); };
+                refreshRecPath();
+                buttons.Controls.Add(btnRecPath);
+            }
             CancelButton = btnCancel;
 
             var edgeRow = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 128, WrapContents = true };   // two rows: nothing runs off to the right
@@ -140,7 +163,7 @@ namespace AgOpenGPS.Forms.Field
             btnQuickKK.Click += (s, e) =>
             {
                 Recommended();
-                tileTurnsEdge.Selected = false; tileTurnsShort.Selected = false; tileTurnsReverse.Selected = true;
+                tileTurnsForward.Selected = false; tileTurnsReverse.Selected = true;
                 tileKK.Selected = true;
                 BtnOk_Click(s, e);
             };
@@ -176,6 +199,7 @@ namespace AgOpenGPS.Forms.Field
             left.Controls.Add(root);
             Controls.Add(left);
             Controls.Add(right);
+            Resize += (s, e) => right.Width = Math.Max(300, ClientSize.Width / 2);     // stays half of the window
 
             var info = new Label
             {
@@ -264,9 +288,15 @@ namespace AgOpenGPS.Forms.Field
             var colB = Column();
             tileTurnsEdge = new PictureTile(T("Out at the edge", "Uz među"), DrawTurnsAtEdge);
             tileTurnsShort = new PictureTile(T("Short at pass end", "Kratki na kraju"), DrawTurnsShort);
-            tileTurnsReverse = new PictureTile(T("With reversing", "S vožnjom unazad"), DrawTurnsReverse);
-            AddGroup(colB, T("Turns", "Okreti"), true, set.setAutoPlan_reverseTurns ? 2 : (set.setAutoPlan_turnsAtBoundary ? 0 : 1),
-                tileTurnsEdge, tileTurnsShort, tileTurnsReverse);
+            tileTurnsReverse = new PictureTile(T("Reverse turns", "Okreti unazad"), DrawTurnsReverse);
+            tileTurnsForward = new PictureTile(T("Forward turns", "Okreti naprijed"), DrawTurnsAtEdge);
+            tileTurnsReverse.Selected = set.setAutoPlan_reverseTurns;
+            tileTurnsForward.Selected = set.setAutoPlan_forwardTurns || !set.setAutoPlan_reverseTurns;
+            // only the kinds of turn that are switched on are used (both: forward where it fits, else reversing)
+            AddGroup(colB, T("Turns (tap to switch on/off)", "Okreti (dodir uključi/isključi)"), false, -1, tileTurnsForward, tileTurnsReverse);
+            AddGroup(colB, T("Forward turn style", "Način okreta naprijed"), true, set.setAutoPlan_turnsAtBoundary ? 0 : 1, tileTurnsEdge, tileTurnsShort);
+            tileTurnsForward.Click += (s, e) => { if (!tileTurnsForward.Selected && !tileTurnsReverse.Selected) tileTurnsReverse.Selected = true; };
+            tileTurnsReverse.Click += (s, e) => { if (!tileTurnsForward.Selected && !tileTurnsReverse.Selected) tileTurnsForward.Selected = true; };
             // the reversing turns, each with its short name in the icon, each can be switched on and off
             tileKK = new PictureTile(T("KK short turn", "KK kratki okret"), DrawKK);
             tileKK.Selected = set.setAutoPlan_kkTurn;
@@ -292,7 +322,7 @@ namespace AgOpenGPS.Forms.Field
             // every change redraws the preview (after a short pause)
             previewTimer = new Timer { Interval = 450 };
             previewTimer.Tick += (s, e) => { previewTimer.Stop(); StartPreview(); };
-            foreach (PictureTile t in new[] { tilePath, tileGuidance, tileEnds, tileAllAround, tileTurnsEdge, tileTurnsShort, tileTurnsReverse,
+            foreach (PictureTile t in new[] { tilePath, tileGuidance, tileEnds, tileAllAround, tileTurnsEdge, tileTurnsShort, tileTurnsReverse, tileTurnsForward,
                 tileOrderAuto, tileOrderNeighbour, tileOrderSkip, tileWorkHeadland, tileExtraPass, tileAddTrack, tileAvoidWorked, tileKK, tileK, tileKLV, tileFind, tilePear, tileTear, tileSplit, tileSlant, tileWedge, tileMiddle, tileOptimise })
                 t.Click += (s, e) => OptionsChanged();
             nudWidth.ValueChanged += (s, e) => OptionsChanged();
@@ -459,6 +489,7 @@ namespace AgOpenGPS.Forms.Field
                 OrderMode = order,
                 TurnsAtBoundary = tileTurnsEdge.Selected,
                 HeadlandReverseTurns = tileTurnsReverse.Selected,
+                ForwardTurns = tileTurnsForward.Selected || !tileTurnsReverse.Selected,
                 UseKK = tileKK.Selected,
                 UseK = tileK.Selected,
                 UseKLV = tileKLV.Selected,
@@ -484,7 +515,7 @@ namespace AgOpenGPS.Forms.Field
             nudEndClearance.Value = 0.3m;
             tilePath.Selected = true; tileGuidance.Selected = false;
             tileEnds.Selected = true; tileAllAround.Selected = false;
-            tileTurnsEdge.Selected = true; tileTurnsShort.Selected = false; tileTurnsReverse.Selected = false;
+            tileTurnsEdge.Selected = true; tileTurnsShort.Selected = false; tileTurnsReverse.Selected = false; tileTurnsForward.Selected = true;
             tileOrderAuto.Selected = true; tileOrderNeighbour.Selected = false; tileOrderSkip.Selected = false;
             tileWorkHeadland.Selected = true;   // one pass along each end by default
             tileExtraPass.Selected = true;
@@ -613,6 +644,7 @@ namespace AgOpenGPS.Forms.Field
             set.setAutoPlan_orderMode = Settings.OrderMode;
             set.setAutoPlan_turnsAtBoundary = tileTurnsEdge.Selected;
             set.setAutoPlan_reverseTurns = tileTurnsReverse.Selected;
+            set.setAutoPlan_forwardTurns = tileTurnsForward.Selected;
             set.setAutoPlan_kkTurn = tileKK.Selected;
             set.setAutoPlan_kTurn = tileK.Selected;
             set.setAutoPlan_klvTurn = tileKLV.Selected;

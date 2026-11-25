@@ -268,7 +268,25 @@ namespace AgOpenGPS
             }
             using (var form = new Forms.Field.FormAutoPlanOptions(tool.width, tool.overlap, yt.youTurnRadius,
                 fence, new V2(start.E, start.N), start.Heading, refEdge,
-                Math.Max(0.0, machineBehind), Properties.VehicleSettings.Default.setVehicle_wheelbase))
+                Math.Max(0.0, machineBehind), Properties.VehicleSettings.Default.setVehicle_wheelbase,
+                () => recPath.recList.Count > 0,
+                () =>
+                {
+                    // only the path is loaded or cleared, the panel of the path is not opened
+                    recPath.resumeState = 0;
+                    btnResumePath.Image = Properties.Resources.pathResumeStart;
+                    recPath.currentPositonIndex = 0;
+                    if (recPath.recList.Count > 0)
+                    {
+                        recPath.StopDrivingRecordedPath();
+                        recPath.recList.Clear();
+                        panelDrag.Visible = false;
+                    }
+                    else
+                    {
+                        FileLoadRecPath();
+                    }
+                }))
             {
                 if (form.ShowDialog(this) != DialogResult.OK) return;
                 settings = form.Settings;

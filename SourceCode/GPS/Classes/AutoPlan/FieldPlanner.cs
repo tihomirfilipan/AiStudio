@@ -85,6 +85,9 @@ namespace AgOpenGPS.AutoPlan
         /// </summary>
         public bool HeadlandReverseTurns = false;
 
+        /// <summary>Forward turns allowed. With HeadlandReverseTurns as well: forward where it fits, the reversing turn otherwise.</summary>
+        public bool ForwardTurns = true;
+
         /// <summary>
         /// Turning radius at full steering lock (rear axle), meters; 0 = not known. With it and
         /// the reversing option the short three point turn (KK) is used where it fits.
@@ -1467,14 +1470,14 @@ namespace AgOpenGPS.AutoPlan
                 if (d0 < 100.0 && !(set.StartFromMiddle && d0 > 2.0 * R + W)) NoteStraightEnd(a0, d0);
             }
             // turn optimiser: the exit and the entry of the machine are worked out once, every turn is made of them
-            ShapedModel shapedModel = set.OptimiseTurns && !set.HeadlandReverseTurns ? BuildShapedModel(R, set.TurnStraight, set.Wheelbase, headWidth) : null;
+            ShapedModel shapedModel = set.OptimiseTurns && (!set.HeadlandReverseTurns || set.ForwardTurns) ? BuildShapedModel(R, set.TurnStraight, set.Wheelbase, headWidth) : null;
             var shapedEnds = new HashSet<int>();      // the indices of the path where the work of a shaped turn ends
             bool TryShaped(List<V2> passPts)
             {
                 if (shapedModel == null) return false;
                 LastPose(path, s, out V2 lastP, out double lastH);
                 double entryH = HeadingOf(passPts[0], passPts[Math.Min(3, passPts.Count - 1)]);
-                var shaped = ShapedTurn(lastP, lastH, passPts[0], entryH, shapedModel, s, fenceGrid, out double backBy, out int shapedWork, out double forwardBy, out int shapedEntry);
+                var shaped = ShapedTurn(lastP, lastH, passPts[0], entryH, shapedModel, s, fenceGrid, out double backBy, out int shapedWork, out double forwardBy, out int shapedEntry, set.HeadlandReverseTurns);
                 if (shaped == null) return false;
                 // the next pass starts later when the turn only reaches its line some metres into it
                 List<V2> entryPts = passPts;
@@ -1519,6 +1522,7 @@ namespace AgOpenGPS.AutoPlan
                 {
                     // with the reversing option a turn between passes that run side by side in opposite
                     // directions is KK, K or KLV1 where one fits (the planned half turn only otherwise)
+                    if (set.HeadlandReverseTurns && set.ForwardTurns && TryShaped(pts)) continue;     // forward where it fits
                     if (set.HeadlandReverseTurns)
                     {
                         LastPose(path, s, out V2 dlp, out double dlh);
@@ -1561,6 +1565,7 @@ namespace AgOpenGPS.AutoPlan
                 {
                     LastPose(path, s, out V2 lastP, out double lastH);
                     double entryH = HeadingOf(pts[0], pts[Math.Min(3, pts.Count - 1)]);
+                    if (set.ForwardTurns && TryShaped(pts)) continue;     // both kinds are on: forward where it fits
                     // turns between neighbouring passes always use the reversing turn (R); a farther
                     // pass (skipped passes) only when it is close
                     // with reversing every turn is tried in reverse first (no distance limit); where
@@ -3425,7 +3430,7 @@ namespace AgOpenGPS.AutoPlan
         /// = the first point worked again. Null when the passes are not a U-turn apart or the turn does not fit.
         /// </summary>
         private static List<V2> ShapedTurn(V2 p0, double h0, V2 p1, double h1, ShapedModel model, double s, PolygonTester fence,
-            out double back, out int workCount, out double forward, out int entryWork)
+            out double back, out int workCount, out double forward, out int entryWork, bool mustFit = false)
         {
             back = 0; workCount = 0; forward = 0; entryWork = 0;
             V2 d0 = new V2(Math.Sin(h0), Math.Cos(h0));
@@ -3573,7 +3578,7 @@ namespace AgOpenGPS.AutoPlan
                 local = Build(sh, false);
                 if (local != null) startUsed = tractorStartY;
             }
-            if (local == null) { local = Build(0.0, true); startUsed = tractorStartY; }     // nothing fits: the same turn without the fit check
+            if (local == null && !mustFit) { local = Build(0.0, true); startUsed = tractorStartY; }     // nothing fits: the same turn without the fit check
             if (local == null) return null;
             V2 end = local[local.Count - 1];
             var whole = new List<V2>(local);
