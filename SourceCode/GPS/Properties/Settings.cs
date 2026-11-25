@@ -45,7 +45,7 @@ namespace AgOpenGPS.Properties
         public int setAutoPlan_orderMode = 0;
         public bool setAutoPlan_turnsAtBoundary = true;
         public bool setAutoPlan_reverseTurns = false;
-        public bool setAutoPlan_forwardTurns = true;
+        public bool setAutoPlan_forwardTurns = false;   // false: a saved reversing choice from before stays reversing only
         public bool setAutoPlan_kkTurn = true;
         public bool setAutoPlan_kTurn = true;
         public bool setAutoPlan_klvTurn = true;

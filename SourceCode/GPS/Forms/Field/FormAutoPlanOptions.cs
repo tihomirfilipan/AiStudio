@@ -35,12 +35,13 @@ namespace AgOpenGPS.Forms.Field
         private readonly List<List<V2>> edges;
         private int edgeIndex = -1;            // -1: picked edge, or the longest one automatically
         private readonly PictureBox preview;
-        private FlowLayoutPanel page1, page2, page3;
+        private FlowLayoutPanel page1, page2, page3, page4;
         private Point dragFrom;
         private bool dragging;
         private readonly Label lblPreview, lblEdge;
         private readonly Timer previewTimer;
         private int version, planVersion = -1;
+        private bool planOptimised;       // the plan of the preview was made with the turn optimiser
         private readonly double appWidth, appRadius;
         private readonly double machineBehind, wheelbase;   // from the settings of the tool and of the vehicle (0 = not known)
 
@@ -177,15 +178,18 @@ namespace AgOpenGPS.Forms.Field
             preview = new PictureBox { Dock = DockStyle.Fill, BackColor = Color.FromArgb(24, 28, 32), SizeMode = PictureBoxSizeMode.Zoom };
             // step 1: the scheme of the passes, step 2: the plan with the order and the turns
             var stepRow = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 58, WrapContents = false };
-            btnStep1 = new Button { Text = T("1  Pass scheme", "1  Shema prohoda"), Size = new Size(200, 52), FlatStyle = FlatStyle.Flat, ForeColor = Color.White, Font = new Font("Tahoma", 12F, FontStyle.Bold), Margin = new Padding(2) };
-            btnStep2 = new Button { Text = T("2  Headland", "2  Uvratine"), Size = new Size(150, 52), FlatStyle = FlatStyle.Flat, ForeColor = Color.White, Font = new Font("Tahoma", 12F, FontStyle.Bold), Margin = new Padding(2) };
-            btnStep3 = new Button { Text = T("3  Turns and plan", "3  Okreti i plan"), Size = new Size(200, 52), FlatStyle = FlatStyle.Flat, ForeColor = Color.White, Font = new Font("Tahoma", 12F, FontStyle.Bold), Margin = new Padding(2) };
+            btnStep1 = new Button { Text = T("1  Pass scheme", "1  Shema prohoda"), Size = new Size(170, 52), FlatStyle = FlatStyle.Flat, ForeColor = Color.White, Font = new Font("Tahoma", 12F, FontStyle.Bold), Margin = new Padding(2) };
+            btnStep2 = new Button { Text = T("2  Headland", "2  Uvratine"), Size = new Size(130, 52), FlatStyle = FlatStyle.Flat, ForeColor = Color.White, Font = new Font("Tahoma", 12F, FontStyle.Bold), Margin = new Padding(2) };
+            btnStep3 = new Button { Text = T("3  Turns and plan", "3  Okreti i plan"), Size = new Size(170, 52), FlatStyle = FlatStyle.Flat, ForeColor = Color.White, Font = new Font("Tahoma", 12F, FontStyle.Bold), Margin = new Padding(2) };
             btnStep1.Click += (s, e) => SetStep(1);
             btnStep2.Click += (s, e) => SetStep(2);
             btnStep3.Click += (s, e) => SetStep(3);
+            btnStep4 = new Button { Text = T("4  Turn optimiser", "4  Optimizator okretanja"), Size = new Size(200, 52), FlatStyle = FlatStyle.Flat, ForeColor = Color.White, Font = new Font("Tahoma", 12F, FontStyle.Bold), Margin = new Padding(2) };
+            btnStep4.Click += (s, e) => SetStep(4);
             stepRow.Controls.Add(btnStep1);
             stepRow.Controls.Add(btnStep2);
             stepRow.Controls.Add(btnStep3);
+            stepRow.Controls.Add(btnStep4);
             SetStepColours();
             right.Controls.Add(preview);
             right.Controls.Add(stepRow);
@@ -216,8 +220,8 @@ namespace AgOpenGPS.Forms.Field
 
             // one page of options for each step: only the options of the chosen step are shown
             Func<FlowLayoutPanel> NewPage = () => new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, AutoSize = true, WrapContents = false };
-            page1 = NewPage(); page2 = NewPage(); page3 = NewPage();
-            root.Controls.Add(page1); root.Controls.Add(page2); root.Controls.Add(page3);
+            page1 = NewPage(); page2 = NewPage(); page3 = NewPage(); page4 = NewPage();
+            root.Controls.Add(page1); root.Controls.Add(page2); root.Controls.Add(page3); root.Controls.Add(page4);
 
             var set = Properties.Settings.Default;
 
@@ -259,7 +263,8 @@ namespace AgOpenGPS.Forms.Field
             var numbers3 = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = new Padding(0, 0, 0, 4) };
             nudRadius = AddNumber(numbers3, T("Turning radius (m)", "Radijus okretanja (m)"), 1m, 60m, 1, (decimal)appRadius);
             nudEndClearance = AddNumber(numbers3, T("Front end from the boundary (m)", "Prednji dio od međe (m)"), 0m, 20m, 1, (decimal)Properties.Settings.Default.setAutoPlan_endClearance);
-            nudTurnStraight = AddNumber(numbers3, T("Machine behind the tractor (m)", "Stroj iza traktora (m)"), 0m, 30m, 1, (decimal)(machineBehind > 0.05 ? machineBehind : Properties.Settings.Default.setAutoPlan_turnStraight));
+            var numbers4 = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = new Padding(0, 0, 0, 4) };
+            nudTurnStraight = AddNumber(numbers4, T("Machine behind the tractor (m)", "Stroj iza traktora (m)"), 0m, 30m, 1, (decimal)(machineBehind > 0.05 ? machineBehind : Properties.Settings.Default.setAutoPlan_turnStraight));
             page3.Controls.Add(StepNote(T("Step 3: the turns and the plan (the order of the passes).", "Korak 3: okreti i plan (redoslijed prohoda).")));
             page3.Controls.Add(numbers3);
             var columns = new FlowLayoutPanel { AutoSize = true, WrapContents = true, MaximumSize = new Size(1100, 0) };
@@ -280,10 +285,16 @@ namespace AgOpenGPS.Forms.Field
             tileAddTrack.Selected = set.setAutoPlan_addTrack;
             tileAvoidWorked = new PictureTile(T("Never drive over worked passes", "Ne vozi po obrađenom"), DrawAvoidWorked);
             tileAvoidWorked.Selected = set.setAutoPlan_avoidWorked;
-            tileOptimise = new PictureTile(T("Turn optimiser (adapted to the machine)", "Optimizator okretanja (prilagođen stroju)"), DrawOptimiseTurns);
+            tileOptimise = new PictureTile(T("Turn optimiser", "Optimizator okretanja"), DrawOptimiseTurns);
             tileOptimise.Selected = set.setAutoPlan_optimiseTurns;
-            AddGroup(colA, T("Plan", "Plan"), false, -1, tileMiddle, tileAddTrack, tileAvoidWorked, tileOptimise);
+            AddGroup(colA, T("Plan", "Plan"), false, -1, tileMiddle, tileAddTrack, tileAvoidWorked);
             columns.Controls.Add(colA);
+            // ---------- step 4: the turn optimiser (made on the plan of the steps before) ----------
+            page4.Controls.Add(StepNote(T("Step 4: the turn optimiser. Steps 1 to 3 are shown without it.", "Korak 4: optimizator okretanja. Koraci 1 do 3 prikazani su bez njega.")));
+            page4.Controls.Add(numbers4);
+            var colOpt = Column();
+            AddGroup(colOpt, T("Turn optimiser (tap to switch on/off)", "Optimizator okretanja (dodir uključi/isključi)"), false, -1, tileOptimise);
+            page4.Controls.Add(colOpt);
 
             var colB = Column();
             tileTurnsEdge = new PictureTile(T("Out at the edge", "Uz među"), DrawTurnsAtEdge);
@@ -547,25 +558,29 @@ namespace AgOpenGPS.Forms.Field
             int v = version;
             FieldPlanSettings settings = CurrentSettings();
             FormGPS.ApplyVehicleTurn(settings);
+            settings.OptimiseTurns = settings.OptimiseTurns && step == 4;     // each step on its own
+            bool optimised = settings.OptimiseTurns;
             Task.Run(() => FieldPlanner.Build(fence, settings, startPos, startHeading))
                 .ContinueWith(t =>
                 {
                     if (IsDisposed || v != version) return;   // options changed meanwhile
                     if (t.IsFaulted || t.Result == null) { lblPreview.Text = T("No plan", "Nema plana"); return; }
                     planVersion = v;
+                    planOptimised = optimised;
                     Plan = t.Result;
                     ShowPlan(t.Result);
                 }, TaskScheduler.FromCurrentSynchronizationContext());
         }
 
-        private Button btnStep1, btnStep2, btnStep3;
-        private int step = 1;   // 1: pass scheme, 2: headland, 3: turns and plan
+        private Button btnStep1, btnStep2, btnStep3, btnStep4;
+        private int step = 1;   // 1: pass scheme, 2: headland, 3: turns and plan, 4: turn optimiser
 
         private void SetStepColours()
         {
             btnStep1.BackColor = step == 1 ? Color.FromArgb(31, 122, 58) : Color.FromArgb(69, 79, 87);
             btnStep2.BackColor = step == 2 ? Color.FromArgb(31, 122, 58) : Color.FromArgb(69, 79, 87);
             btnStep3.BackColor = step == 3 ? Color.FromArgb(31, 122, 58) : Color.FromArgb(69, 79, 87);
+            btnStep4.BackColor = step == 4 ? Color.FromArgb(31, 122, 58) : Color.FromArgb(69, 79, 87);
         }
 
         private static Label StepNote(string text)
@@ -579,14 +594,18 @@ namespace AgOpenGPS.Forms.Field
             page1.Visible = step == 1;
             page2.Visible = step == 2;
             page3.Visible = step == 3;
+            page4.Visible = step == 4;
         }
 
         private void SetStep(int newStep)
         {
+            bool optimiserChanges = (step == 4) != (newStep == 4) && tileOptimise.Selected;
             step = newStep;
             ShowStepPage();
             SetStepColours();
-            if (Plan != null) ShowPlan(Plan);
+            // the plan of steps 1 to 3 is made without the optimiser, the one of step 4 with it
+            if (optimiserChanges) OptionsChanged();
+            else if (Plan != null) ShowPlan(Plan);
         }
 
         private void ShowPlan(FieldPlanResult plan)
@@ -620,7 +639,7 @@ namespace AgOpenGPS.Forms.Field
             preview.Image = FormAutoPlanPreview.RenderPlan(plan, fence, startPos, startHeading, tileAddTrack.Selected || tileGuidance.Selected, w, h);
             old?.Dispose();
 
-            lblPreview.Text = T("Passes ", "Prohoda ") + plan.Passes + ", " + T("turns ", "okreta ") + plan.Turns +
+            lblPreview.Text = (step == 4 ? T("Step 4: turn optimiser ", "Korak 4: optimizator okretanja ") + (tileOptimise.Selected ? T("ON. ", "UKLJUČEN. ") : T("off. ", "isključen. ")) : "") + T("Passes ", "Prohoda ") + plan.Passes + ", " + T("turns ", "okreta ") + plan.Turns +
                 ", " + (plan.TotalLength / 1000.0).ToString("0.0", CultureInfo.CurrentCulture) + " km (" +
                 T("work ", "rad ") + (plan.WorkLength / 1000.0).ToString("0.0", CultureInfo.CurrentCulture) + " km)" +
                 (plan.TurnsLeavingField > 0 ? "\r\n" + T("Turns leaving the field: ", "Okreta izvan međe: ") + plan.TurnsLeavingField : "") +
@@ -630,7 +649,7 @@ namespace AgOpenGPS.Forms.Field
         private void BtnOk_Click(object sender, EventArgs e)
         {
             Settings = CurrentSettings();
-            if (planVersion != version) Plan = null;   // the preview is not for these options
+            if (planVersion != version || planOptimised != tileOptimise.Selected) Plan = null;   // the preview is not for these options
 
             var set = Properties.Settings.Default;
             set.setAutoPlan_headlandLaps = (int)nudLaps.Value;

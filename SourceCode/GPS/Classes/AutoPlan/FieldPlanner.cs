@@ -302,10 +302,10 @@ namespace AgOpenGPS.AutoPlan
                 V2 midO = new V2(0, 0), midN = new V2(0, 0);
                 List<List<V2>> parts = set.WedgeField ? SplitWedge(fence, WedgeTurnRoom(set), out wedgeRefs, out wedgeRegions, out midO, out midN)
                     : set.SplitField ? SplitAtBends(fence) : null;
-                if (set.WedgeField && parts != null && parts.Count == 2 && LastWedgeParallel && wedgeRegions != null)
+                if (set.WedgeField && parts != null && parts.Count == 2 && (LastWedgeParallel || !set.StartFromMiddle) && wedgeRegions != null)
                 {
-                    // long edges nearly parallel: every half its own pass direction, but all the
-                    // passes ordered and turned together like one field
+                    // long edges nearly parallel, or the plan does not start in the middle: every half its own pass direction
+                    // (the scheme of the passes as laid out), but all the passes ordered and turned together like one field
                     FieldPlanSettings ws = set.Clone();
                     ws.WedgeField = false;
                     ws.ReferenceEdge = wedgeRefs[0];
@@ -1406,7 +1406,8 @@ namespace AgOpenGPS.AutoPlan
             {
                 // with the reversing turns the scheme of the passes (step 1) is kept as laid out: the passes
                 // are not grown at their inside ends (grown, they ran over each other where the two halves meet)
-                if (!set.HeadlandReverseTurns)
+                // (not grown either when the plan does not start in the middle: the lines of the scheme are only ever shortened)
+                if (!set.HeadlandReverseTurns && set.StartFromMiddle)
                 {
                     var origPts = new Dictionary<Pass, List<V2>>();
                     foreach (Pass ps in passes) origPts[ps] = new List<V2>(ps.Pts);
@@ -3606,8 +3607,12 @@ namespace AgOpenGPS.AutoPlan
                 V2 mach = hl > 1e-9 ? result[i] - hdg * (model.Behind / hl) : result[i];
                 return AlongOf(mach);
             }
+            // the master switch only has to be on while the machine is near the headland line: the sections themselves are
+            // switched by the distance from the headland line, so the work is marked a little before the machine gets there
+            // and a little after it has left (the margin) and the switching is left to the headland
+            const double SwitchMargin = 3.0;
             int crossI = 0;
-            while (crossI < result.Count && MachineAlong(crossI) < 0) crossI++;
+            while (crossI < result.Count && MachineAlong(crossI) < SwitchMargin) crossI++;
             workCount = Math.Max(1, Math.Min(crossI, result.Count / 2 + 10));
             // the machine reaches the entry of the next pass when the tractor is that far into it: worked again from there
             int apexAt = 0;
@@ -3616,7 +3621,7 @@ namespace AgOpenGPS.AutoPlan
                 if (AlongOf(result[i]) > apexAlong) { apexAlong = AlongOf(result[i]); apexAt = i; }
             entryWork = result.Count;
             for (int i = apexAt; i < result.Count; i++)
-                if (MachineAlong(i) <= along0) { entryWork = i; break; }
+                if (MachineAlong(i) <= along0 + SwitchMargin) { entryWork = i; break; }
             if (entryWork < workCount) entryWork = workCount;
             return result;
         }
