@@ -50,6 +50,7 @@ namespace AgOpenGPS.Properties
         public string setFert_subtype = "";
         public string setFert_sprayProduct = "";     // spraying: the preparation and the rate in l/ha (kept apart from the fertiliser)
         public double setFert_sprayRate = 0;
+        public string setFert_starts = "";           // per field: the number of patches of the coverage when the operation started (field=n;field=n)
         public string setFert_colors = "";            // the colours chosen for the works: key=R,G,B;key=R,G,B
         public string setFert_sprayNote = "";        // what the chosen preparation is for (from the list)
         public string setFert_product = "";

@@ -120,6 +120,10 @@ namespace AgOpenGPS
                 }
             }
 
+            // the coverage of this field is known now: a chosen operation starts after the patches that are already there
+            try { FertilisingOnFieldOpened(); }
+            catch (Exception ex) { Log.EventWriter("Operation on field open: " + ex.Message); }
+
             // --- Contour ---
             if (TryLoad("Contour.txt", LoadCriticality.Optional, () => ContourFiles.Load(dir), out var contours))
             {

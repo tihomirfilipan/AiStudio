@@ -2123,6 +2123,7 @@ namespace AgOpenGPS
 
                         FileCreateContour();
                         FileCreateSections();
+                        ResetFertilisingStart();      // the coverage is gone: an operation starts from the beginning of the new one
 
                         Log.EventWriter("All Section Mapping Deleted");
                     }

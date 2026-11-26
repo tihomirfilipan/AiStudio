@@ -197,6 +197,7 @@ namespace AgOpenGPS
         private void ShowFertilisingDialog()
         {
             var set = Properties.Settings.Default;
+            string keyApplied = FertOperationKey(set);     // the operation that was in force when the window was opened
             string colorsBefore = set.setFert_colors;      // the colours chosen in the window are kept only when the choice is accepted
             bool applied = false;
             using (var form = new Form())
@@ -351,6 +352,9 @@ namespace AgOpenGPS
                         set.setFert_rate = (double)nudRate.Value;
                     }
                     set.setFert_colorCoverage = chkColor.Checked;
+                    // a new operation: its coverage starts with the patches made from now on
+                    string keyNow = FertOperationKey(set);
+                    if (keyNow != keyApplied) { keyApplied = keyNow; NoteFertilisingStart(); }
                     set.Save();
                     ApplyFertilisingColor();
                     UpdateFertilisingStatus();
@@ -367,39 +371,104 @@ namespace AgOpenGPS
             }
         }
 
+        // The number of patches of the coverage of a field when the operation started: the file of the operation holds only the patches after
+        // it. Kept in the settings for every field, so it stays after the program is closed and started again.
+        private static string FertFieldKey(string field) => (field ?? "").Replace('=', '_').Replace(';', '_').Trim();
+
+        private static int? GetFertStart(string field)
+        {
+            string key = FertFieldKey(field);
+            foreach (string part in (Properties.Settings.Default.setFert_starts ?? "").Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries))
+            {
+                int eq = part.LastIndexOf('=');
+                if (eq > 0 && part.Substring(0, eq) == key && int.TryParse(part.Substring(eq + 1), NumberStyles.Integer, CultureInfo.InvariantCulture, out int n)) return n;
+            }
+            return null;
+        }
+
+        private static void SetFertStart(string field, int value)
+        {
+            string key = FertFieldKey(field);
+            var kept = new List<string>();
+            foreach (string part in (Properties.Settings.Default.setFert_starts ?? "").Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries))
+            {
+                int eq = part.LastIndexOf('=');
+                if (eq > 0 && part.Substring(0, eq) != key) kept.Add(part);
+            }
+            kept.Add(key + "=" + value.ToString(CultureInfo.InvariantCulture));
+            Properties.Settings.Default.setFert_starts = string.Join(";", kept);
+            Properties.Settings.Default.Save();
+        }
+
+        /// <summary>A field was opened: when an operation is chosen already and this field has no start yet, it starts after the coverage that is there.</summary>
+        public void FertilisingOnFieldOpened()
+        {
+            if (string.IsNullOrEmpty(Properties.Settings.Default.setFert_type)) return;
+            string field = currentFieldDirectory;
+            if (GetFertStart(field).HasValue) return;
+            SetFertStart(field, FertilisingFiles.ReadBlocks(Path.Combine(GetFieldDir(false), "Sections.txt")).Count);
+        }
+
+        /// <summary>The coverage of the field was deleted: the operation starts from the beginning of the new coverage.</summary>
+        public void ResetFertilisingStart()
+        {
+            if (!string.IsNullOrEmpty(currentFieldDirectory) && GetFertStart(currentFieldDirectory).HasValue) SetFertStart(currentFieldDirectory, 0);
+        }
+
+        private static string FertOperationKey(Properties.Settings s)
+            => FertWorkName(s) + "|" + FertProductOf(s);      // (the rate alone does not start a new operation: a corrected rate must not cut the coverage)
+
+        /// <summary>The coverage of the field is written to Sections.txt and the patches in it are counted.</summary>
+        private int CountCoveragePatches()
+        {
+            FileSaveSections();
+            return FertilisingFiles.ReadBlocks(Path.Combine(GetFieldDir(false), "Sections.txt")).Count;
+        }
+
+        /// <summary>A new operation was chosen in the window: its coverage starts with the patches that come after the ones that are there now.</summary>
+        private void NoteFertilisingStart()
+        {
+            if (!isJobStarted) return;
+            try { SetFertStart(currentFieldDirectory, CountCoveragePatches()); }
+            catch (Exception ex) { Log.EventWriter("Operation start: " + ex.Message); }
+        }
+
         /// <summary>
-        /// Saves the work in a folder of the field named after the work (Prihrana_1, Oranje, Prskanje ...): ONE file with the work, the
-        /// product, the rate, the area covered, the amount used and the coverage itself. The first lines are text, which the loader of
-        /// the coverage skips, so the file can be copied back as Sections.txt. After it the coverage can be reset for the next work.
+        /// Saves the work in the folder Radnje (next to Fields), all the files in it, no sub folders:
+        /// yyyy-MM-dd_Field_Folder_Product_Vehicle.txt - the work, the vehicle, the implement, the product, the rate, the origin of the field,
+        /// the area and the amount and the coverage of THIS work only (the patches made after the work was chosen). The first lines are text,
+        /// which the loader of the coverage skips, so the file can be copied back as Sections.txt.
         /// </summary>
-        /// <param name="onClose">true when the field is closed: nothing is shown, it is saved only when an operation is chosen and there is some coverage</param>
+        /// <param name="onClose">true when the field is closed: nothing is shown, it is saved only when an operation is chosen and it has some coverage</param>
         public void SaveFertilisingToFolder(bool onClose = false)
         {
             try
             {
                 var set = Properties.Settings.Default;
-                if (onClose && (string.IsNullOrEmpty(set.setFert_type) || fd.workedAreaTotal <= 0)) return;
+                if (onClose && string.IsNullOrEmpty(set.setFert_type)) return;
                 // no field open: nothing to save (the choice itself is kept in the settings), no question asked
                 if (!isJobStarted) return;
+
                 string fieldDir = GetFieldDir(true);
-                // the folder: the kind of the work (Prihrana 1, Oranje ...), for spraying the operation and the crop (Prskanje_Kukuruz)
+                string field = currentFieldDirectory;
+                // the folder name of the work (Prihrana_1, Oranje, Prskanje_Kukuruz ...)
                 string folderName = IsSpray(set.setFert_type) && !string.IsNullOrEmpty(set.setFert_subtype) ? set.setFert_type + "_" + set.setFert_subtype
                     : (!string.IsNullOrEmpty(set.setFert_subtype) ? set.setFert_subtype : (string.IsNullOrEmpty(set.setFert_type) ? "Radnja" : set.setFert_type));
-                string folder = Path.Combine(fieldDir, MakeFileName(folderName));
-                Directory.CreateDirectory(folder);
+                folderName = FertilisingFiles.Clean(folderName);
 
-                // one file per day: saving again the same day updates it, a new day starts a new file
-                string stamp = DateTime.Now.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
-                double hectares = fd.workedAreaTotal * glm.m2ha;
+                // the coverage up to now is in Sections.txt (when the field is closed it has just been saved); only the patches of this work are used
+                if (!onClose) FileSaveSections();
+                var blocks = FertilisingFiles.ReadBlocks(Path.Combine(fieldDir, "Sections.txt"));
+                int start = GetFertStart(field) ?? 0;
+                if (blocks.Count < start) { start = 0; SetFertStart(field, 0); }       // the coverage was deleted meanwhile
+                var mine = blocks.GetRange(start, blocks.Count - start);
+                if (onClose && mine.Count == 0) return;
+
+                double hectares = FertilisingFiles.AreaOfBlocks(mine) * glm.m2ha;
                 string product = FertProductOf(set);
                 double rate = FertRateOf(set);
                 string unit = FertUnit(set.setFert_type);
                 double amount = hectares * rate;
-
-                // the coverage is written to Sections.txt first (everything up to now), then put in the same file under the text lines
-                if (!onClose) FileSaveSections();      // (when the field is closed it has just been saved)
-                string sections = Path.Combine(fieldDir, "Sections.txt");
-                string coverage = File.Exists(sections) ? File.ReadAllText(sections) : "";
 
                 // the vehicle and the implement (the names of their profiles and the main numbers from their settings)
                 var vs = Properties.VehicleSettings.Default;
@@ -407,7 +476,17 @@ namespace AgOpenGPS
                 string vehicleName = string.IsNullOrEmpty(RegistrySettings.vehicleProfileName) ? "-" : RegistrySettings.vehicleProfileName;
                 string toolName = string.IsNullOrEmpty(RegistrySettings.toolProfileName) ? "-" : RegistrySettings.toolProfileName;
 
+                // the origin of the field (StartFix of Field.txt), decimal point, at least 8 decimals
+                string origin = null;
+                try
+                {
+                    var o = AgOpenGPS.IO.FieldPlaneFiles.LoadOrigin(fieldDir);
+                    origin = o.Latitude.ToString("F8", CultureInfo.InvariantCulture) + "," + o.Longitude.ToString("F8", CultureInfo.InvariantCulture);
+                }
+                catch (Exception ex) { Log.EventWriter("Operation origin: " + ex.Message); }
+
                 string header = "Radnja: " + FertWorkName(set) + Environment.NewLine
+                    + "Mapa: " + folderName + Environment.NewLine
                     + "Vozilo: " + vehicleName + " (osovinski razmak " + vs.setVehicle_wheelbase.ToString("F2", CultureInfo.InvariantCulture) + " m)" + Environment.NewLine
                     + "Prikljucak: " + toolName + " (radna sirina " + ts.setVehicle_toolWidth.ToString("F2", CultureInfo.InvariantCulture)
                     + " m, preklapanje " + ts.setVehicle_toolOverlap.ToString("F2", CultureInfo.InvariantCulture) + " m)" + Environment.NewLine
@@ -417,13 +496,18 @@ namespace AgOpenGPS
                     + "Norma_" + unit + "_ha: " + rate.ToString("F1", CultureInfo.InvariantCulture) + Environment.NewLine
                     + "Pokriveno_ha: " + hectares.ToString("F2", CultureInfo.InvariantCulture) + Environment.NewLine
                     + "Ukupno_" + unit + ": " + amount.ToString("F1", CultureInfo.InvariantCulture) + Environment.NewLine
-                    + "Polje: " + currentFieldDirectory + Environment.NewLine
-                    + "Datum: " + DateTime.Now.ToString("dd.MM.yyyy HH:mm", CultureInfo.InvariantCulture) + Environment.NewLine;
-                string namePart = string.IsNullOrEmpty(product) ? MakeFileName(folderName) : MakeFileName(product);
-                string file = Path.Combine(folder, stamp + "_" + namePart + ".txt");
-                File.WriteAllText(file, header + coverage, new System.Text.UTF8Encoding(false));
+                    + "Polje: " + field + Environment.NewLine
+                    + "Datum: " + DateTime.Now.ToString("dd.MM.yyyy HH:mm", CultureInfo.InvariantCulture) + Environment.NewLine
+                    + (origin != null ? "Ishodiste: " + origin + Environment.NewLine : "")
+                    + "Pokrivenost: radnja" + Environment.NewLine
+                    + "Verzija: 2" + Environment.NewLine;
 
-                if (!onClose) TimedMessageBox(2500, T("Operation", "Radnja"), T("Saved in the folder of the work: ", "Spremljeno u mapu radnje: ") + Path.GetFileName(folder));
+                string folder = Path.Combine(RegistrySettings.baseDirectory, "Radnje");
+                Directory.CreateDirectory(folder);
+                string fileName = FertilisingFiles.FileName(DateTime.Now, field, folderName, product, vehicleName);
+                File.WriteAllText(Path.Combine(folder, fileName), header + FertilisingFiles.BlocksText(mine), new System.Text.UTF8Encoding(false));
+
+                if (!onClose) TimedMessageBox(2500, T("Operation", "Radnja"), T("Saved: ", "Spremljeno: ") + fileName);
             }
             catch (Exception ex)
             {
