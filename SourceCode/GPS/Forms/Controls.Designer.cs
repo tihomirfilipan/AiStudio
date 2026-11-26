@@ -750,6 +750,16 @@ namespace AgOpenGPS
                 return;
             }
 
+            // A copy of the boundary as it is on the disk, before the closing writes it again: if the boundary were lost for any reason
+            // (the field closed and opened again when the vehicle or the implement is changed ...), Boundary.bak holds the last good one
+            try
+            {
+                string boundaryFile = Path.Combine(GetFieldDir(false), "Boundary.txt");
+                if (File.Exists(boundaryFile) && new FileInfo(boundaryFile).Length > 60)
+                    File.Copy(boundaryFile, Path.Combine(GetFieldDir(false), "Boundary.bak"), true);
+            }
+            catch (Exception ex) { Log.EventWriter("Boundary backup failed: " + ex.Message); }
+
             // Save the current field data before closing
             if (ct.isContourOn) ct.StopContourLine();
 
