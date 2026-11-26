@@ -23,7 +23,7 @@ namespace AgOpenGPS
         {
             { "Gnojidba", new[] { "Osnovna gnojidba", "Predsjetvena", "Prihrana 1", "Prihrana 2", "Folijarno" } },
             { "Obrada", new[] { "Oranje", "Rotodrljanje", "Tanjuranje", "Podrivanje", "Drljanje", "Kultivacija", "Sjetvospremanje" } },
-            { "Prskanje", new string[0] }
+            { "Prskanje", new[] { "Kukuruz", "Pšenica", "Soja", "Ječam", "Suncokret", "Uljana repica", "Lucerna", "DTS", "Tritikale" } }   // spraying: the crop
         };
         private static readonly string[] FertProducts = { "NPK 7-20-30", "NPK 15-15-15", "UREA", "KAN", "Vlastiti unos" };
 
@@ -52,6 +52,19 @@ namespace AgOpenGPS
             "Vertimec 018 EC – akaricid protiv crvenog pauka / grinje (soja)"
         };
         private static string SprayName(string text) { int i = text.IndexOf(" – ", StringComparison.Ordinal); return (i > 0 ? text.Substring(0, i) : text).Trim(); }
+        private static string[] SprayNames()
+        {
+            var names = new string[SprayProducts.Length];
+            for (int i = 0; i < names.Length; i++) names[i] = SprayName(SprayProducts[i]);
+            return names;
+        }
+        /// <summary>What a preparation from the list is for (empty for one typed in).</summary>
+        private static string SprayNoteFor(string name)
+        {
+            name = (name ?? "").Trim();
+            foreach (string item in SprayProducts) if (SprayName(item) == name) return SprayNote(item);
+            return "";
+        }
         private static string SprayNote(string text) { int i = text.IndexOf(" – ", StringComparison.Ordinal); return i > 0 ? text.Substring(i + 3).Trim() : ""; }
 
         private static bool IsSpray(string type) => type == "Prskanje";
@@ -156,7 +169,7 @@ namespace AgOpenGPS
                 form.MaximizeBox = false;
                 form.MinimizeBox = false;
                 form.Font = new Font("Tahoma", 14F);
-                form.ClientSize = new Size(560, 540);
+                form.ClientSize = new Size(560, 590);
 
                 var lblOp = new Label { Left = 20, Top = 15, AutoSize = true, Text = T("Operation", "Radnja") };
                 var cbOp = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Left = 20, Top = 45, Width = 520 };
@@ -165,12 +178,14 @@ namespace AgOpenGPS
                 var lblKind = new Label { Left = 20, Top = 85, AutoSize = true, Text = T("Kind", "Vrsta") };
                 var cbKind = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Left = 20, Top = 115, Width = 520 };
                 var lblProduct = new Label { Left = 20, Top = 155, AutoSize = true, Text = T("Fertiliser / product", "Gnojivo / sredstvo") };
-                var cbProduct = new ComboBox { DropDownStyle = ComboBoxStyle.DropDown, Left = 20, Top = 185, Width = 520, DropDownWidth = 900 };
-                var lblRate = new Label { Left = 20, Top = 225, AutoSize = true, Text = T("Rate (kg/ha)", "Norma (kg/ha)") };
-                var nudRate = new NumericUpDown { Left = 20, Top = 255, Width = 200, DecimalPlaces = 1, Minimum = 0, Maximum = 5000, Increment = 10 };
-                var chkColor = new CheckBox { Left = 20, Top = 320, Width = 440, Text = T("Coverage in the colour of the work", "Pokrivenost u boji radnje"), Checked = set.setFert_colorCoverage };
+                var cbProduct = new ComboBox { DropDownStyle = ComboBoxStyle.DropDown, Left = 20, Top = 185, Width = 520, DropDownWidth = 520 };
+                // what the chosen preparation is for, under the choice
+                var lblNote = new Label { Left = 20, Top = 222, Width = 520, Height = 38, ForeColor = Color.DimGray, Font = new Font("Tahoma", 10.5F) };
+                var lblRate = new Label { Left = 20, Top = 265, AutoSize = true, Text = T("Rate (kg/ha)", "Norma (kg/ha)") };
+                var nudRate = new NumericUpDown { Left = 20, Top = 295, Width = 200, DecimalPlaces = 1, Minimum = 0, Maximum = 5000, Increment = 10 };
+                var chkColor = new CheckBox { Left = 20, Top = 360, Width = 440, Text = T("Coverage in the colour of the work", "Pokrivenost u boji radnje"), Checked = set.setFert_colorCoverage };
                 // the colour that the coverage will have, next to the choice
-                var swatch = new Panel { Left = 475, Top = 316, Width = 65, Height = 38, BorderStyle = BorderStyle.FixedSingle };
+                var swatch = new Panel { Left = 475, Top = 356, Width = 65, Height = 38, BorderStyle = BorderStyle.FixedSingle };
 
                 // the kinds of the chosen operation; tillage has no product and no rate
                 void FillKinds(string wanted)
@@ -182,6 +197,7 @@ namespace AgOpenGPS
                     if (kinds.Length > 0) cbKind.SelectedIndex = Math.Max(0, Array.IndexOf(kinds, wanted));
                     bool hasKinds = kinds.Length > 0;
                     lblKind.Visible = cbKind.Visible = hasKinds;
+                    lblKind.Text = IsSpray(op) ? T("Crop", "Kultura") : T("Kind", "Vrsta");
                     bool hasProduct = op != "Obrada";
                     lblProduct.Visible = cbProduct.Visible = lblRate.Visible = nudRate.Visible = hasProduct;
                     // spraying: the preparation and l/ha; fertilising: the fertiliser and kg/ha (each keeps its own last values)
@@ -189,19 +205,21 @@ namespace AgOpenGPS
                     lblProduct.Text = spray ? T("Preparation", "Preparat") : T("Fertiliser / product", "Gnojivo / sredstvo");
                     lblRate.Text = spray ? T("Rate (l/ha)", "Norma (l/ha)") : T("Rate (kg/ha)", "Norma (kg/ha)");
                     cbProduct.Items.Clear();
-                    cbProduct.Items.AddRange(spray ? SprayProducts : FertProducts);
+                    // spraying: only the names in the list, what each is for is written under the choice
+                    cbProduct.Items.AddRange(spray ? SprayNames() : FertProducts);
+                    lblNote.Visible = spray;
                     string storedProduct = spray ? set.setFert_sprayProduct : set.setFert_product;
                     double storedRate = spray ? set.setFert_sprayRate : set.setFert_rate;
-                    // (spraying: the name with what it is for, so the note is not lost when the window is opened again)
-                    if (spray && !string.IsNullOrEmpty(storedProduct) && !string.IsNullOrEmpty(set.setFert_sprayNote)) storedProduct += " – " + set.setFert_sprayNote;
                     cbProduct.Text = string.IsNullOrEmpty(storedProduct) ? (spray ? "" : FertProducts[0]) : storedProduct;
                     nudRate.Value = (decimal)Math.Min(5000.0, Math.Max(0.0, storedRate > 0 ? storedRate : (spray ? 0.0 : 250.0)));
+                    lblNote.Text = spray ? SprayNoteFor(cbProduct.Text) : "";
                 }
                 void UpdateSwatch()
                 {
                     string kind = cbKind.Visible && cbKind.SelectedItem != null ? (string)cbKind.SelectedItem : "";
                     swatch.BackColor = FertColor((string)cbOp.SelectedItem, kind);
                 }
+                cbProduct.TextChanged += (s, e) => { if (IsSpray((string)cbOp.SelectedItem)) lblNote.Text = SprayNoteFor(cbProduct.Text); };
                 cbOp.SelectedIndexChanged += (s, e) => { FillKinds(null); UpdateSwatch(); };
                 cbKind.SelectedIndexChanged += (s, e) => UpdateSwatch();
                 FillKinds(set.setFert_subtype);
@@ -213,14 +231,15 @@ namespace AgOpenGPS
                 form.Controls.Add(cbKind);
                 form.Controls.Add(lblProduct);
                 form.Controls.Add(cbProduct);
+                form.Controls.Add(lblNote);
                 form.Controls.Add(lblRate);
                 form.Controls.Add(nudRate);
                 form.Controls.Add(chkColor);
                 form.Controls.Add(swatch);
 
-                var btnOk = new Button { Text = T("OK", "U redu"), Left = 20, Top = 450, Width = 150, Height = 60, DialogResult = DialogResult.OK };
-                var btnSave = new Button { Text = T("Save the operation", "Spremi radnju"), Left = 185, Top = 450, Width = 200, Height = 60 };
-                var btnCancel = new Button { Text = T("Cancel", "Odustani"), Left = 400, Top = 450, Width = 140, Height = 60, DialogResult = DialogResult.Cancel };
+                var btnOk = new Button { Text = T("OK", "U redu"), Left = 20, Top = 500, Width = 150, Height = 60, DialogResult = DialogResult.OK };
+                var btnSave = new Button { Text = T("Save the operation", "Spremi radnju"), Left = 185, Top = 500, Width = 200, Height = 60 };
+                var btnCancel = new Button { Text = T("Cancel", "Odustani"), Left = 400, Top = 500, Width = 140, Height = 60, DialogResult = DialogResult.Cancel };
                 form.Controls.Add(btnOk);
                 form.Controls.Add(btnSave);
                 form.Controls.Add(btnCancel);
@@ -237,7 +256,7 @@ namespace AgOpenGPS
                         // from the list: the name is saved and what it is for goes to the note; typed in: only the name
                         string typed = cbProduct.Text.Trim();
                         set.setFert_sprayProduct = SprayName(typed);
-                        set.setFert_sprayNote = SprayNote(typed);
+                        set.setFert_sprayNote = SprayNoteFor(typed);
                         set.setFert_sprayRate = (double)nudRate.Value;
                     }
                     else if (op != "Obrada") { set.setFert_product = cbProduct.Text.Trim(); set.setFert_rate = (double)nudRate.Value; }
@@ -272,7 +291,9 @@ namespace AgOpenGPS
                 // no field open: nothing to save (the choice itself is kept in the settings), no question asked
                 if (!isJobStarted) return;
                 string fieldDir = GetFieldDir(true);
-                string folderName = !string.IsNullOrEmpty(set.setFert_subtype) ? set.setFert_subtype : (string.IsNullOrEmpty(set.setFert_type) ? "Radnja" : set.setFert_type);
+                // the folder: the kind of the work (Prihrana 1, Oranje ...), for spraying the operation and the crop (Prskanje_Kukuruz)
+                string folderName = IsSpray(set.setFert_type) && !string.IsNullOrEmpty(set.setFert_subtype) ? set.setFert_type + "_" + set.setFert_subtype
+                    : (!string.IsNullOrEmpty(set.setFert_subtype) ? set.setFert_subtype : (string.IsNullOrEmpty(set.setFert_type) ? "Radnja" : set.setFert_type));
                 string folder = Path.Combine(fieldDir, MakeFileName(folderName));
                 Directory.CreateDirectory(folder);
 
@@ -299,6 +320,7 @@ namespace AgOpenGPS
                     + "Vozilo: " + vehicleName + " (osovinski razmak " + vs.setVehicle_wheelbase.ToString("F2", CultureInfo.InvariantCulture) + " m)" + Environment.NewLine
                     + "Prikljucak: " + toolName + " (radna sirina " + ts.setVehicle_toolWidth.ToString("F2", CultureInfo.InvariantCulture)
                     + " m, preklapanje " + ts.setVehicle_toolOverlap.ToString("F2", CultureInfo.InvariantCulture) + " m)" + Environment.NewLine
+                    + (IsSpray(set.setFert_type) && !string.IsNullOrEmpty(set.setFert_subtype) ? "Kultura: " + set.setFert_subtype + Environment.NewLine : "")
                     + (IsSpray(set.setFert_type) ? "Preparat: " : "Gnojivo: ") + product + Environment.NewLine
                     + (IsSpray(set.setFert_type) && !string.IsNullOrEmpty(set.setFert_sprayNote) ? "Namjena: " + set.setFert_sprayNote + Environment.NewLine : "")
                     + "Norma_" + unit + "_ha: " + rate.ToString("F1", CultureInfo.InvariantCulture) + Environment.NewLine
