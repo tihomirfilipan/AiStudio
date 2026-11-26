@@ -45,6 +45,11 @@ namespace AgOpenGPS.Properties
         public int setAutoPlan_orderMode = 0;
         public bool setAutoPlan_turnsAtBoundary = true;
         public bool setAutoPlan_reverseTurns = false;
+        // fertilising: what is being spread (shown on the screen, saved with the field)
+        public string setFert_type = "";
+        public string setFert_product = "";
+        public double setFert_rate = 0;
+        public bool setFert_colorCoverage = false;
         public bool setAutoPlan_forwardTurns = false;   // false: a saved reversing choice from before stays reversing only
         public bool setAutoPlan_kkTurn = true;
         public bool setAutoPlan_kTurn = true;

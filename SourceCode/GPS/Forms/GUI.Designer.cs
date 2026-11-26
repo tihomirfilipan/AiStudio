@@ -95,6 +95,8 @@ namespace AgOpenGPS
         //Timer triggers at 125 msec
         private void tmrWatchdog_tick(object sender, EventArgs e)
         {
+            UpdateFertilisingStatus();
+
             if (sentenceCounter == 19)
             {
                 Log.EventWriter("No GPS Warning - Lost GPS");

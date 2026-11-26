@@ -322,6 +322,9 @@ namespace AgOpenGPS
             //automatic whole-field path planner menu entry
             AddAutoPlanMenu();
 
+            //fertilising: the kind of fertilising, the product and the rate, shown on the screen and saved with the field
+            AddFertilisingMenu();
+
             //fast simulation button (x1 / x10 / x50)
             AddSimTimeButton();
 
