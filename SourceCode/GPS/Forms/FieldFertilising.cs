@@ -445,9 +445,9 @@ namespace AgOpenGPS
             try
             {
                 var set = Properties.Settings.Default;
-                if (onClose && string.IsNullOrEmpty(set.setFert_type)) return;
+                if (onClose && string.IsNullOrEmpty(set.setFert_type)) { Log.EventWriter("Operation not saved on close: no operation chosen"); return; }
                 // no field open: nothing to save (the choice itself is kept in the settings), no question asked
-                if (!isJobStarted) return;
+                if (!isJobStarted) { if (onClose) Log.EventWriter("Operation not saved on close: no field is open"); return; }
 
                 string fieldDir = GetFieldDir(true);
                 string field = currentFieldDirectory;
@@ -462,7 +462,11 @@ namespace AgOpenGPS
                 int start = GetFertStart(field) ?? 0;
                 if (blocks.Count < start) { start = 0; SetFertStart(field, 0); }       // the coverage was deleted meanwhile
                 var mine = blocks.GetRange(start, blocks.Count - start);
-                if (onClose && mine.Count == 0) return;
+                if (onClose && mine.Count == 0)
+                {
+                    Log.EventWriter("Operation not saved on close: no new coverage since the operation was chosen (patches " + blocks.Count + ", start " + start + ")");
+                    return;
+                }
 
                 double hectares = FertilisingFiles.AreaOfBlocks(mine) * glm.m2ha;
                 string product = FertProductOf(set);
@@ -507,6 +511,7 @@ namespace AgOpenGPS
                 string fileName = FertilisingFiles.FileName(DateTime.Now, field, folderName, product, vehicleName);
                 File.WriteAllText(Path.Combine(folder, fileName), header + FertilisingFiles.BlocksText(mine), new System.Text.UTF8Encoding(false));
 
+                Log.EventWriter("Operation saved" + (onClose ? " on close" : "") + ": " + fileName + " (patches " + mine.Count + " of " + blocks.Count + ")");
                 if (!onClose) TimedMessageBox(2500, T("Operation", "Radnja"), T("Saved: ", "Spremljeno: ") + fileName);
             }
             catch (Exception ex)

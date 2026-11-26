@@ -770,6 +770,15 @@ namespace AgOpenGPS
                 if (triStrip[j].isDrawing) triStrip[j].TurnMappingOff();
             }
 
+            // The chosen operation is saved FIRST, on this thread: the closing is often not waited for (a new field is opened or the window
+            // closed at once), so later the name of the field and the coverage could already be those of something else.
+            try
+            {
+                FileSaveSections();
+                SaveFertilisingToFolder(true);
+            }
+            catch (Exception ex) { Log.EventWriter($"WARNING: Operation save failed: {ex}"); }
+
             // Start AgShare upload (if enabled)
             agShareUploadTask = Task.CompletedTask;
             if (!isAgShareUploadStarted &&
@@ -797,10 +806,6 @@ namespace AgOpenGPS
 
                 try { FileSaveSections(); }
                 catch (Exception ex) { Log.EventWriter($"CRITICAL: Sections save failed: {ex}"); throw; }
-
-                // the chosen operation (work, product, rate, vehicle, implement and the coverage) is saved with the field
-                try { SaveFertilisingToFolder(true); }
-                catch (Exception ex) { Log.EventWriter($"WARNING: Operation save failed: {ex}"); }
 
                 try { FileSaveContour(); }
                 catch (Exception ex) { Log.EventWriter($"CRITICAL: Contour save failed: {ex}"); throw; }
