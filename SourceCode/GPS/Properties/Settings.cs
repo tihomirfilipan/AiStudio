@@ -47,6 +47,7 @@ namespace AgOpenGPS.Properties
         public bool setAutoPlan_reverseTurns = false;
         // fertilising: what is being spread (shown on the screen, saved with the field)
         public string setFert_type = "";
+        public string setFert_subtype = "";
         public string setFert_product = "";
         public double setFert_rate = 0;
         public bool setFert_colorCoverage = false;

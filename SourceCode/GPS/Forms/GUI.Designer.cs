@@ -522,6 +522,7 @@ namespace AgOpenGPS
             frameDayColor = Properties.Settings.Default.setDisplay_colorDayFrame.CheckColorFor255();
             frameNightColor = Properties.Settings.Default.setDisplay_colorNightFrame.CheckColorFor255();
             sectionColorDay = Properties.Settings.Default.setDisplay_colorSectionsDay.CheckColorFor255();
+            ApplyFertilisingColor();       // the colour of the chosen operation stays until it is changed
             fieldColorDay = Properties.Settings.Default.setDisplay_colorFieldDay.CheckColorFor255();
             fieldColorNight = Properties.Settings.Default.setDisplay_colorFieldNight.CheckColorFor255();
 

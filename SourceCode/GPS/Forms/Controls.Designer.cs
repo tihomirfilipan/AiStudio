@@ -798,6 +798,10 @@ namespace AgOpenGPS
                 try { FileSaveSections(); }
                 catch (Exception ex) { Log.EventWriter($"CRITICAL: Sections save failed: {ex}"); throw; }
 
+                // the chosen operation (work, product, rate, vehicle, implement and the coverage) is saved with the field
+                try { SaveFertilisingToFolder(true); }
+                catch (Exception ex) { Log.EventWriter($"WARNING: Operation save failed: {ex}"); }
+
                 try { FileSaveContour(); }
                 catch (Exception ex) { Log.EventWriter($"CRITICAL: Contour save failed: {ex}"); throw; }
 
