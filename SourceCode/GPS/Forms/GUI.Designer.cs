@@ -95,7 +95,8 @@ namespace AgOpenGPS
         //Timer triggers at 125 msec
         private void tmrWatchdog_tick(object sender, EventArgs e)
         {
-            UpdateFertilisingStatus();
+            try { UpdateFertilisingStatus(); }
+            catch (Exception ex) { Log.EventWriter("Operation status failed: " + ex.Message); }
 
             if (sentenceCounter == 19)
             {
@@ -522,7 +523,8 @@ namespace AgOpenGPS
             frameDayColor = Properties.Settings.Default.setDisplay_colorDayFrame.CheckColorFor255();
             frameNightColor = Properties.Settings.Default.setDisplay_colorNightFrame.CheckColorFor255();
             sectionColorDay = Properties.Settings.Default.setDisplay_colorSectionsDay.CheckColorFor255();
-            ApplyFertilisingColor();       // the colour of the chosen operation stays until it is changed
+            try { ApplyFertilisingColor(); }       // the colour of the chosen operation stays until it is changed
+            catch (Exception ex) { Log.EventWriter("Operation colour failed: " + ex.Message); }
             fieldColorDay = Properties.Settings.Default.setDisplay_colorFieldDay.CheckColorFor255();
             fieldColorNight = Properties.Settings.Default.setDisplay_colorFieldNight.CheckColorFor255();
 

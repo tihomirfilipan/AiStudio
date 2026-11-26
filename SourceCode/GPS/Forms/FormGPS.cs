@@ -323,7 +323,8 @@ namespace AgOpenGPS
             AddAutoPlanMenu();
 
             //fertilising: the kind of fertilising, the product and the rate, shown on the screen and saved with the field
-            AddFertilisingMenu();
+            try { AddFertilisingMenu(); }
+            catch (Exception ex) { Log.EventWriter("Operation menu failed: " + ex); }
 
             //fast simulation button (x1 / x10 / x50)
             AddSimTimeButton();
