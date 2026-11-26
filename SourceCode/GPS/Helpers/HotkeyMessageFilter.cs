@@ -36,6 +36,9 @@ namespace AgOpenGPS.Helpers
             while (c != null)
             {
                 if (c is TextBoxBase) return true;
+                // a combo box that can be typed in and a number box: their letters and digits are text, not hotkeys
+                if (c is ComboBox cb && cb.DropDownStyle != ComboBoxStyle.DropDownList) return true;
+                if (c is UpDownBase) return true;
                 c = c.Parent;
             }
             return false;

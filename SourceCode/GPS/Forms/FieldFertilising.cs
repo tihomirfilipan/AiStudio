@@ -139,9 +139,45 @@ namespace AgOpenGPS
             if (!lblFertStatus.Visible) lblFertStatus.Visible = true;
         }
 
-        /// <summary>The colour of the coverage for a work (the same one is shown next to the choice in the window).</summary>
+        private const string FertCustomEntry = "Vlastiti unos";
+
+        private static string FertColorKey(string type, string kind)
+            => ((type ?? "") + "|" + (kind ?? "")).Replace('=', '_').Replace(';', '_').Trim();
+
+        /// <summary>The colour chosen by the user for this work (null when none was chosen).</summary>
+        private static Color? ChosenFertColor(string type, string kind)
+        {
+            string key = FertColorKey(type, kind);
+            foreach (string part in (Properties.Settings.Default.setFert_colors ?? "").Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries))
+            {
+                int eq = part.IndexOf('=');
+                if (eq <= 0 || part.Substring(0, eq) != key) continue;
+                string[] rgb = part.Substring(eq + 1).Split(',');
+                if (rgb.Length == 3 && int.TryParse(rgb[0], out int r) && int.TryParse(rgb[1], out int g) && int.TryParse(rgb[2], out int bl))
+                    return Color.FromArgb(255, Math.Max(0, Math.Min(255, r)), Math.Max(0, Math.Min(255, g)), Math.Max(0, Math.Min(255, bl)));
+            }
+            return null;
+        }
+
+        /// <summary>Remembers the colour chosen for this work (null = back to the default colour).</summary>
+        private static void SetChosenFertColor(string type, string kind, Color? color)
+        {
+            string key = FertColorKey(type, kind);
+            var kept = new System.Collections.Generic.List<string>();
+            foreach (string part in (Properties.Settings.Default.setFert_colors ?? "").Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries))
+            {
+                int eq = part.IndexOf('=');
+                if (eq > 0 && part.Substring(0, eq) != key) kept.Add(part);
+            }
+            if (color.HasValue) kept.Add(key + "=" + color.Value.R + "," + color.Value.G + "," + color.Value.B);
+            Properties.Settings.Default.setFert_colors = string.Join(";", kept);
+        }
+
+        /// <summary>The colour of the coverage for a work: the chosen one, or the default of the kind of work (the same one is shown in the window).</summary>
         private static Color FertColor(string type, string kind)
         {
+            Color? chosen = ChosenFertColor(type, kind);
+            if (chosen.HasValue) return chosen.Value;
             kind = kind ?? "";
             if (type == "Gnojidba" && (kind.StartsWith("Osnovna") || kind.StartsWith("Predsjetvena"))) return Color.FromArgb(255, 0, 120, 255);
             if (type == "Gnojidba" && kind.StartsWith("Prihrana")) return Color.FromArgb(255, 50, 205, 50);
@@ -161,6 +197,8 @@ namespace AgOpenGPS
         private void ShowFertilisingDialog()
         {
             var set = Properties.Settings.Default;
+            string colorsBefore = set.setFert_colors;      // the colours chosen in the window are kept only when the choice is accepted
+            bool applied = false;
             using (var form = new Form())
             {
                 form.Text = T("Operation", "Radnja");
@@ -169,61 +207,105 @@ namespace AgOpenGPS
                 form.MaximizeBox = false;
                 form.MinimizeBox = false;
                 form.Font = new Font("Tahoma", 14F);
-                form.ClientSize = new Size(560, 590);
+                form.ClientSize = new Size(560, 640);
+
+                // every choice can be typed in as well ("Vlastiti unos"); the hotkeys of the program do not take the letters typed in
+                ComboBox NewCombo(int top, params string[] items)
+                {
+                    var cb = new ComboBox { DropDownStyle = ComboBoxStyle.DropDown, Left = 20, Top = top, Width = 520, DropDownWidth = 520 };
+                    cb.Items.AddRange(items);
+                    cb.Items.Add(FertCustomEntry);
+                    // the entry "Vlastiti unos": the text is cleared and typed in
+                    cb.SelectionChangeCommitted += (s, e) =>
+                    {
+                        if (cb.SelectedItem as string == FertCustomEntry) { cb.SelectedIndex = -1; cb.Text = ""; cb.Focus(); }
+                    };
+                    return cb;
+                }
 
                 var lblOp = new Label { Left = 20, Top = 15, AutoSize = true, Text = T("Operation", "Radnja") };
-                var cbOp = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Left = 20, Top = 45, Width = 520 };
-                cbOp.Items.AddRange(FertOperations);
-                cbOp.SelectedIndex = Math.Max(0, Array.IndexOf(FertOperations, set.setFert_type));
+                var cbOp = NewCombo(45, FertOperations);
+                cbOp.Text = string.IsNullOrEmpty(set.setFert_type) ? FertOperations[0] : set.setFert_type;
                 var lblKind = new Label { Left = 20, Top = 85, AutoSize = true, Text = T("Kind", "Vrsta") };
-                var cbKind = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Left = 20, Top = 115, Width = 520 };
+                var cbKind = NewCombo(115);
                 var lblProduct = new Label { Left = 20, Top = 155, AutoSize = true, Text = T("Fertiliser / product", "Gnojivo / sredstvo") };
-                var cbProduct = new ComboBox { DropDownStyle = ComboBoxStyle.DropDown, Left = 20, Top = 185, Width = 520, DropDownWidth = 520 };
+                var cbProduct = NewCombo(185, FertProducts);
                 // what the chosen preparation is for, under the choice
                 var lblNote = new Label { Left = 20, Top = 222, Width = 520, Height = 38, ForeColor = Color.DimGray, Font = new Font("Tahoma", 10.5F) };
                 var lblRate = new Label { Left = 20, Top = 265, AutoSize = true, Text = T("Rate (kg/ha)", "Norma (kg/ha)") };
                 var nudRate = new NumericUpDown { Left = 20, Top = 295, Width = 200, DecimalPlaces = 1, Minimum = 0, Maximum = 5000, Increment = 10 };
                 var chkColor = new CheckBox { Left = 20, Top = 360, Width = 440, Text = T("Coverage in the colour of the work", "Pokrivenost u boji radnje"), Checked = set.setFert_colorCoverage };
-                // the colour that the coverage will have, next to the choice
+                // the colour that the coverage will have, next to the choice, and the buttons to choose another one or to go back to the default
                 var swatch = new Panel { Left = 475, Top = 356, Width = 65, Height = 38, BorderStyle = BorderStyle.FixedSingle };
+                var btnColor = new Button { Text = T("Colour ...", "Boja ..."), Left = 20, Top = 405, Width = 160, Height = 45 };
+                var btnColorReset = new Button { Text = T("Default colour", "Zadana boja"), Left = 195, Top = 405, Width = 200, Height = 45 };
 
-                // the kinds of the chosen operation; tillage has no product and no rate
-                void FillKinds(string wanted)
+                string Op() => cbOp.Text.Trim();
+                string Kind() => cbKind.Text.Trim();
+                string lastOp = null, lastCategory = null;
+
+                // the choices that depend on the operation; every operation keeps its own last product and rate (fertiliser, spraying)
+                void FillForOperation(string wantedKind)
                 {
-                    string op = (string)cbOp.SelectedItem;
+                    string op = Op();
+                    bool opChanged = op != lastOp;
+                    lastOp = op;
                     string[] kinds = FertKinds.TryGetValue(op, out var k) ? k : new string[0];
-                    cbKind.Items.Clear();
-                    cbKind.Items.AddRange(kinds);
-                    if (kinds.Length > 0) cbKind.SelectedIndex = Math.Max(0, Array.IndexOf(kinds, wanted));
-                    bool hasKinds = kinds.Length > 0;
-                    lblKind.Visible = cbKind.Visible = hasKinds;
-                    lblKind.Text = IsSpray(op) ? T("Crop", "Kultura") : T("Kind", "Vrsta");
+                    bool spray = IsSpray(op);
+                    string category = spray ? "spray" : (op == "Obrada" ? "none" : "fert");
+
+                    if (opChanged)
+                    {
+                        string keep = wantedKind ?? Kind();
+                        cbKind.Items.Clear();
+                        cbKind.Items.AddRange(kinds);
+                        cbKind.Items.Add(FertCustomEntry);
+                        if (wantedKind != null) cbKind.Text = wantedKind;
+                        else if (kinds.Length > 0 && Array.IndexOf(kinds, keep) < 0) cbKind.Text = kinds[0];
+                    }
+                    lblKind.Text = spray ? T("Crop", "Kultura") : T("Kind", "Vrsta");
+
                     bool hasProduct = op != "Obrada";
                     lblProduct.Visible = cbProduct.Visible = lblRate.Visible = nudRate.Visible = hasProduct;
-                    // spraying: the preparation and l/ha; fertilising: the fertiliser and kg/ha (each keeps its own last values)
-                    bool spray = IsSpray(op);
                     lblProduct.Text = spray ? T("Preparation", "Preparat") : T("Fertiliser / product", "Gnojivo / sredstvo");
                     lblRate.Text = spray ? T("Rate (l/ha)", "Norma (l/ha)") : T("Rate (kg/ha)", "Norma (kg/ha)");
-                    cbProduct.Items.Clear();
-                    // spraying: only the names in the list, what each is for is written under the choice
-                    cbProduct.Items.AddRange(spray ? SprayNames() : FertProducts);
                     lblNote.Visible = spray;
-                    string storedProduct = spray ? set.setFert_sprayProduct : set.setFert_product;
-                    double storedRate = spray ? set.setFert_sprayRate : set.setFert_rate;
-                    cbProduct.Text = string.IsNullOrEmpty(storedProduct) ? (spray ? "" : FertProducts[0]) : storedProduct;
-                    nudRate.Value = (decimal)Math.Min(5000.0, Math.Max(0.0, storedRate > 0 ? storedRate : (spray ? 0.0 : 250.0)));
+
+                    if (category != lastCategory)
+                    {
+                        lastCategory = category;
+                        cbProduct.Items.Clear();
+                        // spraying: only the names in the list, what each is for is written under the choice
+                        cbProduct.Items.AddRange(spray ? SprayNames() : FertProducts);
+                        cbProduct.Items.Add(FertCustomEntry);
+                        string storedProduct = spray ? set.setFert_sprayProduct : set.setFert_product;
+                        double storedRate = spray ? set.setFert_sprayRate : set.setFert_rate;
+                        cbProduct.Text = string.IsNullOrEmpty(storedProduct) ? (spray ? "" : FertProducts[0]) : storedProduct;
+                        nudRate.Value = (decimal)Math.Min(5000.0, Math.Max(0.0, storedRate > 0 ? storedRate : (spray ? 0.0 : 250.0)));
+                    }
                     lblNote.Text = spray ? SprayNoteFor(cbProduct.Text) : "";
                 }
-                void UpdateSwatch()
-                {
-                    string kind = cbKind.Visible && cbKind.SelectedItem != null ? (string)cbKind.SelectedItem : "";
-                    swatch.BackColor = FertColor((string)cbOp.SelectedItem, kind);
-                }
-                cbProduct.TextChanged += (s, e) => { if (IsSpray((string)cbOp.SelectedItem)) lblNote.Text = SprayNoteFor(cbProduct.Text); };
-                cbOp.SelectedIndexChanged += (s, e) => { FillKinds(null); UpdateSwatch(); };
-                cbKind.SelectedIndexChanged += (s, e) => UpdateSwatch();
-                FillKinds(set.setFert_subtype);
+                void UpdateSwatch() => swatch.BackColor = FertColor(Op(), Kind());
+
+                cbOp.TextChanged += (s, e) => { FillForOperation(null); UpdateSwatch(); };
+                cbKind.TextChanged += (s, e) => UpdateSwatch();
+                cbProduct.TextChanged += (s, e) => { if (IsSpray(Op())) lblNote.Text = SprayNoteFor(cbProduct.Text); };
+                FillForOperation(set.setFert_subtype ?? "");
                 UpdateSwatch();
+
+                btnColor.Click += (s, e) =>
+                {
+                    using (var picker = new FormColorPicker(this, FertColor(Op(), Kind())))
+                    {
+                        if (picker.ShowDialog(form) == DialogResult.OK)
+                        {
+                            SetChosenFertColor(Op(), Kind(), picker.useThisColor);
+                            chkColor.Checked = true;
+                            UpdateSwatch();
+                        }
+                    }
+                };
+                btnColorReset.Click += (s, e) => { SetChosenFertColor(Op(), Kind(), null); UpdateSwatch(); };
 
                 form.Controls.Add(lblOp);
                 form.Controls.Add(cbOp);
@@ -236,10 +318,12 @@ namespace AgOpenGPS
                 form.Controls.Add(nudRate);
                 form.Controls.Add(chkColor);
                 form.Controls.Add(swatch);
+                form.Controls.Add(btnColor);
+                form.Controls.Add(btnColorReset);
 
-                var btnOk = new Button { Text = T("OK", "U redu"), Left = 20, Top = 500, Width = 150, Height = 60, DialogResult = DialogResult.OK };
-                var btnSave = new Button { Text = T("Save the operation", "Spremi radnju"), Left = 185, Top = 500, Width = 200, Height = 60 };
-                var btnCancel = new Button { Text = T("Cancel", "Odustani"), Left = 400, Top = 500, Width = 140, Height = 60, DialogResult = DialogResult.Cancel };
+                var btnOk = new Button { Text = T("OK", "U redu"), Left = 20, Top = 550, Width = 150, Height = 60, DialogResult = DialogResult.OK };
+                var btnSave = new Button { Text = T("Save the operation", "Spremi radnju"), Left = 185, Top = 550, Width = 200, Height = 60 };
+                var btnCancel = new Button { Text = T("Cancel", "Odustani"), Left = 400, Top = 550, Width = 140, Height = 60, DialogResult = DialogResult.Cancel };
                 form.Controls.Add(btnOk);
                 form.Controls.Add(btnSave);
                 form.Controls.Add(btnCancel);
@@ -248,18 +332,24 @@ namespace AgOpenGPS
 
                 void Apply()
                 {
-                    string op = (string)cbOp.SelectedItem;
+                    applied = true;
+                    string op = Op();
                     set.setFert_type = op;
-                    set.setFert_subtype = cbKind.Visible && cbKind.SelectedItem != null ? (string)cbKind.SelectedItem : "";
+                    set.setFert_subtype = Kind() == FertCustomEntry ? "" : Kind();
+                    string typed = cbProduct.Text.Trim();
+                    if (typed == FertCustomEntry) typed = "";
                     if (IsSpray(op))
                     {
                         // from the list: the name is saved and what it is for goes to the note; typed in: only the name
-                        string typed = cbProduct.Text.Trim();
                         set.setFert_sprayProduct = SprayName(typed);
                         set.setFert_sprayNote = SprayNoteFor(typed);
                         set.setFert_sprayRate = (double)nudRate.Value;
                     }
-                    else if (op != "Obrada") { set.setFert_product = cbProduct.Text.Trim(); set.setFert_rate = (double)nudRate.Value; }
+                    else if (op != "Obrada")
+                    {
+                        set.setFert_product = typed;
+                        set.setFert_rate = (double)nudRate.Value;
+                    }
                     set.setFert_colorCoverage = chkColor.Checked;
                     set.Save();
                     ApplyFertilisingColor();
@@ -273,6 +363,7 @@ namespace AgOpenGPS
                 };
 
                 if (form.ShowDialog(this) == DialogResult.OK) Apply();
+                else if (!applied) set.setFert_colors = colorsBefore;
             }
         }
 
