@@ -48,6 +48,9 @@ namespace AgOpenGPS.Properties
         // fertilising: what is being spread (shown on the screen, saved with the field)
         public string setFert_type = "";
         public string setFert_subtype = "";
+        public string setFert_sprayProduct = "";     // spraying: the preparation and the rate in l/ha (kept apart from the fertiliser)
+        public double setFert_sprayRate = 0;
+        public string setFert_sprayNote = "";        // what the chosen preparation is for (from the list)
         public string setFert_product = "";
         public double setFert_rate = 0;
         public bool setFert_colorCoverage = false;
